@@ -28,10 +28,12 @@ CMD ["sh", "-c", "python management_app/manage.py migrate && python management_a
 # Staging stage
 FROM base as staging
 ENV DEBUG=False
+ENV PORT=8000
 COPY . .
 EXPOSE 8000
+EXPOSE ${PORT}
 RUN pip install gunicorn
-CMD ["sh", "-c", "python management_app/manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 1 --timeout 600 --threads 2 config.wsgi:application --chdir management_app"]
+CMD ["sh", "-c", "python management_app/manage.py migrate && gunicorn --bind 0.0.0.0:${PORT} --worker-class=gthread --workers 1 --timeout 600 --threads 4 config.wsgi:application --chdir management_app"]
 
 # Production stage
 FROM base as production
