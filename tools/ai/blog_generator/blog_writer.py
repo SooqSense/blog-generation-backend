@@ -128,8 +128,8 @@ def generate_image(prompt, size="1024x1024", output_dir="blog_images", topic=Non
         # Get S3 credentials from environment
         aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
         aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-        bucket_name = os.environ.get("S3_BUCKET_NAME", "sooqsense")
-        region = os.environ.get("AWS_REGION", "us-east-1")
+        bucket_name = os.environ.get("S3_BUCKET_NAME")
+        region = os.environ.get("AWS_REGION")
         
         if not aws_access_key or not aws_secret_key:
             # Fallback to local storage if no S3 credentials

@@ -112,7 +112,7 @@ Remember that consistency is key in digital marketing. Creating a content calend
         )
 
     def generate_post(self, topic: str, keywords=None):
-        """Generates a LinkedIn post for a given topic and saves it to a file."""
+        """Generates a LinkedIn post for a given topic and returns the content."""
         if not topic:
             raise ValueError("Topic must be provided for LinkedIn post generation.")
 
@@ -216,27 +216,8 @@ Remember that consistency is key in digital marketing. Creating a content calend
         else:
             post_content = ""
 
-        if post_content:
-            # Save the post to a file
-            try:
-                os.makedirs(POSTS_OUTPUT_DIR, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                # Sanitize topic for filename
-                topic_slug = topic.lower().replace(' ', '_')
-                topic_slug = "".join(c for c in topic_slug if c.isalnum() or c in ('_', '-')).rstrip()
-                if not topic_slug:
-                    topic_slug = "untitled_post"
-                
-                filename = f"linkedin_{topic_slug}_{timestamp}.md"
-                filepath = os.path.join(POSTS_OUTPUT_DIR, filename)
-                
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(post_content)
-                return post_content, filepath
-            except Exception:
-                return post_content, None 
-        
-        return "", None
+        # Return the generated post content and None for file path since we're not saving to a file
+        return post_content, None
 
 # Example Usage (for direct testing of this file)
 if __name__ == '__main__':
