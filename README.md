@@ -1,4 +1,5 @@
 # AI Blog Generator
+
 A good Tutorial for this is [here](https://www.youtube.com/watch?v=dNpKQk5uxHw&list=PLpkzjZ2JCjKJMmSRr3sXn22HoFW3lBFPE)
 
 A multi-agent system for automated blog content creation leveraging CrewAI and large language models.
@@ -22,32 +23,85 @@ The system can also generate banner images for blog posts using DALL-E 3.
 - OpenAI API key for GPT models and DALL-E image generation
 - Google API key (optional, for Gemini models)
 - SerperDev API key for search capabilities
+- Docker and Docker Compose (for containerized deployment)
 
 ### Installation
 
+#### Local Development
+
 ```bash
 # Clone the repository
-git clone https://github.com/VisionOra/AI-Blog-Generator.git
-cd AI-Blog-Generator
+git clone https://github.com/SooqSense/blog-generation-backend.git
+cd blog-generation-backend
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Set up environment variables
-export OPENAI_API_KEY='your-openai-api-key'
-export SERPER_API_KEY='your-serper-api-key'
-export GOOGLE_API_KEY='your-google-api-key'  # Optional
+cp .env.example .env
+# Edit .env with your API keys and configuration
 ```
 
-### Usage
+#### Docker Setup
 
 ```bash
-# Generate a blog post on a specific topic
-python blog_writer.py --topic "Artificial Intelligence in Healthcare"
+# Build and run using Docker Compose for development
+docker compose -f docker-compose.yml --profile development up
 
-# Additional options
-python blog_writer.py --topic "Future of Remote Work" --output "remote_work_blog.md" --custom-llm --image-size "1792x1024"
+# Build and run using Docker Compose for staging
+docker compose -f docker-compose.yml --profile staging up
+
+# Build and run using Docker Compose for production
+docker compose -f docker-compose.yml --profile production up
 ```
+
+#### Manual Docker Commands
+
+```bash
+# Build the Docker image for staging
+docker build --target staging -t blog-generation-backend:staging .
+
+# Run the Docker container
+docker run -p 8000:8000 --env-file .env --name blog-staging blog-generation-backend:staging
+
+# Push to Docker Hub
+docker tag blog-generation-backend:staging sohaibanwaar/blog-generation-backend:staging
+docker push sohaibanwaar/blog-generation-backend:staging
+```
+
+## Deployment
+
+### Render Deployment
+
+The application is configured for deployment on Render using Docker:
+
+1. Create a new Web Service in Render
+2. Choose "Deploy an existing image from a registry"
+3. Use the Docker image: `docker.io/sohaibanwaar/blog-generation-backend:staging`
+4. Set the environment variables from your `.env` file
+5. Set the environment variable `PORT=8000`
+6. Add a health check path if needed
+
+### CI/CD Pipeline
+
+The repository includes a GitHub Actions workflow for CI/CD in `.github/workflows/staging.yml`. It:
+
+1. Builds the Docker image on push to the staging branch
+2. Pushes the image to Docker Hub
+3. Triggers deployment on Render via a deploy hook
+
+Required GitHub Secrets:
+
+- `DOCKER_PASSWORD`: Docker Hub password
+- `RENDER_DEPLOY_HOOK`: Render deploy hook URL
+
+## API Endpoints
+
+The API is available at:
+
+- Staging: https://api.staging.sooqsense.com/
+- API Documentation: https://api.staging.sooqsense.com/docs/
+- API Schema: https://api.staging.sooqsense.com/api/schema/
 
 ## Tools and Technologies
 
@@ -95,11 +149,13 @@ GOOGLE_API_KEY=your_google_api_key (optional for Gemini)
 To use this system, you'll need to obtain the following API keys:
 
 1. **OpenAI API Key** (Required for LLM and image generation)
+
    - Sign up at [platform.openai.com](https://platform.openai.com)
    - Navigate to API Keys section and create a new secret key
    - Add credit to your account for API usage
 
 2. **Serper API Key** (Required for web search capabilities)
+
    - Sign up at [serper.dev](https://serper.dev)
    - Create an API key from your dashboard
    - Free tier available, paid tiers for more requests
@@ -183,5 +239,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Elevating AI creativity—one image at a time! 🌟**
 
---- 
-
+---
