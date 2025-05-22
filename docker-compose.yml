@@ -1,0 +1,75 @@
+version: "3.8"
+
+services:
+  # Development environment
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      - db
+    profiles: [development]
+
+  # Staging environment
+  web-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: staging
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    profiles: [staging]
+
+  # Production environment
+  web-production:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    restart: always
+    profiles: [production]
+
+  # Database for development
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    profiles: [development]
+
+volumes:
+  postgres_data:
