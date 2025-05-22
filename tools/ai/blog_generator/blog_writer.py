@@ -341,7 +341,7 @@ The final output should be a structured plan that the writer can easily follow."
         if self.faq:
             blog_specifications.append("- Include a FAQ section with 3-5 relevant questions and answers")
         if self.cta:
-            blog_specifications.append("- Include a compelling call-to-action section")
+            blog_specifications.append("- Include a single 'Call to Action' section with bullet points")
         if self.conclusion:
             blog_specifications.append("- Include a summarizing conclusion section")
             
@@ -397,7 +397,7 @@ The final output should be a structured plan that the writer can easily follow."
         if self.faq:
             blog_specifications.append("- Include a FAQ section with 3-5 relevant questions and answers near the end")
         if self.cta:
-            blog_specifications.append("- Include a compelling call-to-action section before the conclusion")
+            blog_specifications.append("- Include a single 'Call to Action' section with bullet points listing 4-5 actionable items")
         if self.conclusion:
             blog_specifications.append("- Include a summarizing conclusion section at the end")
             
@@ -453,7 +453,7 @@ The final output should be a structured plan that the writer can easily follow."
         if self.faq:
             blog_specifications.append("- Verify the FAQ section includes relevant questions and thorough answers")
         if self.cta:
-            blog_specifications.append("- Ensure the call-to-action is compelling and relevant")
+            blog_specifications.append("- Ensure the Call to Action section has a single heading and uses bullet points for actionable items")
         if self.conclusion:
             blog_specifications.append("- Verify the conclusion effectively summarizes the content")
             
@@ -661,7 +661,11 @@ The field is seeing increased automation, integration with AI, and greater acces
             sections.append(f"""
 ## Call to Action
 
-Ready to dive deeper into {topic}? Subscribe to our newsletter for weekly insights, or contact our team of experts for personalized guidance. Visit our website at example.com/contact to get started today.""")
+* Subscribe to our newsletter for weekly insights on {topic}
+* Contact our team of experts for personalized guidance
+* Download our free resources about {topic}
+* Join our community to connect with other {topic} enthusiasts
+* Visit our website at example.com/contact to get started today""")
             
         # Add conclusion if requested
         if self.conclusion:
@@ -732,7 +736,11 @@ Common challenges include implementation difficulties, resistance to change, and
         cta_section = f"""
 ## Call to Action
 
-Ready to take your knowledge of {self.topic} to the next level? Subscribe to our newsletter for weekly insights and updates. For personalized guidance, contact our team of experts who can help you implement these strategies effectively. Visit our website or reach out directly to start your journey today!
+* Subscribe to our newsletter for weekly insights and updates on {self.topic}
+* Contact our team of experts who can help you implement these strategies effectively
+* Download our free guide to get started with {self.topic} immediately
+* Follow us on social media for the latest trends and tips
+* Visit our website to explore more resources about {self.topic}
 """
         # Add CTA before conclusion if it exists, else before FAQ if it exists, otherwise add to the end
         if "## Conclusion" in content:
