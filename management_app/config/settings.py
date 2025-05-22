@@ -114,7 +114,8 @@ TOOLS_DIR = os.path.join(Path(__file__).resolve().parent.parent.parent, 'tools')
 
 # Directory to store generated blogs
 GENERATED_BLOGS_DIR = os.path.join(BASE_DIR, 'generated_blogs')
-os.makedirs(GENERATED_BLOGS_DIR, exist_ok=True)
+# Removed the automatic directory creation to prevent it from being created on server startup
+# os.makedirs(GENERATED_BLOGS_DIR, exist_ok=True)
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

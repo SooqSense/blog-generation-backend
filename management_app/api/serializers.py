@@ -17,7 +17,6 @@ class LinkedInPostResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     topic = serializers.CharField()
     linkedin_post = serializers.CharField()
-    saved_file = serializers.CharField(required=False) # Optional field
     keywords = serializers.ListField(
         child=serializers.CharField(),
         required=False,
@@ -116,7 +115,6 @@ class BlogResponseSerializer(serializers.Serializer):
     cta = serializers.BooleanField(required=False)
     conclusion = serializers.BooleanField(required=False)
     target_audience = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    markdown_file = serializers.CharField()
     content = serializers.CharField()
 
 # Serializers for Trending Keywords API
@@ -183,23 +181,44 @@ class ImageGenerationResponseSerializer(serializers.Serializer):
 
 # Serializers for Related Topics API
 class RelatedTopicsRequestSerializer(serializers.Serializer):
-    keyword = serializers.CharField(
-        max_length=255,
-        help_text="The main keyword to find related topics for."
+    keywords = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        help_text="A list of keywords to find related topics for.",
+        min_length=1,
+        max_length=10 # Optional: limit the number of keywords per request
+    )
+    region = serializers.CharField(
+        required=False,
+        max_length=10,
+        allow_blank=True,
+        default='',
+        help_text="The region code (e.g., 'US', 'GB'). Default is worldwide."
+    )
+    limit = serializers.IntegerField(
+        required=False,
+        default=10,
+        min_value=1,
+        max_value=25, # Pytrends usually returns around 20-25 max for each category
+        help_text="Maximum number of topics to return per category for each keyword. Default is 10."
     )
 
 class TopicItemSerializer(serializers.Serializer):
     title = serializers.CharField()
     type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     value = serializers.FloatField()
-    trend_type = serializers.CharField()
+    # trend_type is removed as it's now part of the structure
+
+class ProcessedKeywordTopicsSerializer(serializers.Serializer):
+    keyword = serializers.CharField()
+    id = serializers.IntegerField(required=False, allow_null=True) # Database ID after saving
+    rising_topics = serializers.ListField(child=TopicItemSerializer())
+    top_topics = serializers.ListField(child=TopicItemSerializer())
+    error = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 class RelatedTopicsResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
-    keyword = serializers.CharField()
-    id = serializers.IntegerField(required=False)  # Database ID after saving
-    related_topics = serializers.ListField(child=TopicItemSerializer())
+    processed_keywords = serializers.ListField(child=ProcessedKeywordTopicsSerializer())
 
 # Serializers for Related Queries API (Added for completeness)
 class RelatedQueriesRequestSerializer(serializers.Serializer):

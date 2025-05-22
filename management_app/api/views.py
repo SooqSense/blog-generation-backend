@@ -79,7 +79,6 @@ def generate_blog_api(request):
 
         try:
             logger.info(f"Starting blog generation for topic: '{topic}' with customized parameters")
-            base_output_dir = settings.GENERATED_BLOGS_DIR
             
             blog_writer_instance = BlogWriter(
                 topic=topic, 
@@ -95,39 +94,26 @@ def generate_blog_api(request):
                 target_audience=target_audience
             )
             
-            markdown_file_path = blog_writer_instance.save_blog_to_file(
-                topic=topic, output_file_name=None, base_output_dir=base_output_dir
-            )
+            # Generate the blog content without saving to file
+            blog_content = blog_writer_instance.generate_blog(topic=topic)
             
-            if not isinstance(markdown_file_path, str):
-                logger.error(f"BlogWriter.save_blog_to_file returned type {type(markdown_file_path)} (expected str) for topic: {topic}")
-                return Response({'error': 'Internal server error: Blog generation returned unexpected data type.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not blog_content:
+                logger.error(f"Blog generation failed for topic: '{topic}'")
+                return Response({'error': 'Blog generation failed.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            logger.info(f"Successfully generated blog on '{topic}' at {markdown_file_path}")
+            logger.info(f"Successfully generated blog on '{topic}'")
             
-            django_base_dir = settings.BASE_DIR
-            relative_md_path = os.path.relpath(markdown_file_path, django_base_dir).replace(os.sep, '/')
-            
-            blog_content = "" # Initialize blog_content
-            try:
-                if os.path.exists(markdown_file_path):
-                    with open(markdown_file_path, 'r', encoding='utf-8') as f:
-                        blog_content = f.read()
-                        
-                    # Save to database
-                    blog = BlogGeneral(
-                        user_id=request.user.id,  # Use authenticated user's ID
-                        username=request.user.username, # Use authenticated user's username
-                        email=request.user.email, # Use authenticated user's email
-                        topic=topic,
-                        content=blog_content,
-                        created_at=timezone.now()
-                    )
-                    blog.save()
-                    logger.info(f"Saved blog to database with ID: {blog.id}")
-                    
-            except Exception as e:
-                logger.error(f"Error reading generated blog content or saving to database: {e}")
+            # Save to database
+            blog = BlogGeneral(
+                user_id=request.user.id,  # Use authenticated user's ID
+                username=request.user.username, # Use authenticated user's username
+                email=request.user.email, # Use authenticated user's email
+                topic=topic,
+                content=blog_content,
+                created_at=timezone.now()
+            )
+            blog.save()
+            logger.info(f"Saved blog to database with ID: {blog.id}")
 
             response_data = {
                 'status': 'success', 
@@ -143,7 +129,6 @@ def generate_blog_api(request):
                 'cta': cta,
                 'conclusion': conclusion,
                 'target_audience': target_audience,
-                'markdown_file': relative_md_path,
                 'content': blog_content
             }
             
@@ -181,65 +166,45 @@ def generate_weekly_news_blog(request):
     Generate a weekly news blog about the latest trends and developments.
     
     This endpoint automatically creates a blog about this week's news and trends.
-    The result is a Markdown file.
+    The result is saved to the database.
     No parameters needed - just click Execute!
     """
     try:
         logger.info("Starting weekly news blog generation")
         
         topic = "Latest Trends and News This Week: Technology, Business, and Culture"
-        
         date_str = datetime.now().strftime("%Y-%m-%d")
-        output_file_name = f"weekly_news_{date_str}.md"
-        
-        base_output_dir = settings.GENERATED_BLOGS_DIR
         
         blog_writer_instance = BlogWriter(
             topic=topic
         )
         
-        markdown_file_path = blog_writer_instance.save_blog_to_file(
-            topic=topic, 
-            output_file_name=output_file_name, 
-            base_output_dir=base_output_dir
-        )
+        # Generate the blog content without saving to file
+        blog_content = blog_writer_instance.generate_blog(topic=topic)
         
-        if not isinstance(markdown_file_path, str):
-            logger.error(f"BlogWriter.save_blog_to_file returned type {type(markdown_file_path)} (expected str) for weekly news.")
-            return Response({'error': 'Internal server error: Weekly news generation returned unexpected data type.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not blog_content:
+            logger.error("Weekly news blog generation failed.")
+            return Response({'error': 'Weekly news blog generation failed.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        logger.info(f"Successfully generated weekly news blog at {markdown_file_path}")
+        logger.info("Successfully generated weekly news blog")
         
-        django_base_dir = settings.BASE_DIR
-        relative_md_path = os.path.relpath(markdown_file_path, django_base_dir).replace(os.sep, '/')
-        
-        blog_content = ""
-        try:
-            if os.path.exists(markdown_file_path):
-                with open(markdown_file_path, 'r', encoding='utf-8') as f:
-                    blog_content = f.read()
-                
-                # Save to database
-                news_blog = BlogAiNews(
-                    news_week_start=datetime.now().date(),
-                    username=request.user.username, # Use authenticated user's username
-                    email=request.user.email, # Use authenticated user's email
-                    summary=topic,  # Using the topic as a summary
-                    content=blog_content,
-                    created_at=timezone.now()
-                )
-                news_blog.save()
-                logger.info(f"Saved weekly news blog to database with ID: {news_blog.id}")
-        except Exception as e:
-            logger.error(f"Error reading generated blog content or saving to database: {e}")
-            # Continue with the response even if saving to DB fails
+        # Save to database
+        news_blog = BlogAiNews(
+            news_week_start=datetime.now().date(),
+            username=request.user.username, # Use authenticated user's username
+            email=request.user.email, # Use authenticated user's email
+            summary=topic,  # Using the topic as a summary
+            content=blog_content,
+            created_at=timezone.now()
+        )
+        news_blog.save()
+        logger.info(f"Saved weekly news blog to database with ID: {news_blog.id}")
         
         response_data = {
             'status': 'success',
             'message': 'Weekly news blog generated successfully!',
             'topic': topic,
             'date': date_str,
-            'markdown_file': relative_md_path,
             'content': blog_content
         }
         
@@ -249,7 +214,7 @@ def generate_weekly_news_blog(request):
         logger.error(f"Unexpected error in weekly news blog generation: {type(e).__name__} - {e}")
         import traceback
         traceback.print_exc()
-        return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # New endpoints will be added below
 
@@ -285,23 +250,29 @@ def generate_image_api(request):
         final_prompt += " " + " ".join(keywords)
 
     try:
-        image_data = generate_image(prompt=final_prompt, keywords=keywords, aspect_ratio=aspect_ratio, size=size)
-        image_url_for_db = image_data.get('url')
-
-        if image_url_for_db:
+        # Call generate_image with correct parameters (prompt, size, output_dir, topic)
+        image_url, optimized_prompt = generate_image(prompt=final_prompt, size=size, output_dir="blog_images")
+        
+        if image_url:
             # Save to database
             image_record = ImageGeneration(
                 user_id=request.user.id, 
                 username=request.user.username, 
                 email=request.user.email, 
                 prompt=final_prompt,
-                image_url=image_url_for_db,
+                image_url=image_url,
                 created_at=timezone.now()
             )
             image_record.save()
             logger.info(f"Saved image generation details for prompt: '{final_prompt}'")
             
-            response_serializer = ImageGenerationResponseSerializer(data={'prompt': final_prompt, 'image_url': image_url_for_db})
+            response_serializer = ImageGenerationResponseSerializer(data={
+                'status': 'success',
+                'message': 'Image generated successfully!',
+                'prompt_used': final_prompt,
+                'enhanced_prompt': optimized_prompt,
+                'image_file': image_url
+            })
             if response_serializer.is_valid():
                 return Response(response_serializer.data, status=status.HTTP_200_OK)
             else:
@@ -346,7 +317,7 @@ def generate_linkedin_post_api(request):
             logger.info(f"Starting LinkedIn post generation for topic: '{topic}' with keywords: {keywords}")
 
             linkedin_generator = LinkedInPostGenerator(topic=topic, keywords=keywords)
-            linkedin_post_content, saved_file_path = linkedin_generator.generate_post(topic=topic, keywords=keywords)
+            linkedin_post_content, _ = linkedin_generator.generate_post(topic=topic, keywords=keywords)
 
             if linkedin_post_content:
                 # Save to database
@@ -368,19 +339,11 @@ def generate_linkedin_post_api(request):
                     'keywords': keywords,
                     'linkedin_post': linkedin_post_content
                 }
-                if saved_file_path:
-                    try:
-                        django_base_dir = settings.BASE_DIR
-                        relative_file_path = os.path.relpath(saved_file_path, django_base_dir).replace(os.sep, '/')
-                        response_data['saved_file'] = relative_file_path
-                    except ValueError:
-                        response_data['saved_file'] = saved_file_path
                 
                 # Serialize the successful response
                 response_serializer = LinkedInPostResponseSerializer(data=response_data)
                 if response_serializer.is_valid():
                     logger.info(f"Successfully generated LinkedIn post for topic: '{topic}'")
-                    if saved_file_path: logger.info(f"LinkedIn post saved to: {saved_file_path}")
                     return Response(response_serializer.data, status=status.HTTP_200_OK)
                 else:
                     logger.error(f"Error serializing successful response: {response_serializer.errors}")
@@ -397,93 +360,112 @@ def generate_linkedin_post_api(request):
     else:
         # If serializer validation fails, return errors
         logger.warning(f"Invalid input for LinkedIn post generation: {serializer.errors}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @extend_schema(
     request=RelatedTopicsRequestSerializer,
     responses={
-        200: OpenApiResponse(response=RelatedTopicsResponseSerializer, description='Related topics fetched and saved successfully.'),
+        200: OpenApiResponse(response=RelatedTopicsResponseSerializer, description='Related topics fetched and saved successfully for all keywords.'),
+        202: OpenApiResponse(response=RelatedTopicsResponseSerializer, description='Related topics processing initiated; some keywords might have failed.'), # For partial success
         400: OpenApiResponse(response=ErrorResponseSerializer, description='Bad Request - Invalid input.'),
-        500: OpenApiResponse(response=ErrorResponseSerializer, description='Internal Server Error.')
+        500: OpenApiResponse(response=ErrorResponseSerializer, description='Internal Server Error or error during topic fetching.')
     },
-    description="Fetch topics related to a given keyword using Google Trends data and save to database."
+    description="Fetch topics related to a list of given keywords using Google Trends data and save to database."
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def fetch_and_save_related_topics(request):
     """
-    Fetches topics related to a given keyword using Google Trends and saves to database.
+    Fetches topics related to a list of given keywords using Google Trends and saves to database.
     
     Input is a JSON object with:
-    - "keyword" (required): Main keyword to find related topics for
+    - "keywords" (required list of strings): Main keywords to find related topics for.
+    - "region" (optional string): Region code for trends (e.g., 'US'). Defaults to worldwide.
+    - "limit" (optional int): Max topics per category (top/rising) per keyword. Default 10.
     """
-    # Validate request data using the serializer
     serializer = RelatedTopicsRequestSerializer(data=request.data)
-    if serializer.is_valid():
-        keyword = serializer.validated_data['keyword']
-        
+    if not serializer.is_valid():
+        logger.warning(f"Invalid input for related topics: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    keywords_list = serializer.validated_data['keywords']
+    region = serializer.validated_data.get('region', '')
+    limit = serializer.validated_data.get('limit', 10)
+    
+    processed_keywords_data = []
+    overall_status_code = status.HTTP_200_OK
+    errors_occurred = False
+
+    for keyword in keywords_list:
         try:
-            logger.info(f"Starting related topics fetch for keyword: '{keyword}'")
+            logger.info(f"Starting related topics fetch for keyword: '{keyword}', region: '{region}', limit: {limit}")
             
-            # 1. Initialize PyTrends client with minimal parameters
-            from pytrends.request import TrendReq
-            pytrends = TrendReq(hl='en-US', tz=360)
+            # Use the updated fetch_related_topics from pytrends_api.py
+            # This function is expected to be imported at the top of views.py
+            related_topics_data = fetch_related_topics(topic=keyword, region=region, limit=limit)
+
+            rising_topics = related_topics_data.get('rising', [])
+            top_topics = related_topics_data.get('top', [])
             
-            # 2. Build payload with the keyword
-            logger.info(f"Building payload for keyword: '{keyword}'")
-            pytrends.build_payload([keyword])
-            
-            # 3. Get related topics directly
-            related_topics_result = pytrends.related_topics()
-            
-            # Process results
-            topics_list = []
-            if keyword in related_topics_result:
-                # Process both top and rising topics
-                for category in ['top', 'rising']:
-                    if category in related_topics_result[keyword] and not related_topics_result[keyword][category].empty:
-                        df = related_topics_result[keyword][category]
-                        for _, row in df.iterrows():
-                            topics_list.append({
-                                'title': row.get('topic_title', ''),
-                                'type': row.get('topic_type', ''),
-                                'value': float(row.get('value', 0)),
-                                'trend_type': category
-                            })
-            
-            # Save to database
-            if topics_list:
-                db_record = TrendingTopics(
+            record_id = None
+            if rising_topics or top_topics:
+                # Save to database
+                db_record, created = TrendingTopics.objects.update_or_create(
                     keyword=keyword,
-                    topics=topics_list,
-                    created_at=timezone.now()
+                    defaults={
+                        'rising_topics': rising_topics,
+                        'top_topics': top_topics,
+                        'created_at': timezone.now() # Update timestamp on modification
+                    }
                 )
-                db_record.save()
                 record_id = db_record.id
-                logger.info(f"Saved {len(topics_list)} topics to database with ID: {record_id}")
+                action = "updated" if not created else "created"
+                logger.info(f"Successfully {action} and saved {len(rising_topics)} rising and {len(top_topics)} top topics for keyword '{keyword}' with ID: {record_id}")
             else:
-                record_id = None
-                logger.warning(f"No topics found for keyword: '{keyword}'")
-            
-            # Return response
-            response_data = {
-                'status': 'success',
-                'message': f"Found {len(topics_list)} related topics for '{keyword}'",
+                logger.warning(f"No rising or top topics found for keyword: '{keyword}'. Not saving to DB.")
+
+            processed_keywords_data.append({
                 'keyword': keyword,
-                'related_topics': topics_list
-            }
-            
-            if record_id:
-                response_data['id'] = record_id
-                
-            return Response(response_data, status=status.HTTP_200_OK)
+                'id': record_id,
+                'rising_topics': rising_topics,
+                'top_topics': top_topics
+            })
             
         except Exception as e:
-            logger.error(f"Error fetching related topics: {str(e)}")
-            return Response({
-                'status': 'error',
-                'message': f"Failed to fetch related topics: {str(e)}",
-                'keyword': keyword
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error processing keyword '{keyword}': {type(e).__name__} - {str(e)}")
+            errors_occurred = True
+            processed_keywords_data.append({
+                'keyword': keyword,
+                'id': None,
+                'rising_topics': [],
+                'top_topics': [],
+                'error': f"Failed to fetch/save topics: {str(e)}"
+            })
+            # If any keyword fails, we might want to indicate partial success.
+            overall_status_code = status.HTTP_202_ACCEPTED 
+
+    response_message = "Related topics processed."
+    if errors_occurred:
+        response_message = "Related topics processed with some errors."
+    elif not processed_keywords_data:
+        response_message = "No keywords provided or processed."
+        overall_status_code = status.HTTP_400_BAD_REQUEST # Or keep 200 if an empty list is valid
+
+    final_response_data = {
+        'status': 'success' if not errors_occurred else 'partial_success',
+        'message': response_message,
+        'processed_keywords': processed_keywords_data
+    }
+    
+    # Serialize the successful/partial response
+    response_serializer = RelatedTopicsResponseSerializer(data=final_response_data)
+    if response_serializer.is_valid():
+        return Response(response_serializer.data, status=overall_status_code)
     else:
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 
+        logger.error(f"Error serializing response for related topics: {response_serializer.errors}")
+        # Fallback response if serialization itself fails
+        return Response({
+            'status': 'error',
+            'message': 'Internal server error during response serialization.',
+            'details': response_serializer.errors
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

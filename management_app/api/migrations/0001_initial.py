@@ -17,6 +17,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('news_week_start', models.DateField()),
+                ('username', models.CharField(default='', max_length=150)),
+                ('email', models.EmailField(default='', max_length=254)),
                 ('summary', models.TextField()),
                 ('content', models.TextField()),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
@@ -30,6 +32,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('user_id', models.IntegerField()),
+                ('username', models.CharField(default='', max_length=150)),
+                ('email', models.EmailField(default='', max_length=254)),
                 ('topic', models.CharField(max_length=255)),
                 ('content', models.TextField()),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
@@ -43,6 +47,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('user_id', models.IntegerField()),
+                ('username', models.CharField(default='', max_length=150)),
+                ('email', models.EmailField(default='', max_length=254)),
                 ('prompt', models.TextField()),
                 ('image_url', models.URLField(max_length=500)),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
@@ -56,12 +62,27 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('user_id', models.IntegerField()),
+                ('username', models.CharField(default='', max_length=150)),
+                ('email', models.EmailField(default='', max_length=254)),
                 ('topic', models.CharField(max_length=255)),
                 ('content', models.TextField()),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
             ],
             options={
                 'db_table': 'linkedin_posts',
+            },
+        ),
+        migrations.CreateModel(
+            name='TrendingTopics',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('keyword', models.CharField(max_length=255)),
+                ('rising_topics', models.JSONField(default=list)),
+                ('top_topics', models.JSONField(default=list)),
+                ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
+            ],
+            options={
+                'db_table': 'trending_topics',
             },
         ),
     ]

@@ -52,7 +52,8 @@ class ImageGeneration(models.Model):
 
 class TrendingTopics(models.Model):
     keyword = models.CharField(max_length=255)
-    topics = models.JSONField()  # Stores related topics as JSON
+    rising_topics = models.JSONField(default=list)  # Stores rising related topics as JSON
+    top_topics = models.JSONField(default=list)  # Stores top related topics as JSON
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
