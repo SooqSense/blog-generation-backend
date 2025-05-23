@@ -38,11 +38,15 @@ LINKEDIN_CLIENT_SECRET = os.environ.get('LINKEDIN_CLIENT_SECRET', '')
 LINKEDIN_REDIRECT_URI = os.environ.get('LINKEDIN_REDIRECT_URI', '')
 print(LINKEDIN_REDIRECT_URI)
 
-class UserListView(generics.ListAPIView):
-    queryset = User.objects.all()
+class UserListView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+    
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -216,7 +220,7 @@ class GoogleLoginCallbackView(APIView):
                 return Response(response_data)
                 
             # For browser flow, redirect to frontend with tokens
-            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = os.environ.get('FRONTEND_URL')
             redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
             return redirect(redirect_url)
             
@@ -381,7 +385,7 @@ class LinkedInLoginCallbackView(APIView):
                 return Response(response_data)
                 
             # For browser flow, redirect to frontend with tokens
-            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = os.environ.get('FRONTEND_URL')
             redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
             return redirect(redirect_url)
             

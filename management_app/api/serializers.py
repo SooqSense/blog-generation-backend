@@ -115,7 +115,8 @@ class BlogResponseSerializer(serializers.Serializer):
     cta = serializers.BooleanField(required=False)
     conclusion = serializers.BooleanField(required=False)
     target_audience = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    content = serializers.CharField()
+    content = serializers.JSONField(help_text="Structured JSON representation of the blog content")
+    raw_content = serializers.CharField(required=False, help_text="Original markdown content of the blog")
 
 # Serializers for Trending Keywords API
 class TrendingKeywordsRequestSerializer(serializers.Serializer):

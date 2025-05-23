@@ -57,6 +57,165 @@ from .serializers import (
     RelatedTopicsResponseSerializer,
 )
 
+def convert_markdown_to_json(markdown_content):
+    """
+    Convert markdown blog content to a structured JSON format.
+    
+    Args:
+        markdown_content (str): The markdown content to convert
+    
+    Returns:
+        dict: A structured JSON representation of the blog
+    """
+    # Initialize result structure
+    result = {
+        "title": "",
+        "sections": []
+    }
+    
+    # Split content into lines for processing
+    lines = markdown_content.strip().split('\n')
+    
+    current_section = None
+    current_subsection = None
+    current_content = []
+    
+    for line in lines:
+        line = line.rstrip()
+        
+        # Handle main title (# Title)
+        if line.startswith('# '):
+            result['title'] = line[2:].strip()
+            
+        # Handle section headers (## Section)
+        elif line.startswith('## '):
+            # Save previous section if exists
+            if current_section:
+                # Add any remaining content to the current section or subsection
+                if current_content:
+                    if current_subsection:
+                        current_subsection['content'] = '\n'.join(current_content).strip()
+                        current_content = []
+                    else:
+                        current_section['content'] = '\n'.join(current_content).strip()
+                        current_content = []
+            
+            # Create new section
+            current_section = {
+                'title': line[3:].strip(),
+                'type': 'section',
+                'content': '',
+                'subsections': []
+            }
+            
+            # Add qa_pairs array for FAQ section
+            if current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ':
+                current_section['qa_pairs'] = []
+                
+            current_subsection = None
+            current_content = []
+            result['sections'].append(current_section)
+            
+        # Handle subsection headers (### Subsection)
+        elif line.startswith('### '):
+            # Save content to previous subsection if exists
+            if current_subsection and current_content:
+                current_subsection['content'] = '\n'.join(current_content).strip()
+                current_content = []
+            
+            # Create new subsection
+            current_subsection = {
+                'title': line[4:].strip(),
+                'type': 'subsection',
+                'content': ''
+            }
+            if current_section:
+                current_section['subsections'].append(current_subsection)
+                
+                # If this is a FAQ section, add question to qa_pairs
+                if current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ':
+                    current_section['qa_pairs'].append({
+                        'question': current_subsection['title'],
+                        'answer': ''  # Will be populated when we process the content
+                    })
+                    
+            current_content = []
+            
+        # Handle bullet points and other content
+        else:
+            # Only add non-empty lines
+            if line.strip():
+                current_content.append(line)
+    
+    # Add any remaining content
+    if current_content:
+        if current_subsection:
+            current_subsection['content'] = '\n'.join(current_content).strip()
+            
+            # If this is a FAQ section, update the answer in qa_pairs
+            if current_section and (current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ'):
+                for qa_pair in current_section['qa_pairs']:
+                    if qa_pair['question'] == current_subsection['title']:
+                        qa_pair['answer'] = '\n'.join(current_content).strip()
+                        
+        elif current_section:
+            current_section['content'] = '\n'.join(current_content).strip()
+    
+    # Process FAQ content if it's not in subsections format (might be in list format)
+    for section in result['sections']:
+        if (section['title'] == 'Frequently Asked Questions' or section['title'] == 'FAQ') and not section['qa_pairs']:
+            # If the FAQ section uses numbered lists or other format instead of subsections, try to extract Q&A
+            content_lines = section['content'].split('\n')
+            question = None
+            answer_lines = []
+            
+            for content_line in content_lines:
+                # Check if this line is a question (bold or numbered)
+                if content_line.strip().startswith('**') or re.match(r'^\d+\.', content_line.strip()):
+                    # If we have a previous question, save it
+                    if question and answer_lines:
+                        section['qa_pairs'].append({
+                            'question': question,
+                            'answer': '\n'.join(answer_lines).strip()
+                        })
+                        answer_lines = []
+                    
+                    # Extract new question
+                    question = content_line.strip()
+                    # Remove formatting from question
+                    question = re.sub(r'^\d+\.\s*', '', question)  # Remove numbers
+                    question = re.sub(r'\*\*|\*', '', question)  # Remove asterisks
+                    question = question.strip()
+                else:
+                    # This is part of the answer
+                    if question and content_line.strip():
+                        answer_lines.append(content_line)
+            
+            # Add the last Q&A pair
+            if question and answer_lines:
+                section['qa_pairs'].append({
+                    'question': question,
+                    'answer': '\n'.join(answer_lines).strip()
+                })
+        
+        # Extract bullet points for Call to Action section
+        if section['title'] == 'Call to Action':
+            # Extract bullet points from content using regex
+            bullet_points = []
+            content_lines = section['content'].split('\n')
+            
+            for line in content_lines:
+                # Match both asterisk and dash bullet points
+                if re.match(r'^\s*[\*\-]\s+', line.strip()):
+                    bullet_text = re.sub(r'^\s*[\*\-]\s+', '', line.strip())
+                    if bullet_text:
+                        bullet_points.append(bullet_text)
+            
+            # Only add bullet_points array if we found bullet points
+            if bullet_points:
+                section['bullet_points'] = bullet_points
+    
+    return result
 
 @extend_schema(
     request=BlogRequestSerializer,
@@ -126,8 +285,11 @@ def generate_blog_api(request):
                 )
 
             logger.info(f"Successfully generated blog on '{topic}'")
+            
+            # Convert markdown content to JSON structure
+            structured_content = convert_markdown_to_json(blog_content)
 
-            # Save to database
+            # Save to database (still save the markdown version)
             blog = BlogGeneral(
                 user_id=request.user.id,  # Use authenticated user's ID
                 username=request.user.username,  # Use authenticated user's username
@@ -153,7 +315,8 @@ def generate_blog_api(request):
                 "cta": cta,
                 "conclusion": conclusion,
                 "target_audience": target_audience,
-                "content": blog_content,
+                "content": structured_content,
+                "raw_content": blog_content,  # Include the original markdown as well
             }
 
             # Serialize the successful response
@@ -228,7 +391,10 @@ def generate_weekly_news_blog(request):
 
         logger.info("Successfully generated weekly news blog")
 
-        # Save to database
+        # Convert markdown content to JSON structure
+        structured_content = convert_markdown_to_json(blog_content)
+
+        # Save to database (still save the markdown version)
         news_blog = BlogAiNews(
             news_week_start=datetime.now().date(),
             username=request.user.username,  # Use authenticated user's username
@@ -245,7 +411,8 @@ def generate_weekly_news_blog(request):
             "message": "Weekly news blog generated successfully!",
             "topic": topic,
             "date": date_str,
-            "content": blog_content,
+            "content": structured_content,
+            "raw_content": blog_content,  # Include the original markdown as well
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
