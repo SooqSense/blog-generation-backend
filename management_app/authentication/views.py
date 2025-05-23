@@ -220,7 +220,7 @@ class GoogleLoginCallbackView(APIView):
                 return Response(response_data)
                 
             # For browser flow, redirect to frontend with tokens
-            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = os.environ.get('FRONTEND_URL')
             redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
             return redirect(redirect_url)
             
@@ -385,7 +385,7 @@ class LinkedInLoginCallbackView(APIView):
                 return Response(response_data)
                 
             # For browser flow, redirect to frontend with tokens
-            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = os.environ.get('FRONTEND_URL')
             redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
             return redirect(redirect_url)
             
