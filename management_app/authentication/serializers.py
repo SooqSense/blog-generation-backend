@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email']
+        fields = ['id', 'username', 'email', 'linkedin_access_token', 'linkedin_profile_id', 'linkedin_token_expires_at']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
