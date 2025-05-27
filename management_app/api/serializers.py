@@ -186,7 +186,7 @@ class BlogResponseSerializer(serializers.Serializer):
     topic = serializers.CharField()
     keywords = serializers.JSONField(required=False, default=list, help_text="Keywords with their usage counts")
     sample_blog_url = serializers.URLField(required=False, allow_blank=True, help_text="Sample blog URL used for style analysis")
-    sample_blog_analysis = serializers.CharField(required=False, allow_blank=True, help_text="Analysis of the sample blog style")
+    sample_blog_analysis = serializers.CharField(required=False, allow_blank=True, allow_null=True, help_text="Analysis of the sample blog style")
     tone = serializers.CharField(required=False)
     length_min = serializers.IntegerField(required=False)
     length_max = serializers.IntegerField(required=False)
@@ -243,6 +243,13 @@ class ImageGenerationRequestSerializer(serializers.Serializer):
         allow_blank=True, 
         help_text="Optional comma-separated keywords to enhance the image prompt."
     )
+    count = serializers.IntegerField(
+        required=False,
+        default=1,
+        min_value=1,
+        max_value=10,
+        help_text="Number of images to generate (1-10). Default is 1."
+    )
 
     # Add validation to ensure at least one field is provided
     def validate(self, data):
@@ -254,12 +261,20 @@ class ImageGenerationRequestSerializer(serializers.Serializer):
              raise serializers.ValidationError("Provided prompt or keywords cannot be empty or just whitespace.")
         return data
 
+class GeneratedImageSerializer(serializers.Serializer):
+    image_url = serializers.CharField()
+    enhanced_prompt = serializers.CharField()
+    image_number = serializers.IntegerField()
+
 class ImageGenerationResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
     prompt_used = serializers.CharField()
-    enhanced_prompt = serializers.CharField()
-    image_file = serializers.CharField()
+    count = serializers.IntegerField()
+    image_type = serializers.CharField()
+    images = serializers.ListField(child=GeneratedImageSerializer())
+    total_generated = serializers.IntegerField()
+    failed_generations = serializers.IntegerField()
 
 # Serializers for Related Topics API
 class RelatedTopicsRequestSerializer(serializers.Serializer):
@@ -433,4 +448,37 @@ class LinkedinAnalyticsResponseSerializer(serializers.Serializer):
     
     # Metadata
     last_updated = serializers.DateTimeField()
-    created_at = serializers.DateTimeField() 
+    created_at = serializers.DateTimeField()
+
+# Serializers for Daily AI News API
+class DailyAINewsRequestSerializer(serializers.Serializer):
+    country = serializers.CharField(
+        max_length=10,
+        required=False,
+        default="us",
+        help_text="Country code for news filtering (e.g., 'us', 'uk', 'in', 'ca'). Default is 'us'."
+    )
+    keywords = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        default=lambda: ["artificial intelligence", "machine learning"],
+        help_text="List of keywords to search for AI news. Default includes 'artificial intelligence' and 'machine learning'."
+    )
+    num_results = serializers.IntegerField(
+        required=False,
+        default=10,
+        min_value=5,
+        max_value=20,
+        help_text="Number of news articles to fetch (5-20). Default is 10."
+    )
+
+class DailyAINewsResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    country = serializers.CharField()
+    country_name = serializers.CharField()
+    keywords = serializers.ListField(child=serializers.CharField())
+    news_date = serializers.DateField()
+    articles_count = serializers.IntegerField()
+    content = serializers.JSONField(help_text="Structured JSON representation of the news content")
+    raw_content = serializers.CharField(help_text="Original markdown content of the news") 
