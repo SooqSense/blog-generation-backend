@@ -9,6 +9,8 @@ class BlogGeneral(models.Model):
     topic = models.CharField(max_length=255)
     content = models.TextField()
     sample_blog_url = models.URLField(max_length=500, blank=True, null=True)  # Optional sample blog URL
+    image_prompts = models.JSONField(default=list, blank=True)  # Store generated image prompts
+    prompts_count = models.IntegerField(default=0)  # Number of generated prompts
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -47,7 +49,12 @@ class ImageGeneration(models.Model):
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
     prompt = models.TextField()
-    image_url = models.URLField(max_length=500)
+    image_url = models.URLField(max_length=500)  # Keep for backward compatibility
+    image_urls = models.JSONField(default=list, blank=True)  # Store multiple image URLs
+    images_count = models.IntegerField(default=1)  # Number of images generated
+    enhanced_prompts = models.JSONField(default=list, blank=True)  # Store enhanced prompts for each image
+    generation_method = models.CharField(max_length=50, default='sora_style')  # Generation method used
+    image_style = models.CharField(max_length=50, default='professional_cinematic')  # Style of images
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

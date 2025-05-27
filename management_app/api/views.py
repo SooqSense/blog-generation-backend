@@ -301,24 +301,14 @@ def generate_blog_api(request):
         cta = serializer.validated_data.get("cta", False)
         conclusion = serializer.validated_data.get("conclusion", True)
         target_audience = serializer.validated_data.get("target_audience", [])
+        generate_image_prompts = serializer.validated_data.get("generate_image_prompts", True)
+        max_image_prompts = serializer.validated_data.get("max_image_prompts", 5)
         
-        # Process keywords if they come as a string (e.g., "War:10, Pakistan:20, India:3")
-        if isinstance(keywords, str) and keywords.strip():
-            processed_keywords = []
-            for kw_pair in keywords.split(','):
-                kw_pair = kw_pair.strip()
-                if ':' in kw_pair:
-                    keyword, count = kw_pair.split(':', 1)
-                    processed_keywords.append({
-                        "keyword": keyword.strip(),
-                        "count": int(count.strip())
-                    })
-                else:
-                    processed_keywords.append({
-                        "keyword": kw_pair.strip(),
-                        "count": 1
-                    })
-            keywords = processed_keywords
+        # Keywords are already processed by the serializer into the correct format
+        # No additional processing needed as KeywordWithCountField handles all formats:
+        # 1. List of dictionaries: [{"keyword1": 3}, {"keyword2": 5}]
+        # 2. String format: "keyword1:3, keyword2:5"  
+        # 3. List of strings: ["keyword1:3", "keyword2:5"]
 
         try:
             logger.info(
@@ -338,6 +328,8 @@ def generate_blog_api(request):
                 conclusion=conclusion,
                 target_audience=target_audience,
                 sample_blog_url=sample_blog_url if sample_blog_url else None,
+                generate_image_prompts=generate_image_prompts,
+                max_image_prompts=max_image_prompts,
             )
 
             # Generate the blog content without saving to file
@@ -358,6 +350,10 @@ def generate_blog_api(request):
             # Convert markdown content to JSON structure
             structured_content = convert_markdown_to_json(blog_content)
 
+            # Get generated image prompts
+            image_prompts = getattr(blog_writer_instance, 'image_prompts', [])
+            prompts_count = len(image_prompts)
+            
             # Save to database (still save the markdown version)
             blog = BlogGeneral(
                 user_id=request.user.id,  # Use authenticated user's ID
@@ -366,10 +362,12 @@ def generate_blog_api(request):
                 topic=topic,
                 content=blog_content,
                 sample_blog_url=sample_blog_url if sample_blog_url else None,
+                image_prompts=image_prompts,
+                prompts_count=prompts_count,
                 created_at=timezone.now(),
             )
             blog.save()
-            logger.info(f"Saved blog to database with ID: {blog.id}")
+            logger.info(f"Saved blog to database with ID: {blog.id} with {prompts_count} image prompts")
 
             response_data = {
                 "status": "success",
@@ -387,6 +385,10 @@ def generate_blog_api(request):
                 "cta": cta,
                 "conclusion": conclusion,
                 "target_audience": target_audience,
+                "generate_image_prompts": generate_image_prompts,
+                "max_image_prompts": max_image_prompts,
+                "image_prompts": image_prompts,
+                "prompts_count": prompts_count,
                 "content": structured_content,
                 "raw_content": blog_content,  # Include the original markdown as well
             }
@@ -564,14 +566,15 @@ def generate_daily_ai_news(request):
             description="Internal Server Error / Image Generation Failed.",
         ),
     },
-    description="Generate one or more images based on a prompt and/or keywords using DALL-E 3. Supports infographic-style images for informational content.",
+    description="Generate one or more professional, cinematic-style images based on a prompt and/or keywords using Sora-style AI generation. Creates clean, realistic, and visually appealing images perfect for blog content.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
-    Generate one or more images based on a prompt and/or keywords using DALL-E 3.
-    Supports generating infographic-style images that effectively communicate information.
+    Generate one or more professional, cinematic-style images based on a prompt and/or keywords.
+    Uses Sora-style AI generation to create clean, realistic, and visually appealing images 
+    perfect for blog content and professional use.
     """
     serializer = ImageGenerationRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -582,15 +585,15 @@ def generate_image_api(request):
     keywords = serializer.validated_data.get("keywords", "")
     count = serializer.validated_data.get("count", 1)
     
-    # Set default values for removed fields
-    image_type = "infographic"  # Default to infographic
+    # Set default values for Sora-style generation
+    image_type = "content"  # Default to content type for professional images
     size = "1024x1024"  # Default size
 
     logger.info(
         f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}"
     )
 
-    # Build final prompt
+    # Build final prompt for Sora-style generation
     final_prompt = prompt
     if keywords and keywords.strip():
         # Split keywords by comma and join them
@@ -598,53 +601,64 @@ def generate_image_api(request):
         if keyword_list:
             final_prompt += " " + " ".join(keyword_list)
 
-    # Enhance prompt based on image type
-    if image_type == "infographic" and final_prompt:
-        if "infographic" not in final_prompt.lower():
-            final_prompt = f"Create an informative infographic about: {final_prompt}. Include visual data representations, charts, diagrams, icons, and clear information hierarchy."
+    # Enhance prompt for professional, cinematic-style images
+    if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['cinematic', 'professional', 'realistic', 'dramatic']):
+        final_prompt = f"Create a professional, cinematic image about: {final_prompt}. Use dramatic lighting, clean composition, and realistic style."
 
     try:
-        # Call generate_image with new parameters
+        # Call generate_image with Sora-style parameters
         images_data, total_generated, failed_generations = generate_image(
             prompt=final_prompt, 
             size=size, 
             output_dir="blog_images",
             topic=None,
             image_type=image_type,
-            count=count
+            count=count,
+            keywords=keywords.split(',') if keywords else None
         )
 
         if total_generated > 0:
-            # Save each generated image to database
-            saved_images = []
-            for image_data in images_data:
-                image_record = ImageGeneration(
-                    user_id=request.user.id,
-                    username=request.user.username,
-                    email=request.user.email,
-                    prompt=final_prompt,
-                    image_url=image_data['image_url'],
-                    created_at=timezone.now(),
-                )
-                image_record.save()
-                saved_images.append(image_data)
-                logger.info(f"Saved image {image_data['image_number']} generation details for prompt: '{final_prompt}'")
+            # Prepare data for database storage
+            all_image_urls = [img['image_url'] for img in images_data]
+            all_enhanced_prompts = [img.get('enhanced_prompt', final_prompt) for img in images_data]
+            first_image_url = all_image_urls[0] if all_image_urls else ""
+            
+            # Save the image generation session to database
+            image_record = ImageGeneration(
+                user_id=request.user.id,
+                username=request.user.username,
+                email=request.user.email,
+                prompt=final_prompt,
+                image_url=first_image_url,  # Keep first image for backward compatibility
+                image_urls=all_image_urls,  # Store all image URLs
+                images_count=total_generated,  # Store count of generated images
+                enhanced_prompts=all_enhanced_prompts,  # Store all enhanced prompts
+                generation_method="sora_style",
+                image_style="professional_cinematic",
+                created_at=timezone.now(),
+            )
+            image_record.save()
+            logger.info(f"Saved image generation session with {total_generated} images for prompt: '{final_prompt}' with ID: {image_record.id}")
 
             # Determine response message
             if failed_generations == 0:
-                message = f"All {total_generated} images generated successfully!"
+                message = f"All {total_generated} professional images generated successfully!"
             else:
-                message = f"{total_generated} images generated successfully, {failed_generations} failed."
+                message = f"{total_generated} professional images generated successfully, {failed_generations} failed."
 
             response_data = {
                 "status": "success",
                 "message": message,
                 "prompt_used": final_prompt,
                 "count": count,
-                "image_type": image_type,
+                "image_style": "professional_cinematic",  # Updated from image_type
+                "generation_method": "sora_style",
                 "images": images_data,
                 "total_generated": total_generated,
                 "failed_generations": failed_generations,
+                "database_record_id": image_record.id,  # Include database record ID
+                "stored_image_urls": all_image_urls,  # Include all stored URLs
+                "stored_images_count": total_generated,  # Include stored count
             }
 
             response_serializer = ImageGenerationResponseSerializer(data=response_data)

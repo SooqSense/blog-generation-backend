@@ -60,6 +60,7 @@ KEYWORD INTEGRATION:
 - Make keywords the focal point of the scene
 - Ensure keywords are represented through objects, environments, or actions
 - Create visual metaphors for abstract keywords
+- Avoid cartoonish or unrealistic images
 
 OUTPUT FORMAT:
 Provide a single, enhanced prompt that is 2-3 sentences long, focusing on visual elements, atmosphere, and keyword integration."""
