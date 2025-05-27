@@ -16,11 +16,14 @@ class BlogGeneral(models.Model):
 
 
 class BlogAiNews(models.Model):
-    news_week_start = models.DateField()
+    user_id = models.IntegerField(null=True, blank=True)
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
+    news_date = models.DateField()  # Keep original field name as requested
+    country = models.CharField(max_length=100, default='', blank=True)  # Country for news filtering
+    keywords = models.JSONField(default=list, blank=True)  # Keywords used for news search
     summary = models.TextField()
-    content = models.TextField()
+    content = models.TextField()  # Markdown content
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

@@ -4,7 +4,7 @@ from . import views
 urlpatterns = [
     # Blog generation API endpoints
     path("generate-blog/", views.generate_blog_api, name="generate_blog_api"),
-    path("weekly-news/", views.generate_weekly_news_blog, name="weekly_news_blog"),
+    path("daily-ai-news/", views.generate_daily_ai_news, name="daily_ai_news"),
     # New API endpoints
     path("generate-image/", views.generate_image_api, name="generate_image_api"),
     path(
@@ -23,11 +23,6 @@ urlpatterns = [
         "linkedin-analytics/",
         views.fetch_linkedin_analytics_api,
         name="fetch_linkedin_analytics_api",
-    ),
-    path(
-        "debug-linkedin-token/",
-        views.debug_linkedin_token,
-        name="debug_linkedin_token",
     ),
     # Removed view endpoints as requested
 ]

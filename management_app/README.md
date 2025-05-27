@@ -2,7 +2,7 @@
 
 This directory contains the Django web application implementation of the AI Blog Generator system. The application provides a RESTful API for generating blog posts, LinkedIn content, weekly AI news, and images - all stored in a PostgreSQL database.
 
-## Project Overview
+## Directory Structure
 
 ```
 AI-Blog-Generator/
@@ -37,95 +37,36 @@ AI-Blog-Generator/
 │   └── README.md              # Tools documentation
 ```
 
-- **Blog Posts**: Generate detailed articles on any topic with customizable parameters
-- **Weekly AI News**: Create summaries of the latest trends and developments in AI
-- **LinkedIn Posts**: Craft professional social media content
-- **AI-Generated Images**: Create images using DALL-E 3
-- **Trend Analysis**: Fetch related topics and analyze keyword trends
+## Database Models
 
-All generated content is stored in a PostgreSQL database for easy access and management.
+The application uses PostgreSQL to store all generated content:
 
-## Directory Structure Explanation
+1. **BlogGeneral** - Stores generated blog posts
 
-- **api/**: Contains the core API functionality
-  - **models.py**: Defines database tables for storing generated content
-  - **views.py**: Implements API endpoints handling content generation requests
-  - **urls.py**: Maps URLs to view functions
-  - **serializers.py**: Handles request validation and response formatting
-  - **migrations/**: Contains database schema changes
+   - `user_id` - User identifier
+   - `topic` - Blog topic
+   - `content` - Full blog content
+   - `created_at` - Timestamp
 
-- **config/**: Project configuration 
-  - **settings.py**: Main configuration file with database, auth, and API settings
-  - **urls.py**: Root URL configuration
-  
-- **authentication/**: User authentication system
-  - Handles user registration, login, and token-based authentication
+2. **BlogAiNews** - Stores weekly AI news summaries
 
-## How the System Works
+   - `news_week_start` - Start date of the news week
+   - `summary` - Short summary
+   - `content` - Full news content
+   - `created_at` - Timestamp
 
-1. **Content Generation Flow**:
-   - User sends a request to an API endpoint with parameters
-   - The API validates the request using serializers 
-   - The appropriate AI tool is invoked from the tools directory
-   - Generated content is stored in the PostgreSQL database
-   - Response is returned to the user
+3. **LinkedinPost** - Stores LinkedIn posts
 
-2. **Authentication Flow**:
-   - User registers or logs in to receive a JWT token
-   - Token is included in subsequent API requests
-   - API validates the token before processing requests
+   - `user_id` - User identifier
+   - `topic` - Post topic
+   - `content` - Full post content
+   - `created_at` - Timestamp
 
-3. **Database Storage**:
-   - All generated content is stored in PostgreSQL tables
-   - No local file storage is used for content
-   - Images are stored in S3 if configured, with URLs in the database
-
-## Useful Commands
-
-### Server Management
-- Start development server: `python manage.py runserver`
-- Start server on custom port: `python manage.py runserver 0.0.0.0:8000`
-- Production deployment with Gunicorn: `gunicorn config.wsgi:application`
-
-### Database Management
-- Create migrations: `python manage.py makemigrations`
-- Apply migrations: `python manage.py migrate`
-- Reset migrations: `python manage.py migrate api zero`
-- Create superuser: `python manage.py createsuperuser`
-- Access database shell: `python manage.py dbshell`
-
-### Development Tools
-- Run tests: `python manage.py test`
-- Django shell: `python manage.py shell`
-- Check project for problems: `python manage.py check`
-- Generate schema: `python manage.py spectacular --file schema.yml`
-
-### Environment Setup
-- Create virtual environment: `python -m venv venv`
-- Activate virtual environment: 
-  - Windows: `venv\Scripts\activate`
-  - Mac/Linux: `source venv/bin/activate`
-
-## Common Workflows
-
-### Creating New Content
-1. Authenticate with the API to receive a JWT token
-2. Send a POST request to the appropriate endpoint with required parameters
-3. Receive the generated content in the response
-4. Content is automatically saved in the database
-
-### Troubleshooting Issues
-1. Check server logs: `python manage.py runserver --traceback`
-2. Verify database connection: `pg_isready`
-3. Reset migrations if schema issues occur
-4. Check environment variables in .env file
-
-### Deployment Process
-1. Configure environment variables for production
-2. Set DEBUG=False in settings
-3. Collect static files: `python manage.py collectstatic`
-4. Start with Gunicorn
-5. Configure Nginx/Apache as a reverse proxy
+4. **ImageGeneration** - Stores generated images
+   - `user_id` - User identifier
+   - `prompt` - Image generation prompt
+   - `image_url` - Path to generated image
+   - `created_at` - Timestamp
 
 ## Setup Instructions
 
@@ -136,14 +77,14 @@ All generated content is stored in a PostgreSQL database for easy access and man
 - OpenAI API key
 - SerperDev API key
 - Google API key (optional, for Gemini)
-- AWS credentials (optional, for S3 image storage)
 
 ### Installation
 
 1. Install required dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install django djangorestframework psycopg2-binary python-dotenv drf-spectacular
+pip install openai requests crewai crewai-tools langchain-google-genai langchain-openai
 ```
 
 2. Create a `.env` file in the project root with the following configuration:
@@ -153,12 +94,6 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_openai_api_key
 SERPER_API_KEY=your_serper_api_key
 GOOGLE_API_KEY=your_google_api_key
-
-# AWS S3 Configuration (for image storage)
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-S3_BUCKET_NAME=your_bucket_name
-AWS_REGION=us-east-1
 
 # Database Configuration
 DB_ENGINE=django.db.backends.postgresql
@@ -187,44 +122,89 @@ python manage.py migrate
 The API provides the following endpoints:
 
 1. **Blog Generation**
-   - `POST /api/generate-blog/`
-   - Request: Topic, keywords, tone, length settings, and formatting options
-   - Response: Generated blog post content stored in database
+
+   - `POST /api/blogs/`
+   - Request: `{"topic": "Blog Topic", "keywords": "optional,keywords"}`
+   - Response: Generated blog post content and file path
 
 2. **Weekly AI News**
-   - `GET /api/weekly-news/`
-   - Response: Generated weekly AI news content stored in database
+
+   - `GET /api/news/`
+   - Response: Generated weekly AI news content and file path
 
 3. **LinkedIn Posts**
-   - `POST /api/generate-linkedin-post/`
-   - Request: Topic and optional keywords
-   - Response: Generated LinkedIn post content stored in database
+
+   - `POST /api/linkedin/`
+   - Request: `{"topic": "LinkedIn Post Topic"}`
+   - Response: Generated LinkedIn post content
 
 4. **Image Generation**
-   - `POST /api/generate-image/`
-   - Request: Prompt, keywords, and size parameters
-   - Response: Generated image URL stored in database
+   - `POST /api/images/`
+   - Request: `{"prompt": "Image Description", "keywords": "optional,keywords"}`
+   - Response: Generated image file path
 
-5. **Related Topics**
-   - `POST /api/fetch-related-topics/`
-   - Request: Keywords, region, and limit
-   - Response: Related topics data stored in database
+## Running the Server
 
-## Authentication
+To start the development server:
 
-The application uses JWT (JSON Web Token) authentication:
+```bash
+# Standard development server
+python manage.py runserver
 
-1. Register a user:
-   - `POST /auth/register/`
-   - Request: Username, email, and password
+# Specify host and port
+python manage.py runserver 0.0.0.0:8001
+```
 
-2. Login to get tokens:
-   - `POST /auth/login/`
-   - Request: Username and password
-   - Response: Access token and refresh token
+Access the API documentation at: http://localhost:8001/api/schema/swagger-ui/
 
-3. Use the access token in Authorization header:
-   - `Authorization: Bearer access_token`
+## Development Guidelines
+
+### Adding New Endpoints
+
+1. Define the model in `api/models.py`
+2. Create serializers in `api/serializers.py`
+3. Implement the view in `api/views.py`
+4. Add URL patterns in `api/urls.py`
+5. Run migrations:
+   ```bash
+   python manage.py makemigrations
+   python manage.py migrate
+   ```
+
+### Database Access
+
+The application automatically stores generated content in the PostgreSQL database using Django's ORM. To query the data:
+
+```python
+# Example: Retrieve the latest 10 blog posts
+from api.models import BlogGeneral
+recent_blogs = BlogGeneral.objects.order_by('-created_at')[:10]
+```
+
+### Environment Configuration
+
+The application uses python-dotenv to load environment variables. All settings in `.env` are accessible via:
+
+```python
+import os
+api_key = os.environ.get('OPENAI_API_KEY')
+```
+
+### Accessing AI Tools
+
+The Django application now accesses the AI tools from the `/tools` directory. This modular approach allows:
+
+1. Better separation of concerns between the web application and AI functionality
+2. Ability to use the AI tools in other contexts outside of the Django app
+3. Easier maintenance of AI-specific functionality
+
+Example of importing tools:
+
+```python
+# In views.py
+from tools.ai.blog_generator.blog_writer import BlogWriter, generate_image
+from tools.ai.linkedin_post_generator.linkedin_post_generator import LinkedInPostGenerator
+```
 
 ## Troubleshooting
 
@@ -233,6 +213,7 @@ The application uses JWT (JSON Web Token) authentication:
 If you encounter database connection problems:
 
 1. Check PostgreSQL is running:
+
    ```bash
    pg_isready
    ```
@@ -269,11 +250,13 @@ If you get a "DisallowedHost" error when accessing the application:
 For production deployment:
 
 1. Update `config/settings.py`:
+
    - Set `DEBUG = False`
    - Configure `ALLOWED_HOSTS`
    - Use environment variables for sensitive settings
 
 2. Set up a production-ready server:
+
    ```bash
    pip install gunicorn
    gunicorn config.wsgi:application
@@ -281,4 +264,135 @@ For production deployment:
 
 3. Configure a reverse proxy (Nginx/Apache)
 
-4. Use a proper PostgreSQL production configuration 
+4. Use a proper PostgreSQL production configuration
+
+## Docker Setup
+
+The application includes Docker support for development, staging, and production environments, making it easy to run consistently across different systems.
+
+### Docker Directory Structure
+
+```
+AI-Blog-Generator/
+├── Dockerfile              # Multi-stage Dockerfile for different environments
+├── docker-compose.yml      # Docker Compose configuration
+├── docker-README.md        # Docker-specific documentation
+└── sample.env              # Template for .env file
+```
+
+### Prerequisites
+
+- Docker
+- Docker Compose
+
+### Environment Setup
+
+Before running the containers, create your `.env` file:
+
+```bash
+# Copy the sample environment file
+cp sample.env .env
+
+# Edit the file with your actual values and API keys
+nano .env
+```
+
+### Running with Docker Compose
+
+The application uses Docker Compose profiles to manage different environments:
+
+#### Development Environment
+
+```bash
+# Run the development environment
+docker-compose --profile development up
+
+# Run in detached mode
+docker-compose --profile development up -d
+```
+
+Features:
+
+- Django development server
+- Debug mode enabled
+- Hot reloading of code changes
+
+#### Staging Environment
+
+```bash
+# Run the staging environment
+docker-compose --profile staging up
+```
+
+Features:
+
+- Gunicorn web server
+- Debug mode enabled
+- Similar to production but with debugging capabilities
+
+#### Production Environment
+
+```bash
+# Run the production environment
+docker-compose --profile production up
+```
+
+Features:
+
+- Gunicorn web server
+- Debug mode disabled
+- Running as non-root user for improved security
+- Optimized resource limits
+
+### Managing Docker Containers
+
+```bash
+# Stop running containers
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Rebuild images after changes to Dockerfile
+docker-compose build [development|staging|production]
+```
+
+### Running Commands Inside Containers
+
+```bash
+# For Django management commands
+docker-compose exec development python django_app/manage.py makemigrations
+docker-compose exec development python django_app/manage.py migrate
+
+# Access Django shell
+docker-compose exec development python django_app/manage.py shell
+
+# For bash access
+docker-compose exec development bash
+```
+
+### Database Management with Docker
+
+The application can use either:
+
+- The PostgreSQL database configured in your .env file
+- A dockerized PostgreSQL instance (can be added to docker-compose.yml)
+
+### Troubleshooting Docker Issues
+
+If you encounter issues:
+
+1. Check container logs:
+
+   ```bash
+   docker-compose logs -f
+   ```
+
+2. Verify environment variables are correctly set in .env
+
+3. Ensure ports are not already in use on your host machine
+
+4. Rebuild the image if dependencies have changed:
+   ```bash
+   docker-compose build --no-cache [development|staging|production]
+   ```

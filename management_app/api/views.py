@@ -33,7 +33,8 @@ if settings.TOOLS_DIR not in sys.path:
 if os.path.dirname(settings.TOOLS_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(settings.TOOLS_DIR))
 
-from tools.ai.blog_generator.blog_writer import BlogWriter, generate_image
+from tools.ai.blog_generator.blog_writer import BlogWriter
+from tools.ai.image_generation.image_generator import generate_image
 
 # Import the new LinkedInPostGenerator service
 from tools.ai.linkedin_post_generator.linkedin_post_generator import (
@@ -61,6 +62,8 @@ from .serializers import (
     RelatedTopicsResponseSerializer,
     LinkedinAnalyticsRequestSerializer,
     LinkedinAnalyticsResponseSerializer,
+    DailyAINewsRequestSerializer,
+    DailyAINewsResponseSerializer,
 )
 
 def convert_markdown_to_json(markdown_content):
@@ -374,7 +377,7 @@ def generate_blog_api(request):
                 "topic": topic,
                 "keywords": keywords,
                 "sample_blog_url": sample_blog_url,
-                "sample_blog_analysis": getattr(blog_writer_instance, 'sample_blog_analysis', None),
+                "sample_blog_analysis": getattr(blog_writer_instance, 'sample_blog_analysis', None) if hasattr(blog_writer_instance, 'sample_blog_analysis') else None,
                 "tone": tone,
                 "length_min": length_min,
                 "length_max": length_max,
@@ -427,71 +430,115 @@ def generate_blog_api(request):
 
 
 @extend_schema(
-    description="Automatically generates a blog about the latest trends and news of this week.",
-    responses={200: None},
+    request=DailyAINewsRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=DailyAINewsResponseSerializer,
+            description="Daily AI news generated successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Fetch and generate daily AI news from specified country and keywords using Serper API.",
 )
-@api_view(["GET"])
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def generate_weekly_news_blog(request):
+def generate_daily_ai_news(request):
     """
-    Generate a weekly news blog about the latest trends and developments.
+    Generate daily AI news based on country and keywords.
 
-    This endpoint automatically creates a blog about this week's news and trends.
+    This endpoint fetches the latest AI news from specified countries using Serper API,
+    processes the information using AI, and returns structured content.
     The result is saved to the database.
-    No parameters needed - just click Execute!
     """
+    # Validate request data using the serializer
+    serializer = DailyAINewsRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        logger.warning(f"Invalid input for daily AI news: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    country = serializer.validated_data.get("country", "us")
+    keywords = serializer.validated_data.get("keywords", ["artificial intelligence", "machine learning"])
+    num_results = serializer.validated_data.get("num_results", 10)
+
     try:
-        logger.info("Starting weekly news blog generation")
+        logger.info(f"Starting daily AI news generation for country: {country}, keywords: {keywords}")
 
-        topic = "Latest Trends and News This Week: Technology, Business, and Culture"
-        date_str = datetime.now().strftime("%Y-%m-%d")
-
-        blog_writer_instance = BlogWriter(topic=topic)
-
-        # Generate the blog content without saving to file
-        blog_content = blog_writer_instance.generate_blog(topic=topic)
-
-        if not blog_content:
-            logger.error("Weekly news blog generation failed.")
+        # Import the AI daily news service
+        from tools.ai.daily_news.ai_daily_news import AIDailyNewsService
+        
+        # Initialize the service
+        news_service = AIDailyNewsService()
+        
+        # Get daily AI news
+        news_result = news_service.get_daily_ai_news(keywords, country, num_results)
+        
+        if not news_result["success"]:
+            logger.error(f"Daily AI news generation failed: {news_result['message']}")
             return Response(
-                {"error": "Weekly news blog generation failed."},
+                {"error": news_result["message"]},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        logger.info("Successfully generated weekly news blog")
+        logger.info(f"Successfully generated daily AI news for {country}")
 
         # Convert markdown content to JSON structure
-        structured_content = convert_markdown_to_json(blog_content)
+        structured_content = convert_markdown_to_json(news_result["content"])
 
-        # Save to database (still save the markdown version)
+        # Save to database
         news_blog = BlogAiNews(
-            news_week_start=datetime.now().date(),
-            username=request.user.username,  # Use authenticated user's username
-            email=request.user.email,  # Use authenticated user's email
-            summary=topic,  # Using the topic as a summary
-            content=blog_content,
+            user_id=request.user.id,
+            username=request.user.username,
+            email=request.user.email,
+            news_date=datetime.now().date(),
+            country=country,
+            keywords=keywords,
+            summary=news_result["summary"],
+            content=news_result["content"],
             created_at=timezone.now(),
         )
         news_blog.save()
-        logger.info(f"Saved weekly news blog to database with ID: {news_blog.id}")
+        logger.info(f"Saved daily AI news to database with ID: {news_blog.id}")
+
+        # Get country name for response
+        country_name = news_service._get_country_name(country)
 
         response_data = {
             "status": "success",
-            "message": "Weekly news blog generated successfully!",
-            "topic": topic,
-            "date": date_str,
+            "message": f"Daily AI news generated successfully for {country_name}!",
+            "country": country,
+            "country_name": country_name,
+            "keywords": keywords,
+            "news_date": datetime.now().date(),
+            "articles_count": news_result["articles_count"],
             "content": structured_content,
-            "raw_content": blog_content,  # Include the original markdown as well
+            "raw_content": news_result["content"],
         }
 
-        return Response(response_data, status=status.HTTP_200_OK)
+        # Serialize the successful response
+        response_serializer = DailyAINewsResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Error serializing daily AI news response: {response_serializer.errors}")
+            return Response(
+                {"error": "Internal server error during response serialization."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-    except Exception as e:
-        logger.error(
-            f"Unexpected error in weekly news blog generation: {type(e).__name__} - {e}"
+    except ImportError as e:
+        logger.error(f"Import error in daily AI news generation: {str(e)}")
+        return Response(
+            {"error": f"Service configuration error: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+    except Exception as e:
+        logger.error(f"Unexpected error in daily AI news generation: {type(e).__name__} - {e}")
         import traceback
-
         traceback.print_exc()
         return Response(
             {"error": f"An unexpected error occurred: {str(e)}"},
@@ -507,7 +554,7 @@ def generate_weekly_news_blog(request):
     responses={
         200: OpenApiResponse(
             response=ImageGenerationResponseSerializer,
-            description="Image generated successfully.",
+            description="Images generated successfully.",
         ),
         400: OpenApiResponse(
             response=ErrorResponseSerializer, description="Bad Request - Invalid input."
@@ -517,13 +564,14 @@ def generate_weekly_news_blog(request):
             description="Internal Server Error / Image Generation Failed.",
         ),
     },
-    description="Generate an image based on a prompt and/or keywords using DALL-E 3.",
+    description="Generate one or more images based on a prompt and/or keywords using DALL-E 3. Supports infographic-style images for informational content.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
-    Generate an image based on a prompt and/or keywords using DALL-E 3.
+    Generate one or more images based on a prompt and/or keywords using DALL-E 3.
+    Supports generating infographic-style images that effectively communicate information.
     """
     serializer = ImageGenerationRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -531,46 +579,75 @@ def generate_image_api(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     prompt = serializer.validated_data.get("prompt", "")
-    keywords = serializer.validated_data.get("keywords", [])
-    aspect_ratio = serializer.validated_data.get("aspect_ratio", "1024x1024")
-    size = serializer.validated_data.get("size", "1024x1024")
+    keywords = serializer.validated_data.get("keywords", "")
+    count = serializer.validated_data.get("count", 1)
+    
+    # Set default values for removed fields
+    image_type = "infographic"  # Default to infographic
+    size = "1024x1024"  # Default size
 
     logger.info(
-        f"Received image generation request for prompt: '{prompt}' with keywords: {keywords}, aspect_ratio: {aspect_ratio}, size: {size}"
+        f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}"
     )
 
+    # Build final prompt
     final_prompt = prompt
-    if keywords:
-        final_prompt += " " + " ".join(keywords)
+    if keywords and keywords.strip():
+        # Split keywords by comma and join them
+        keyword_list = [kw.strip() for kw in keywords.split(',') if kw.strip()]
+        if keyword_list:
+            final_prompt += " " + " ".join(keyword_list)
+
+    # Enhance prompt based on image type
+    if image_type == "infographic" and final_prompt:
+        if "infographic" not in final_prompt.lower():
+            final_prompt = f"Create an informative infographic about: {final_prompt}. Include visual data representations, charts, diagrams, icons, and clear information hierarchy."
 
     try:
-        # Call generate_image with correct parameters (prompt, size, output_dir, topic)
-        image_url, optimized_prompt = generate_image(
-            prompt=final_prompt, size=size, output_dir="blog_images"
+        # Call generate_image with new parameters
+        images_data, total_generated, failed_generations = generate_image(
+            prompt=final_prompt, 
+            size=size, 
+            output_dir="blog_images",
+            topic=None,
+            image_type=image_type,
+            count=count
         )
 
-        if image_url:
-            # Save to database
-            image_record = ImageGeneration(
-                user_id=request.user.id,
-                username=request.user.username,
-                email=request.user.email,
-                prompt=final_prompt,
-                image_url=image_url,
-                created_at=timezone.now(),
-            )
-            image_record.save()
-            logger.info(f"Saved image generation details for prompt: '{final_prompt}'")
+        if total_generated > 0:
+            # Save each generated image to database
+            saved_images = []
+            for image_data in images_data:
+                image_record = ImageGeneration(
+                    user_id=request.user.id,
+                    username=request.user.username,
+                    email=request.user.email,
+                    prompt=final_prompt,
+                    image_url=image_data['image_url'],
+                    created_at=timezone.now(),
+                )
+                image_record.save()
+                saved_images.append(image_data)
+                logger.info(f"Saved image {image_data['image_number']} generation details for prompt: '{final_prompt}'")
 
-            response_serializer = ImageGenerationResponseSerializer(
-                data={
-                    "status": "success",
-                    "message": "Image generated successfully!",
-                    "prompt_used": final_prompt,
-                    "enhanced_prompt": optimized_prompt,
-                    "image_file": image_url,
-                }
-            )
+            # Determine response message
+            if failed_generations == 0:
+                message = f"All {total_generated} images generated successfully!"
+            else:
+                message = f"{total_generated} images generated successfully, {failed_generations} failed."
+
+            response_data = {
+                "status": "success",
+                "message": message,
+                "prompt_used": final_prompt,
+                "count": count,
+                "image_type": image_type,
+                "images": images_data,
+                "total_generated": total_generated,
+                "failed_generations": failed_generations,
+            }
+
+            response_serializer = ImageGenerationResponseSerializer(data=response_data)
             if response_serializer.is_valid():
                 return Response(response_serializer.data, status=status.HTTP_200_OK)
             else:
@@ -583,10 +660,10 @@ def generate_image_api(request):
                 )
         else:
             logger.error(
-                f"Image generation failed for prompt: '{final_prompt}'. No URL returned."
+                f"All image generations failed for prompt: '{final_prompt}'. No images generated."
             )
             return Response(
-                {"error": "Image generation failed. Please try again."},
+                {"error": f"All {count} image generation attempts failed. Please try again with a different prompt."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -1092,73 +1169,4 @@ def fetch_linkedin_analytics_api(request):
 
 
 
-@extend_schema(
-    responses={
-        200: OpenApiResponse(
-            description="Debug information about LinkedIn token storage.",
-        ),
-        401: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Unauthorized - User not authenticated."
-        ),
-    },
-    description="Debug endpoint to check LinkedIn token storage in database.",
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def debug_linkedin_token(request):
-    """
-    Debug endpoint to check LinkedIn token storage and retrieval.
-    
-    Usage:
-    GET /api/debug-linkedin-token/
-    Headers:
-        Authorization: Bearer <your_jwt_token>
-    """
-    
-    user = request.user
-    
-    # Get all user data for debugging
-    debug_info = {
-        "user_id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "has_linkedin_access_token": bool(user.linkedin_access_token),
-        "linkedin_access_token_length": len(user.linkedin_access_token) if user.linkedin_access_token else 0,
-        "linkedin_access_token_preview": user.linkedin_access_token[:20] + "..." if user.linkedin_access_token else None,
-        "linkedin_profile_id": user.linkedin_profile_id,
-        "linkedin_token_expires_at": user.linkedin_token_expires_at,
-        "token_expired": user.linkedin_token_expires_at < timezone.now() if user.linkedin_token_expires_at else None,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at,
-    }
-    
-    # Check if fields exist in model
-    debug_info["model_fields"] = {
-        "has_linkedin_access_token_field": hasattr(user, 'linkedin_access_token'),
-        "has_linkedin_profile_id_field": hasattr(user, 'linkedin_profile_id'),
-        "has_linkedin_token_expires_at_field": hasattr(user, 'linkedin_token_expires_at'),
-    }
-    
-    # Check database connection
-    from django.db import connection
-    debug_info["database"] = {
-        "name": connection.settings_dict.get('NAME', 'Unknown'),
-        "connection_alive": connection.is_usable(),
-    }
-    
-    # Try to fetch user again from database to ensure fresh data
-    from authentication.models import User
-    fresh_user = User.objects.get(id=user.id)
-    debug_info["fresh_fetch"] = {
-        "has_linkedin_access_token": bool(fresh_user.linkedin_access_token),
-        "linkedin_access_token_length": len(fresh_user.linkedin_access_token) if fresh_user.linkedin_access_token else 0,
-        "linkedin_access_token_preview": fresh_user.linkedin_access_token[:20] + "..." if fresh_user.linkedin_access_token else None,
-        "linkedin_profile_id": fresh_user.linkedin_profile_id,
-        "linkedin_token_expires_at": fresh_user.linkedin_token_expires_at,
-    }
-    
-    return Response({
-        "status": "success",
-        "message": "Debug information retrieved successfully",
-        "debug_info": debug_info
-    }, status=status.HTTP_200_OK)
+
