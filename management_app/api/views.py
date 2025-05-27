@@ -21,6 +21,7 @@ from .models import (
     LinkedinPost,
     ImageGeneration,
     TrendingTopics,
+    LinkedinAnalytics,
 )
 
 # Set up logging
@@ -42,6 +43,9 @@ from tools.ai.linkedin_post_generator.linkedin_post_generator import (
 # Import the PyTrends service
 from tools.ai.trends_ai.pytrends_api import fetch_related_topics
 
+# Import the LinkedIn Analytics service
+from tools.ai.linkedin_analytics.linkedin_analytics_service import fetch_linkedin_analytics
+
 # Import serializers
 from .serializers import (
     LinkedInPostRequestSerializer,
@@ -55,6 +59,8 @@ from .serializers import (
     TrendingKeywordsResponseSerializer,
     RelatedTopicsRequestSerializer,
     RelatedTopicsResponseSerializer,
+    LinkedinAnalyticsRequestSerializer,
+    LinkedinAnalyticsResponseSerializer,
 )
 
 def convert_markdown_to_json(markdown_content):
@@ -101,15 +107,16 @@ def convert_markdown_to_json(markdown_content):
                         current_content = []
             
             # Create new section
+            section_title = line[3:].strip()
             current_section = {
-                'title': line[3:].strip(),
+                'title': section_title,
                 'type': 'section',
                 'content': '',
                 'subsections': []
             }
             
             # Add qa_pairs array for FAQ section
-            if current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ':
+            if any(faq_keyword in section_title.lower() for faq_keyword in ['faq', 'frequently asked questions', 'questions']):
                 current_section['qa_pairs'] = []
                 
             current_subsection = None
@@ -124,8 +131,9 @@ def convert_markdown_to_json(markdown_content):
                 current_content = []
             
             # Create new subsection
+            subsection_title = line[4:].strip()
             current_subsection = {
-                'title': line[4:].strip(),
+                'title': subsection_title,
                 'type': 'subsection',
                 'content': ''
             }
@@ -133,13 +141,42 @@ def convert_markdown_to_json(markdown_content):
                 current_section['subsections'].append(current_subsection)
                 
                 # If this is a FAQ section, add question to qa_pairs
-                if current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ':
+                if 'qa_pairs' in current_section:
                     current_section['qa_pairs'].append({
-                        'question': current_subsection['title'],
+                        'question': subsection_title,
                         'answer': ''  # Will be populated when we process the content
                     })
                     
             current_content = []
+            
+        # Handle bold headers that might be sections (**Section**)
+        elif line.startswith('**') and line.endswith('**') and len(line.strip()) > 4:
+            # Save previous section if exists
+            if current_section:
+                if current_content:
+                    if current_subsection:
+                        current_subsection['content'] = '\n'.join(current_content).strip()
+                        current_content = []
+                    else:
+                        current_section['content'] = '\n'.join(current_content).strip()
+                        current_content = []
+            
+            # Create new section from bold text
+            section_title = line.strip()[2:-2].strip()  # Remove ** from both ends
+            current_section = {
+                'title': section_title,
+                'type': 'section',
+                'content': '',
+                'subsections': []
+            }
+            
+            # Add qa_pairs array for FAQ section
+            if any(faq_keyword in section_title.lower() for faq_keyword in ['faq', 'frequently asked questions', 'questions']):
+                current_section['qa_pairs'] = []
+                
+            current_subsection = None
+            current_content = []
+            result['sections'].append(current_section)
             
         # Handle bullet points and other content
         else:
@@ -153,7 +190,7 @@ def convert_markdown_to_json(markdown_content):
             current_subsection['content'] = '\n'.join(current_content).strip()
             
             # If this is a FAQ section, update the answer in qa_pairs
-            if current_section and (current_section['title'] == 'Frequently Asked Questions' or current_section['title'] == 'FAQ'):
+            if current_section and 'qa_pairs' in current_section:
                 for qa_pair in current_section['qa_pairs']:
                     if qa_pair['question'] == current_subsection['title']:
                         qa_pair['answer'] = '\n'.join(current_content).strip()
@@ -163,15 +200,19 @@ def convert_markdown_to_json(markdown_content):
     
     # Process FAQ content if it's not in subsections format (might be in list format)
     for section in result['sections']:
-        if (section['title'] == 'Frequently Asked Questions' or section['title'] == 'FAQ') and not section['qa_pairs']:
+        if 'qa_pairs' in section and not section['qa_pairs']:
             # If the FAQ section uses numbered lists or other format instead of subsections, try to extract Q&A
             content_lines = section['content'].split('\n')
             question = None
             answer_lines = []
             
             for content_line in content_lines:
-                # Check if this line is a question (bold or numbered)
-                if content_line.strip().startswith('**') or re.match(r'^\d+\.', content_line.strip()):
+                # Check if this line is a question (bold, numbered, or starts with Q:)
+                if (content_line.strip().startswith('**') or 
+                    re.match(r'^\d+\.', content_line.strip()) or
+                    content_line.strip().lower().startswith('q:') or
+                    content_line.strip().lower().startswith('question')):
+                    
                     # If we have a previous question, save it
                     if question and answer_lines:
                         section['qa_pairs'].append({
@@ -185,6 +226,8 @@ def convert_markdown_to_json(markdown_content):
                     # Remove formatting from question
                     question = re.sub(r'^\d+\.\s*', '', question)  # Remove numbers
                     question = re.sub(r'\*\*|\*', '', question)  # Remove asterisks
+                    question = re.sub(r'^q:\s*', '', question, flags=re.IGNORECASE)  # Remove Q:
+                    question = re.sub(r'^question\s*\d*:?\s*', '', question, flags=re.IGNORECASE)  # Remove Question
                     question = question.strip()
                 else:
                     # This is part of the answer
@@ -199,15 +242,15 @@ def convert_markdown_to_json(markdown_content):
                 })
         
         # Extract bullet points for Call to Action section
-        if section['title'] == 'Call to Action':
+        if 'call to action' in section['title'].lower() or 'cta' in section['title'].lower():
             # Extract bullet points from content using regex
             bullet_points = []
             content_lines = section['content'].split('\n')
             
             for line in content_lines:
-                # Match both asterisk and dash bullet points
-                if re.match(r'^\s*[\*\-]\s+', line.strip()):
-                    bullet_text = re.sub(r'^\s*[\*\-]\s+', '', line.strip())
+                # Match both asterisk, dash, and numbered bullet points
+                if re.match(r'^\s*[\*\-\d+\.]\s+', line.strip()):
+                    bullet_text = re.sub(r'^\s*[\*\-\d+\.]\s+', '', line.strip())
                     if bullet_text:
                         bullet_points.append(bullet_text)
             
@@ -245,6 +288,7 @@ def generate_blog_api(request):
     if serializer.is_valid():
         topic = serializer.validated_data["topic"]
         keywords = serializer.validated_data.get("keywords", [])
+        sample_blog_url = serializer.validated_data.get("sample_blog_url", "")
         tone = serializer.validated_data.get("tone", "professional")
         length_min = serializer.validated_data.get("length_min", 800)
         length_max = serializer.validated_data.get("length_max", 1500)
@@ -254,6 +298,24 @@ def generate_blog_api(request):
         cta = serializer.validated_data.get("cta", False)
         conclusion = serializer.validated_data.get("conclusion", True)
         target_audience = serializer.validated_data.get("target_audience", [])
+        
+        # Process keywords if they come as a string (e.g., "War:10, Pakistan:20, India:3")
+        if isinstance(keywords, str) and keywords.strip():
+            processed_keywords = []
+            for kw_pair in keywords.split(','):
+                kw_pair = kw_pair.strip()
+                if ':' in kw_pair:
+                    keyword, count = kw_pair.split(':', 1)
+                    processed_keywords.append({
+                        "keyword": keyword.strip(),
+                        "count": int(count.strip())
+                    })
+                else:
+                    processed_keywords.append({
+                        "keyword": kw_pair.strip(),
+                        "count": 1
+                    })
+            keywords = processed_keywords
 
         try:
             logger.info(
@@ -272,10 +334,14 @@ def generate_blog_api(request):
                 cta=cta,
                 conclusion=conclusion,
                 target_audience=target_audience,
+                sample_blog_url=sample_blog_url if sample_blog_url else None,
             )
 
             # Generate the blog content without saving to file
-            blog_content = blog_writer_instance.generate_blog(topic=topic)
+            blog_content = blog_writer_instance.generate_blog(
+                topic=topic,
+                sample_blog_url=sample_blog_url if sample_blog_url else None
+            )
 
             if not blog_content:
                 logger.error(f"Blog generation failed for topic: '{topic}'")
@@ -296,6 +362,7 @@ def generate_blog_api(request):
                 email=request.user.email,  # Use authenticated user's email
                 topic=topic,
                 content=blog_content,
+                sample_blog_url=sample_blog_url if sample_blog_url else None,
                 created_at=timezone.now(),
             )
             blog.save()
@@ -306,6 +373,8 @@ def generate_blog_api(request):
                 "message": "Blog generated successfully!",
                 "topic": topic,
                 "keywords": keywords,
+                "sample_blog_url": sample_blog_url,
+                "sample_blog_analysis": getattr(blog_writer_instance, 'sample_blog_analysis', None),
                 "tone": tone,
                 "length_min": length_min,
                 "length_max": length_max,
@@ -782,3 +851,314 @@ def fetch_and_save_related_topics(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@extend_schema(
+    parameters=[
+        OpenApiParameter(
+            name='linkedin_profile_id',
+            type=str,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description='LinkedIn profile ID (optional, will be fetched from token if not provided)'
+        ),
+        OpenApiParameter(
+            name='force_scraping',
+            type=bool,
+            location=OpenApiParameter.QUERY,
+            required=False,
+            description='Force scraping attempt if API returns limited data (⚠️ WARNING: Risky and may violate ToS)'
+        ),
+        OpenApiParameter(
+            name='Authorization',
+            type=str,
+            location=OpenApiParameter.HEADER,
+            required=True,
+            description='JWT token in format: Bearer <jwt_token>'
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinAnalyticsResponseSerializer,
+            description="LinkedIn analytics fetched successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid access token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Fetch LinkedIn profile analytics including followers, posts, and engagement metrics using stored LinkedIn access token from user profile.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def fetch_linkedin_analytics_api(request):
+    """
+    Fetch LinkedIn profile analytics including:
+    - Total number of followers
+    - Total number of posts
+    - Per post analytics (reactions, comments, reposts, impressions, engagement)
+    
+    Uses the LinkedIn access token stored in the user's profile from OAuth login.
+    
+    Usage:
+    GET /api/linkedin-analytics/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    
+    Query Parameters:
+        linkedin_profile_id (optional): LinkedIn profile ID
+    """
+    
+    # Get LinkedIn access token from authenticated user's profile
+    user = request.user
+    linkedin_access_token = user.linkedin_access_token
+    
+    if not linkedin_access_token:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {"error": "No LinkedIn access token found. Please login with LinkedIn first to connect your account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Check if token is expired
+    if user.linkedin_token_expires_at and user.linkedin_token_expires_at < timezone.now():
+        logger.warning(f"LinkedIn access token expired for user {user.id}")
+        return Response(
+            {"error": "LinkedIn access token has expired. Please login with LinkedIn again to refresh your token."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    # Get optional parameters from query
+    linkedin_profile_id = request.query_params.get('linkedin_profile_id', None)
+    force_scraping = request.query_params.get('force_scraping', 'false').lower() == 'true'
+
+    logger.info(f"Received LinkedIn analytics request for profile: {linkedin_profile_id or 'auto-detect'}, force_scraping: {force_scraping}")
+
+    try:
+        # Import the hybrid function that tries API first, then scraping
+        from tools.ai.linkedin_analytics.linkedin_analytics_service import hybrid_linkedin_analytics
+        
+        # Use hybrid approach: tries API first, then considers scraping
+        analytics_data = hybrid_linkedin_analytics(linkedin_access_token, linkedin_profile_id)
+        
+        # Check if we got an error response (indicating API failed and scraping not recommended)
+        if analytics_data.get('error'):
+            logger.warning(f"LinkedIn analytics returned error: {analytics_data.get('message', 'Unknown error')}")
+            
+            # If user explicitly wants to force scraping despite warnings
+            if force_scraping:
+                logger.warning("🚨 User requested force scraping - attempting despite risks!")
+                from tools.ai.linkedin_analytics.linkedin_analytics_service import scrape_linkedin_analytics
+                try:
+                    scraping_data = scrape_linkedin_analytics(linkedin_access_token)
+                    if scraping_data and not scraping_data.get('error'):
+                        analytics_data = scraping_data
+                        analytics_data['data_source'] = 'scraping_forced'
+                        logger.warning("⚠️ Using scraped data - this may violate LinkedIn ToS!")
+                    else:
+                        logger.error(f"Scraping also failed: {scraping_data.get('error', 'Unknown scraping error')}")
+                        # Fall back to API data if available
+                        if analytics_data.get('api_data'):
+                            analytics_data = analytics_data['api_data']
+                            analytics_data['data_source'] = 'api_limited'
+                        else:
+                            return Response(
+                                {
+                                    "error": "Both API and scraping failed",
+                                    "api_error": analytics_data.get('message', 'API failed'),
+                                    "scraping_error": scraping_data.get('error', 'Scraping failed'),
+                                    "recommendation": "Please check your LinkedIn permissions or try again later"
+                                },
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            )
+                except Exception as scraping_error:
+                    logger.error(f"Scraping attempt failed with exception: {scraping_error}")
+                    # Fall back to API data if available
+                    if analytics_data.get('api_data'):
+                        analytics_data = analytics_data['api_data']
+                        analytics_data['data_source'] = 'api_limited'
+                    else:
+                        return Response(
+                            {
+                                "error": "Both API and scraping failed",
+                                "api_error": analytics_data.get('message', 'API failed'),
+                                "scraping_error": str(scraping_error),
+                                "recommendation": "Please check your LinkedIn permissions or try again later"
+                            },
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        )
+            else:
+                # If API failed but we have some basic data, use it
+                if analytics_data.get('api_data'):
+                    analytics_data = analytics_data['api_data']
+                    analytics_data['data_source'] = 'api_limited'
+                else:
+                    return Response(
+                        {
+                            "error": analytics_data.get('message', 'Failed to fetch LinkedIn analytics data'),
+                            "recommendation": analytics_data.get('recommendation', 'Please check your access token and permissions.'),
+                            "scraping_option": "Add ?force_scraping=true to attempt scraping (⚠️ WARNING: Risky and may violate ToS)"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+        
+        if not analytics_data:
+            logger.error("Failed to fetch LinkedIn analytics data")
+            return Response(
+                {"error": "Failed to fetch LinkedIn analytics data. Please check your access token and permissions."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Save or update analytics data in database
+        linkedin_analytics, created = LinkedinAnalytics.objects.update_or_create(
+            user_id=request.user.id,
+            linkedin_profile_id=analytics_data['linkedin_profile_id'],
+            defaults={
+                'username': request.user.username,
+                'email': request.user.email,
+                'total_followers': analytics_data.get('total_followers', 0),
+                'total_posts': analytics_data.get('total_posts', 0),
+                'posts_analytics': analytics_data.get('posts_analytics', []),
+                'total_reactions': analytics_data.get('total_reactions', 0),
+                'total_comments': analytics_data.get('total_comments', 0),
+                'total_reposts': analytics_data.get('total_reposts', 0),
+                'total_impressions': analytics_data.get('total_impressions', 0),
+                'total_engagement': analytics_data.get('total_engagement', 0),
+                'last_updated': timezone.now(),
+            }
+        )
+
+        action = "updated" if not created else "created"
+        logger.info(f"Successfully {action} LinkedIn analytics for profile {analytics_data['linkedin_profile_id']} with ID: {linkedin_analytics.id}")
+
+        # Prepare response data
+        response_data = {
+            "status": "success",
+            "message": f"LinkedIn analytics {action} successfully!",
+            "linkedin_profile_id": analytics_data['linkedin_profile_id'],
+            "data_source": analytics_data.get('data_source', 'official_api'),
+            "data_quality": analytics_data.get('data_quality', 'unknown'),
+            "available_scopes": analytics_data.get('available_scopes', []),
+            "api_limitations": analytics_data.get('api_limitations', []),
+            "total_followers": analytics_data.get('total_followers', 0),
+            "total_posts": analytics_data.get('total_posts', 0),
+            "posts_analytics": analytics_data.get('posts_analytics', []),
+            "total_reactions": analytics_data.get('total_reactions', 0),
+            "total_comments": analytics_data.get('total_comments', 0),
+            "total_reposts": analytics_data.get('total_reposts', 0),
+            "total_impressions": analytics_data.get('total_impressions', 0),
+            "total_engagement": analytics_data.get('total_engagement', 0),
+            "last_updated": linkedin_analytics.last_updated,
+            "created_at": linkedin_analytics.created_at,
+        }
+        
+        # Add warnings if using scraped data
+        if analytics_data.get('data_source') == 'scraping_forced':
+            response_data['warnings'] = analytics_data.get('warnings', [])
+            response_data['scraping_method'] = analytics_data.get('scraping_method', 'unknown')
+            response_data['scraped_at'] = analytics_data.get('scraped_at')
+
+        # Serialize the successful response
+        response_serializer = LinkedinAnalyticsResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Error serializing LinkedIn analytics response: {response_serializer.errors}")
+            return Response(
+                {"error": "Internal server error during response serialization."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    except ValueError as e:
+        logger.error(f"ValueError in LinkedIn analytics: {str(e)}")
+        return Response(
+            {"error": f"Invalid request: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in LinkedIn analytics: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="Debug information about LinkedIn token storage.",
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - User not authenticated."
+        ),
+    },
+    description="Debug endpoint to check LinkedIn token storage in database.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def debug_linkedin_token(request):
+    """
+    Debug endpoint to check LinkedIn token storage and retrieval.
+    
+    Usage:
+    GET /api/debug-linkedin-token/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    """
+    
+    user = request.user
+    
+    # Get all user data for debugging
+    debug_info = {
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "has_linkedin_access_token": bool(user.linkedin_access_token),
+        "linkedin_access_token_length": len(user.linkedin_access_token) if user.linkedin_access_token else 0,
+        "linkedin_access_token_preview": user.linkedin_access_token[:20] + "..." if user.linkedin_access_token else None,
+        "linkedin_profile_id": user.linkedin_profile_id,
+        "linkedin_token_expires_at": user.linkedin_token_expires_at,
+        "token_expired": user.linkedin_token_expires_at < timezone.now() if user.linkedin_token_expires_at else None,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+    }
+    
+    # Check if fields exist in model
+    debug_info["model_fields"] = {
+        "has_linkedin_access_token_field": hasattr(user, 'linkedin_access_token'),
+        "has_linkedin_profile_id_field": hasattr(user, 'linkedin_profile_id'),
+        "has_linkedin_token_expires_at_field": hasattr(user, 'linkedin_token_expires_at'),
+    }
+    
+    # Check database connection
+    from django.db import connection
+    debug_info["database"] = {
+        "name": connection.settings_dict.get('NAME', 'Unknown'),
+        "connection_alive": connection.is_usable(),
+    }
+    
+    # Try to fetch user again from database to ensure fresh data
+    from authentication.models import User
+    fresh_user = User.objects.get(id=user.id)
+    debug_info["fresh_fetch"] = {
+        "has_linkedin_access_token": bool(fresh_user.linkedin_access_token),
+        "linkedin_access_token_length": len(fresh_user.linkedin_access_token) if fresh_user.linkedin_access_token else 0,
+        "linkedin_access_token_preview": fresh_user.linkedin_access_token[:20] + "..." if fresh_user.linkedin_access_token else None,
+        "linkedin_profile_id": fresh_user.linkedin_profile_id,
+        "linkedin_token_expires_at": fresh_user.linkedin_token_expires_at,
+    }
+    
+    return Response({
+        "status": "success",
+        "message": "Debug information retrieved successfully",
+        "debug_info": debug_info
+    }, status=status.HTTP_200_OK)

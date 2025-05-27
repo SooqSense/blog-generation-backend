@@ -1,4 +1,68 @@
 from rest_framework import serializers
+import re
+from urllib.parse import urlparse
+from drf_spectacular.utils import extend_schema_field
+class KeywordWithCountField(serializers.Field):
+    """
+    Custom field to handle keywords with counts in the format:
+    ["keyword1:3", "keyword2:5", "keyword3"] where numbers indicate usage count
+    """
+    
+    def to_representation(self, value):
+        """Convert internal value to external representation"""
+        if isinstance(value, list):
+            return value
+        return []
+    
+    def to_internal_value(self, data):
+        """Convert external representation to internal value"""
+        # Handle both string and list formats
+        if isinstance(data, str):
+            # Split comma-separated string into list
+            if not data.strip():
+                return []
+            items = [item.strip() for item in data.split(',') if item.strip()]
+        elif isinstance(data, list):
+            items = data
+        else:
+            raise serializers.ValidationError("Keywords must be provided as a string (comma-separated) or a list.")
+        
+        processed_keywords = []
+        for item in items:
+            if not isinstance(item, str):
+                raise serializers.ValidationError("Each keyword must be a string.")
+            
+            # Check if keyword has count format (keyword:count)
+            if ':' in item:
+                parts = item.split(':')
+                if len(parts) == 2:
+                    keyword, count_str = parts
+                    keyword = keyword.strip()
+                    
+                    # Validate count is a positive integer
+                    try:
+                        count = int(count_str.strip())
+                        if count <= 0:
+                            raise serializers.ValidationError(f"Count for keyword '{keyword}' must be a positive integer.")
+                        if count > 50:  # Reasonable upper limit
+                            raise serializers.ValidationError(f"Count for keyword '{keyword}' cannot exceed 50.")
+                        
+                        processed_keywords.append({
+                            'keyword': keyword,
+                            'count': count
+                        })
+                    except ValueError:
+                        raise serializers.ValidationError(f"Invalid count format for keyword '{item}'. Use 'keyword:count' format.")
+                else:
+                    raise serializers.ValidationError(f"Invalid keyword format '{item}'. Use 'keyword:count' or just 'keyword'.")
+            else:
+                # Keyword without count (default count = 1)
+                processed_keywords.append({
+                    'keyword': item.strip(),
+                    'count': 1
+                })
+        
+        return processed_keywords
 
 class LinkedInPostRequestSerializer(serializers.Serializer):
     topic = serializers.CharField(
@@ -33,11 +97,15 @@ class BlogRequestSerializer(serializers.Serializer):
         max_length=255,
         help_text="The main topic for the blog post."
     )
-    keywords = serializers.ListField(
-        child=serializers.CharField(),
+    keywords = KeywordWithCountField(
         required=False,
         default=list,
-        help_text="Optional keywords to guide blog generation."
+        help_text="Optional keywords with usage counts. Accepts string (comma-separated) or array format. String: 'keyword1:3, keyword2:5, keyword3' or Array: ['keyword1:3', 'keyword2:5', 'keyword3'] where numbers indicate how many times to use the keyword."
+    )
+    sample_blog_url = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional URL of a sample blog to analyze and replicate the style (without plagiarism)."
     )
     tone = serializers.ChoiceField(
         choices=["professional", "creative", "casual", "informative", "persuasive"],
@@ -91,13 +159,24 @@ class BlogRequestSerializer(serializers.Serializer):
         help_text="Optional target audience specifications."
     )
     
-    # Add validation to ensure length_min is less than length_max
+    # Add validation to ensure length_min is less than length_max and validate sample_blog_url
     def validate(self, data):
         length_min = data.get('length_min', 800)
         length_max = data.get('length_max', 1500)
         
         if length_min >= length_max:
             raise serializers.ValidationError("length_min must be less than length_max")
+        
+        # Validate sample_blog_url if provided
+        sample_blog_url = data.get('sample_blog_url')
+        if sample_blog_url:
+            parsed_url = urlparse(sample_blog_url)
+            if not parsed_url.scheme or not parsed_url.netloc:
+                raise serializers.ValidationError("sample_blog_url must be a valid URL with http:// or https://")
+            
+            # Check if URL scheme is http or https
+            if parsed_url.scheme not in ['http', 'https']:
+                raise serializers.ValidationError("sample_blog_url must use http:// or https:// protocol")
             
         return data
 
@@ -105,7 +184,9 @@ class BlogResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
     topic = serializers.CharField()
-    keywords = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    keywords = serializers.JSONField(required=False, default=list, help_text="Keywords with their usage counts")
+    sample_blog_url = serializers.URLField(required=False, allow_blank=True, help_text="Sample blog URL used for style analysis")
+    sample_blog_analysis = serializers.CharField(required=False, allow_blank=True, help_text="Analysis of the sample blog style")
     tone = serializers.CharField(required=False)
     length_min = serializers.IntegerField(required=False)
     length_max = serializers.IntegerField(required=False)
@@ -311,4 +392,45 @@ class RegionalInterestResponseSerializer(serializers.Serializer):
     topic = serializers.CharField()
     region = serializers.CharField(allow_blank=True)
     resolution = serializers.CharField()
-    regional_interest = serializers.ListField(child=RegionItemSerializer()) 
+    regional_interest = serializers.ListField(child=RegionItemSerializer())
+
+# Serializers for LinkedIn Analytics API
+class LinkedinAnalyticsRequestSerializer(serializers.Serializer):
+    linkedin_profile_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="LinkedIn profile ID (optional, will be fetched from token if not provided)"
+    )
+
+class PostAnalyticsSerializer(serializers.Serializer):
+    post_id = serializers.CharField()
+    post_content = serializers.CharField(required=False, allow_blank=True)
+    post_date = serializers.DateTimeField(required=False, allow_null=True)
+    reactions = serializers.IntegerField(default=0)
+    comments = serializers.IntegerField(default=0)
+    reposts = serializers.IntegerField(default=0)
+    impressions = serializers.IntegerField(default=0)
+    engagement = serializers.IntegerField(default=0)
+
+class LinkedinAnalyticsResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    linkedin_profile_id = serializers.CharField()
+    
+    # Profile Analytics
+    total_followers = serializers.IntegerField()
+    total_posts = serializers.IntegerField()
+    
+    # Post Analytics
+    posts_analytics = serializers.ListField(child=PostAnalyticsSerializer())
+    
+    # Summary metrics
+    total_reactions = serializers.IntegerField()
+    total_comments = serializers.IntegerField()
+    total_reposts = serializers.IntegerField()
+    total_impressions = serializers.IntegerField()
+    total_engagement = serializers.IntegerField()
+    
+    # Metadata
+    last_updated = serializers.DateTimeField()
+    created_at = serializers.DateTimeField() 

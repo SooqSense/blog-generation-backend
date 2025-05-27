@@ -31,6 +31,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False) # Required for admin access
 
+    # LinkedIn integration fields
+    linkedin_access_token = models.TextField(blank=True, null=True, help_text="LinkedIn OAuth access token")
+    linkedin_profile_id = models.CharField(max_length=100, blank=True, null=True, help_text="LinkedIn profile ID")
+    linkedin_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When LinkedIn token expires")
+
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 

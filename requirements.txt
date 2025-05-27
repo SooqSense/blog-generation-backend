@@ -54,6 +54,9 @@ posthog==3.25.0
 pytest==8.3.5
 pytest-django==4.11.1
 
+# Web scraping (⚠️ Use with caution - may violate ToS)
+selenium==4.15.0
+
 # Utility packages
 anyio==4.9.0
 asgiref==3.8.1

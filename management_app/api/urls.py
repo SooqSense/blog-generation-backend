@@ -18,5 +18,16 @@ urlpatterns = [
         views.fetch_and_save_related_topics,
         name="fetch_and_save_related_topics",
     ),
+    # LinkedIn analytics endpoints
+    path(
+        "linkedin-analytics/",
+        views.fetch_linkedin_analytics_api,
+        name="fetch_linkedin_analytics_api",
+    ),
+    path(
+        "debug-linkedin-token/",
+        views.debug_linkedin_token,
+        name="debug_linkedin_token",
+    ),
     # Removed view endpoints as requested
 ]

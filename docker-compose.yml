@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Development environment
   web:
@@ -13,14 +11,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=postgres
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-    depends_on:
-      - db
+      - DB_HOST=host.docker.internal
     profiles: [development]
 
   # Staging environment
@@ -58,18 +52,18 @@ services:
     restart: always
     profiles: [production]
 
-  # Database for development
-  db:
-    image: postgres:13
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    ports:
-      - "5432:5432"
-    profiles: [development]
+  # Database for development (commented out - using external database)
+  # db:
+  #   image: postgres:13
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   environment:
+  #     - POSTGRES_DB=postgres
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #   ports:
+  #     - "5432:5432"
+  #   profiles: [development]
 
-volumes:
-  postgres_data:
+# volumes:
+  # postgres_data:
