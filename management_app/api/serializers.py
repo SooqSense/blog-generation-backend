@@ -2,10 +2,39 @@ from rest_framework import serializers
 import re
 from urllib.parse import urlparse
 from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.openapi import AutoSchema
+@extend_schema_field({
+    'type': 'array',
+    'items': {
+        'type': 'object',
+        'properties': {
+            'keyword': {
+                'type': 'string',
+                'description': 'The keyword to use in the blog'
+            },
+            'count': {
+                'type': 'integer',
+                'minimum': 1,
+                'maximum': 50,
+                'description': 'How many times to use this keyword'
+            }
+        },
+        'required': ['keyword', 'count']
+    },
+    'example': [
+        {
+            "keyword": "string",
+            "count": 4
+        }
+    ],
+    'description': 'Array of keyword objects. Each object has a keyword string and its usage count (1-50).'
+})
 class KeywordWithCountField(serializers.Field):
     """
-    Custom field to handle keywords with counts in the format:
-    ["keyword1:3", "keyword2:5", "keyword3"] where numbers indicate usage count
+    Custom field to handle keywords with counts in multiple formats:
+    1. List of dictionaries: [{"keyword1": 3}, {"keyword2": 5}, {"keyword3": 1}]
+    2. String format: "keyword1:3, keyword2:5, keyword3" 
+    3. List of strings: ["keyword1:3", "keyword2:5", "keyword3"]
     """
     
     def to_representation(self, value):
@@ -16,52 +45,38 @@ class KeywordWithCountField(serializers.Field):
     
     def to_internal_value(self, data):
         """Convert external representation to internal value"""
-        # Handle both string and list formats
-        if isinstance(data, str):
-            # Split comma-separated string into list
-            if not data.strip():
-                return []
-            items = [item.strip() for item in data.split(',') if item.strip()]
-        elif isinstance(data, list):
-            items = data
-        else:
-            raise serializers.ValidationError("Keywords must be provided as a string (comma-separated) or a list.")
-        
-        processed_keywords = []
-        for item in items:
-            if not isinstance(item, str):
-                raise serializers.ValidationError("Each keyword must be a string.")
+        if not isinstance(data, list):
+            raise serializers.ValidationError("Keywords must be provided as an array of objects.")
             
-            # Check if keyword has count format (keyword:count)
-            if ':' in item:
-                parts = item.split(':')
-                if len(parts) == 2:
-                    keyword, count_str = parts
-                    keyword = keyword.strip()
-                    
-                    # Validate count is a positive integer
-                    try:
-                        count = int(count_str.strip())
-                        if count <= 0:
-                            raise serializers.ValidationError(f"Count for keyword '{keyword}' must be a positive integer.")
-                        if count > 50:  # Reasonable upper limit
-                            raise serializers.ValidationError(f"Count for keyword '{keyword}' cannot exceed 50.")
-                        
-                        processed_keywords.append({
-                            'keyword': keyword,
-                            'count': count
-                        })
-                    except ValueError:
-                        raise serializers.ValidationError(f"Invalid count format for keyword '{item}'. Use 'keyword:count' format.")
-                else:
-                    raise serializers.ValidationError(f"Invalid keyword format '{item}'. Use 'keyword:count' or just 'keyword'.")
-            else:
-                # Keyword without count (default count = 1)
-                processed_keywords.append({
-                    'keyword': item.strip(),
-                    'count': 1
-                })
+        processed_keywords = []
         
+        for item in data:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError("Each item in keywords array must be an object.")
+                
+            if 'keyword' not in item or 'count' not in item:
+                raise serializers.ValidationError("Each keyword object must have 'keyword' and 'count' properties.")
+                
+            keyword = item['keyword']
+            count = item['count']
+            
+            # Validate keyword
+            if not isinstance(keyword, str) or not keyword.strip():
+                raise serializers.ValidationError("Keyword must be a non-empty string.")
+                
+            # Validate count
+            if not isinstance(count, int):
+                raise serializers.ValidationError(f"Count for keyword '{keyword}' must be an integer.")
+            if count <= 0:
+                raise serializers.ValidationError(f"Count for keyword '{keyword}' must be a positive integer.")
+            if count > 50:
+                raise serializers.ValidationError(f"Count for keyword '{keyword}' cannot exceed 50.")
+                
+            processed_keywords.append({
+                'keyword': keyword.strip(),
+                'count': count
+            })
+            
         return processed_keywords
 
 class LinkedInPostRequestSerializer(serializers.Serializer):
@@ -100,7 +115,7 @@ class BlogRequestSerializer(serializers.Serializer):
     keywords = KeywordWithCountField(
         required=False,
         default=list,
-        help_text="Optional keywords with usage counts. Accepts string (comma-separated) or array format. String: 'keyword1:3, keyword2:5, keyword3' or Array: ['keyword1:3', 'keyword2:5', 'keyword3'] where numbers indicate how many times to use the keyword."
+        help_text="Array of keyword objects. Each object must have 'keyword' (string) and 'count' (number 1-50) properties."
     )
     sample_blog_url = serializers.URLField(
         required=False,
@@ -158,6 +173,18 @@ class BlogRequestSerializer(serializers.Serializer):
         default=list,
         help_text="Optional target audience specifications."
     )
+    generate_image_prompts = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Whether to generate image prompts based on blog headings."
+    )
+    max_image_prompts = serializers.IntegerField(
+        required=False,
+        default=5,
+        min_value=1,
+        max_value=15,
+        help_text="Maximum number of image prompts to generate (1-15). Default is 5."
+    )
     
     # Add validation to ensure length_min is less than length_max and validate sample_blog_url
     def validate(self, data):
@@ -196,6 +223,10 @@ class BlogResponseSerializer(serializers.Serializer):
     cta = serializers.BooleanField(required=False)
     conclusion = serializers.BooleanField(required=False)
     target_audience = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    generate_image_prompts = serializers.BooleanField(required=False)
+    max_image_prompts = serializers.IntegerField(required=False)
+    image_prompts = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Generated image prompts based on blog headings")
+    prompts_count = serializers.IntegerField(required=False, default=0, help_text="Number of generated image prompts")
     content = serializers.JSONField(help_text="Structured JSON representation of the blog content")
     raw_content = serializers.CharField(required=False, help_text="Original markdown content of the blog")
 
@@ -236,19 +267,19 @@ class ImageGenerationRequestSerializer(serializers.Serializer):
     prompt = serializers.CharField(
         required=False, 
         allow_blank=True,
-        help_text="The main prompt for image generation. Optional."
+        help_text="The main prompt for professional, cinematic-style image generation. Optional."
     )
     keywords = serializers.CharField(
         required=False, 
         allow_blank=True, 
-        help_text="Optional comma-separated keywords to enhance the image prompt."
+        help_text="Optional comma-separated keywords to enhance the image prompt for better visual relevance."
     )
     count = serializers.IntegerField(
         required=False,
         default=1,
         min_value=1,
         max_value=10,
-        help_text="Number of images to generate (1-10). Default is 1."
+        help_text="Number of professional images to generate (1-10). Default is 1."
     )
 
     # Add validation to ensure at least one field is provided
@@ -271,10 +302,14 @@ class ImageGenerationResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     prompt_used = serializers.CharField()
     count = serializers.IntegerField()
-    image_type = serializers.CharField()
+    image_style = serializers.CharField(help_text="Style of generated images (e.g., professional_cinematic)")
+    generation_method = serializers.CharField(help_text="Method used for generation (e.g., sora_style)")
     images = serializers.ListField(child=GeneratedImageSerializer())
     total_generated = serializers.IntegerField()
     failed_generations = serializers.IntegerField()
+    database_record_id = serializers.IntegerField(help_text="Database record ID for the image generation session")
+    stored_image_urls = serializers.ListField(child=serializers.CharField(), help_text="All image URLs stored in database")
+    stored_images_count = serializers.IntegerField(help_text="Number of images stored in database")
 
 # Serializers for Related Topics API
 class RelatedTopicsRequestSerializer(serializers.Serializer):
