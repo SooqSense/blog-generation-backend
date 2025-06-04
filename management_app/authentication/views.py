@@ -336,6 +336,15 @@ class LinkedInLoginCallbackView(APIView):
             access_token = token_json.get('access_token')
             expires_in = token_json.get('expires_in', 5184000)  # Default to 60 days
             
+            # Extract the granted scopes from the token response
+            # LinkedIn returns the granted scopes in the token response
+            granted_scopes = token_json.get('scope', 'openid profile email')  # Default scopes if not provided
+            
+            print(f"🔍 TOKEN RESPONSE DEBUG:")
+            print(f"   Full token response: {token_json}")
+            print(f"   Granted scopes: {granted_scopes}")
+            print(f"   Access token: {access_token[:20]}..." if access_token else "No access token")
+            
             # Calculate token expiration time
             token_expires_at = timezone.now() + timedelta(seconds=expires_in)
             
@@ -404,9 +413,10 @@ class LinkedInLoginCallbackView(APIView):
                 user.linkedin_access_token = access_token
                 user.linkedin_profile_id = linkedin_id
                 user.linkedin_token_expires_at = token_expires_at
+                user.linkedin_scopes = granted_scopes
                 
                 # Force save with update_fields to ensure the fields are updated
-                user.save(update_fields=['linkedin_access_token', 'linkedin_profile_id', 'linkedin_token_expires_at'])
+                user.save(update_fields=['linkedin_access_token', 'linkedin_profile_id', 'linkedin_token_expires_at', 'linkedin_scopes'])
                 print(f"✅ User updated successfully")
                 
             except User.DoesNotExist:
@@ -421,13 +431,14 @@ class LinkedInLoginCallbackView(APIView):
                     # Store LinkedIn token info
                     linkedin_access_token=access_token,
                     linkedin_profile_id=linkedin_id,
-                    linkedin_token_expires_at=token_expires_at
+                    linkedin_token_expires_at=token_expires_at,
+                    linkedin_scopes=granted_scopes
                 )
                 print(f"✅ Created new user with ID: {user.id}")
             
             # Ensure the data is committed to database
             if user:
-                user.save(update_fields=['linkedin_access_token', 'linkedin_profile_id', 'linkedin_token_expires_at'])
+                user.save(update_fields=['linkedin_access_token', 'linkedin_profile_id', 'linkedin_token_expires_at', 'linkedin_scopes'])
                 print(f"🔄 Final save completed for user {user.id}")
             
             # Verify the token was saved
@@ -438,6 +449,7 @@ class LinkedInLoginCallbackView(APIView):
             print(f"   Token in DB: {user.linkedin_access_token[:20] + '...' if user.linkedin_access_token else '❌ NOT SAVED'}")
             print(f"   Profile ID in DB: {user.linkedin_profile_id or '❌ NOT SAVED'}")
             print(f"   Expires at in DB: {user.linkedin_token_expires_at or '❌ NOT SAVED'}")
+            print(f"   Scopes in DB: {user.linkedin_scopes or '❌ NOT SAVED'}")
             
             if not user.linkedin_access_token:
                 print("🚨 ERROR: LinkedIn token was not saved to database!")
@@ -445,6 +457,7 @@ class LinkedInLoginCallbackView(APIView):
                 user.linkedin_access_token = access_token
                 user.linkedin_profile_id = linkedin_id
                 user.linkedin_token_expires_at = token_expires_at
+                user.linkedin_scopes = granted_scopes
                 user.save()  # Full save without update_fields
                 user.refresh_from_db()
                 print(f"🔄 Retry save result: {user.linkedin_access_token[:20] + '...' if user.linkedin_access_token else '❌ STILL NOT SAVED'}")
@@ -455,8 +468,8 @@ class LinkedInLoginCallbackView(APIView):
                     from django.db import connection
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            "UPDATE users SET linkedin_access_token = %s, linkedin_profile_id = %s, linkedin_token_expires_at = %s WHERE id = %s",
-                            [access_token, linkedin_id, token_expires_at, user.id]
+                            "UPDATE users SET linkedin_access_token = %s, linkedin_profile_id = %s, linkedin_token_expires_at = %s, linkedin_scopes = %s WHERE id = %s",
+                            [access_token, linkedin_id, token_expires_at, granted_scopes, user.id]
                         )
                         print(f"🔄 Raw SQL executed, affected rows: {cursor.rowcount}")
                     

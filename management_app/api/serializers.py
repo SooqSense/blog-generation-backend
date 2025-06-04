@@ -311,13 +311,11 @@ class ImageGenerationResponseSerializer(serializers.Serializer):
     stored_image_urls = serializers.ListField(child=serializers.CharField(), help_text="All image URLs stored in database")
     stored_images_count = serializers.IntegerField(help_text="Number of images stored in database")
 
-# Serializers for Related Topics API
+# Serializers for Related Topics API (Updated for Trending Queries)
 class RelatedTopicsRequestSerializer(serializers.Serializer):
-    keywords = serializers.ListField(
-        child=serializers.CharField(max_length=255),
-        help_text="A list of keywords to find related topics for.",
-        min_length=1,
-        max_length=10 # Optional: limit the number of keywords per request
+    topic = serializers.CharField(
+        max_length=255,
+        help_text="The main topic to find trending queries for."
     )
     region = serializers.CharField(
         required=False,
@@ -328,29 +326,26 @@ class RelatedTopicsRequestSerializer(serializers.Serializer):
     )
     limit = serializers.IntegerField(
         required=False,
-        default=10,
-        min_value=1,
-        max_value=25, # Pytrends usually returns around 20-25 max for each category
-        help_text="Maximum number of topics to return per category for each keyword. Default is 10."
+        default=30,
+        min_value=10,
+        max_value=50,
+        help_text="Maximum number of trending queries to return. Default is 30."
     )
 
-class TopicItemSerializer(serializers.Serializer):
-    title = serializers.CharField()
-    type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+class QueryItemSerializer(serializers.Serializer):
+    query = serializers.CharField()
     value = serializers.FloatField()
-    # trend_type is removed as it's now part of the structure
-
-class ProcessedKeywordTopicsSerializer(serializers.Serializer):
-    keyword = serializers.CharField()
-    id = serializers.IntegerField(required=False, allow_null=True) # Database ID after saving
-    rising_topics = serializers.ListField(child=TopicItemSerializer())
-    top_topics = serializers.ListField(child=TopicItemSerializer())
-    error = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    trend_type = serializers.CharField()
 
 class RelatedTopicsResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
-    processed_keywords = serializers.ListField(child=ProcessedKeywordTopicsSerializer())
+    topic = serializers.CharField()
+    region = serializers.CharField(allow_blank=True)
+    rising_queries = serializers.ListField(child=QueryItemSerializer())
+    top_queries = serializers.ListField(child=QueryItemSerializer())
+    total_queries = serializers.IntegerField()
+    database_record_id = serializers.IntegerField(required=False, allow_null=True)
 
 # Serializers for Related Queries API (Added for completeness)
 class RelatedQueriesRequestSerializer(serializers.Serializer):
@@ -371,11 +366,6 @@ class RelatedQueriesRequestSerializer(serializers.Serializer):
         max_value=50,
         help_text="Maximum number of queries to return. Default is 10."
     )
-
-class QueryItemSerializer(serializers.Serializer):
-    query = serializers.CharField()
-    value = serializers.FloatField()
-    trend_type = serializers.CharField()
 
 class RelatedQueriesResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
@@ -445,13 +435,6 @@ class RegionalInterestResponseSerializer(serializers.Serializer):
     regional_interest = serializers.ListField(child=RegionItemSerializer())
 
 # Serializers for LinkedIn Analytics API
-class LinkedinAnalyticsRequestSerializer(serializers.Serializer):
-    linkedin_profile_id = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="LinkedIn profile ID (optional, will be fetched from token if not provided)"
-    )
-
 class PostAnalyticsSerializer(serializers.Serializer):
     post_id = serializers.CharField()
     post_content = serializers.CharField(required=False, allow_blank=True)
@@ -466,6 +449,19 @@ class LinkedinAnalyticsResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
     linkedin_profile_id = serializers.CharField()
+    
+    # Data source and quality information
+    data_source = serializers.CharField(required=False, default='official_api', help_text="Source of the data (e.g., official_api)")
+    data_quality = serializers.CharField(required=False, default='enhanced', help_text="Quality of the data (enhanced, basic, error)")
+    available_scopes = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Available LinkedIn API scopes")
+    api_limitations = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Any API limitations encountered")
+    
+    # Re-authentication guidance
+    needs_reauth = serializers.BooleanField(required=False, help_text="Whether user needs to re-authenticate for better permissions")
+    reauth_reason = serializers.CharField(required=False, help_text="Reason why re-authentication is needed")
+    reauth_instructions = serializers.DictField(required=False, help_text="Step-by-step instructions for re-authentication")
+    current_limitations = serializers.ListField(child=serializers.CharField(), required=False, help_text="Current API limitations")
+    scope_status = serializers.DictField(required=False, help_text="Current scope detection status and data quality")
     
     # Profile Analytics
     total_followers = serializers.IntegerField()
@@ -516,4 +512,74 @@ class DailyAINewsResponseSerializer(serializers.Serializer):
     news_date = serializers.DateField()
     articles_count = serializers.IntegerField()
     content = serializers.JSONField(help_text="Structured JSON representation of the news content")
-    raw_content = serializers.CharField(help_text="Original markdown content of the news") 
+    raw_content = serializers.CharField(help_text="Original markdown content of the news")
+
+# Serializers for LinkedIn Posting API
+class LinkedinPostingRequestSerializer(serializers.Serializer):
+    content = serializers.CharField(
+        help_text="The content to post on LinkedIn. Can be text, with optional formatting."
+    )
+    image_urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        default=list,
+        max_length=9,  # LinkedIn supports up to 9 images per post
+        help_text="Optional list of S3 image URLs to include with the post. Maximum 9 images. URLs should be publicly accessible."
+    )
+    
+    def validate_content(self, value):
+        """Validate the content field"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Content cannot be empty.")
+        
+        # LinkedIn has a character limit of around 3000 characters for posts
+        if len(value) > 3000:
+            raise serializers.ValidationError("Content exceeds LinkedIn's character limit of 3000 characters.")
+            
+        return value.strip()
+    
+    def validate_image_urls(self, value):
+        """Validate the image URLs"""
+        if not value:
+            return value
+            
+        # Check maximum number of images
+        if len(value) > 9:
+            raise serializers.ValidationError("LinkedIn supports a maximum of 9 images per post.")
+        
+        # Validate each URL
+        for url in value:
+            if not url.strip():
+                raise serializers.ValidationError("Image URLs cannot be empty.")
+            
+            # Basic validation for S3 URLs (you can make this more specific)
+            if not any(domain in url.lower() for domain in ['amazonaws.com', 's3.', 'cloudfront.net']):
+                raise serializers.ValidationError(f"Image URL should be from a supported cloud storage service: {url}")
+        
+        return [url.strip() for url in value]
+
+class LinkedinPostingResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    profile_id = serializers.CharField(help_text="LinkedIn profile ID")
+    username = serializers.CharField(help_text="LinkedIn profile username")
+    content = serializers.CharField(help_text="The content that was posted")
+    post_date = serializers.DateTimeField(help_text="When the post was made")
+    linkedin_post_id = serializers.CharField(required=False, allow_null=True, help_text="LinkedIn's post ID if available")
+    database_record_id = serializers.IntegerField(help_text="Database record ID for the posted content")
+    image_urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        default=list,
+        help_text="List of image URLs that were posted with the content"
+    )
+    images_count = serializers.IntegerField(
+        required=False,
+        default=0,
+        help_text="Number of images posted with the content"
+    )
+    post_type = serializers.CharField(
+        required=False,
+        default="text",
+        help_text="Type of post: 'text' for text-only, 'image' for posts with images"
+    ) 

@@ -12,6 +12,24 @@ urlpatterns = [
         views.generate_linkedin_post_api,
         name="generate_linkedin_post_api",
     ),
+    # LinkedIn posting endpoint
+    path(
+        "post-on-linkedin/",
+        views.post_on_linkedin_api,
+        name="post_on_linkedin_api",
+    ),
+    # LinkedIn token validation endpoint
+    path(
+        "validate-linkedin-token/",
+        views.validate_linkedin_token_api,
+        name="validate_linkedin_token_api",
+    ),
+    # LinkedIn re-authentication URL endpoint
+    path(
+        "linkedin-reauth-url/",
+        views.linkedin_reauth_url_api,
+        name="linkedin_reauth_url_api",
+    ),
     # Trending topics endpoint - simplified to only accept keyword
     path(
         "fetch-related-topics/",

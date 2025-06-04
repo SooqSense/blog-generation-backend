@@ -44,6 +44,25 @@ class LinkedinPost(models.Model):
         db_table = 'linkedin_posts'
 
 
+class LinkedinPostingContent(models.Model):
+    user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')  # User's app username
+    email = models.EmailField(default='')
+    linkedin_profile_id = models.CharField(max_length=255)  # LinkedIn profile ID
+    linkedin_username = models.CharField(max_length=150, default='')  # LinkedIn profile username
+    content = models.TextField()  # The content that was posted
+    post_date = models.DateTimeField(default=timezone.now)  # When the post was made
+    linkedin_post_id = models.CharField(max_length=255, blank=True, null=True)  # LinkedIn's post ID (if available)
+    post_status = models.CharField(max_length=50, default='success')  # success, failed, pending
+    image_urls = models.JSONField(default=list, blank=True)  # Store image URLs that were posted
+    images_count = models.IntegerField(default=0)  # Number of images posted
+    post_type = models.CharField(max_length=20, default='text')  # 'text' or 'image'
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'linkedin_posting_content'
+
+
 class ImageGeneration(models.Model):
     user_id = models.IntegerField()
     username = models.CharField(max_length=150, default='')

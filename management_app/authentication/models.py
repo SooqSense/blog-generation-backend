@@ -35,6 +35,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     linkedin_access_token = models.TextField(blank=True, null=True, help_text="LinkedIn OAuth access token")
     linkedin_profile_id = models.CharField(max_length=100, blank=True, null=True, help_text="LinkedIn profile ID")
     linkedin_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When LinkedIn token expires")
+    linkedin_scopes = models.TextField(blank=True, null=True, help_text="LinkedIn OAuth granted scopes (space-separated)")
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
