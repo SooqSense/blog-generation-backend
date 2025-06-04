@@ -163,7 +163,16 @@ def generate_image_with_sora(prompt, size="1024x1024", output_dir="blog_images",
             
             # Download the image
             image_url = response.data[0].url
+            if not image_url:
+                print(f"Error: No image URL returned from OpenAI API for image {image_number}")
+                failed_generations += 1
+                continue
+                
             image_response = requests.get(image_url)
+            if image_response.status_code != 200:
+                print(f"Error: Failed to download image {image_number} from URL: {image_url}")
+                failed_generations += 1
+                continue
             
             # Prepare S3 upload
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -178,8 +187,9 @@ def generate_image_with_sora(prompt, size="1024x1024", output_dir="blog_images",
             
             final_image_url = None
             
-            if not aws_access_key or not aws_secret_key:
+            if not aws_access_key or not aws_secret_key or not bucket_name:
                 # Fallback to local storage if no S3 credentials
+                print(f"S3 credentials not found, saving image {image_number} locally...")
                 if not os.path.exists(output_dir):
                     os.makedirs(output_dir)
                 filepath = os.path.join(output_dir, filename)
@@ -188,25 +198,45 @@ def generate_image_with_sora(prompt, size="1024x1024", output_dir="blog_images",
                 final_image_url = filepath
                 print(f"Image saved locally: {filepath}")
             else:
-                # Initialize S3 client
-                s3_client = boto3.client(
-                    's3',
-                    region_name=region,
-                    aws_access_key_id=aws_access_key,
-                    aws_secret_access_key=aws_secret_key
-                )
-                
-                # Upload to S3
-                s3_client.upload_fileobj(
-                    io.BytesIO(image_response.content),
-                    bucket_name,
-                    s3_key,
-                    ExtraArgs={'ContentType': 'image/png'}
-                )
-                
-                # Generate S3 URL
-                final_image_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{s3_key}"
-                print(f"Image uploaded to S3: {final_image_url}")
+                try:
+                    # Initialize S3 client
+                    s3_client = boto3.client(
+                        's3',
+                        region_name=region or 'us-east-1',  # Default region if not specified
+                        aws_access_key_id=aws_access_key,
+                        aws_secret_access_key=aws_secret_key
+                    )
+                    
+                    # Upload to S3
+                    s3_client.upload_fileobj(
+                        io.BytesIO(image_response.content),
+                        bucket_name,
+                        s3_key,
+                        ExtraArgs={'ContentType': 'image/png'}
+                    )
+                    
+                    # Generate S3 URL
+                    region_part = f".{region}" if region and region != 'us-east-1' else ""
+                    final_image_url = f"https://{bucket_name}.s3{region_part}.amazonaws.com/{s3_key}"
+                    print(f"Image uploaded to S3: {final_image_url}")
+                    
+                except Exception as s3_error:
+                    print(f"Error uploading to S3 for image {image_number}: {str(s3_error)}")
+                    print(f"Falling back to local storage for image {image_number}...")
+                    # Fallback to local storage
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    filepath = os.path.join(output_dir, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(image_response.content)
+                    final_image_url = filepath
+                    print(f"Image saved locally: {filepath}")
+            
+            # Ensure we have a valid final_image_url
+            if not final_image_url:
+                print(f"Error: No valid image URL generated for image {image_number}")
+                failed_generations += 1
+                continue
             
             # Add successful generation to results
             images_data.append({
