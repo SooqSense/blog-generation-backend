@@ -1,0 +1,42 @@
+# Generated manually for schedule_posts table
+
+from django.db import migrations, models
+import django.utils.timezone
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('api', '0005_add_image_fields_to_linkedin_posting'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='SchedulePosts',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('user_id', models.IntegerField()),
+                ('username', models.CharField(default='', max_length=150)),
+                ('email', models.EmailField(default='', max_length=254)),
+                ('linkedin_profile_id', models.CharField(max_length=255)),
+                ('linkedin_username', models.CharField(default='', max_length=150)),
+                ('content', models.TextField()),
+                ('image_urls', models.JSONField(blank=True, default=list)),
+                ('images_count', models.IntegerField(default=0)),
+                ('post_type', models.CharField(default='text', max_length=20)),
+                ('scheduled_datetime', models.DateTimeField()),
+                ('user_timezone', models.CharField(default='UTC', max_length=50)),
+                ('status', models.CharField(choices=[('scheduled', 'Scheduled'), ('posted', 'Posted'), ('failed', 'Failed'), ('cancelled', 'Cancelled')], default='scheduled', max_length=20)),
+                ('celery_task_id', models.CharField(blank=True, max_length=255, null=True)),
+                ('linkedin_post_id', models.CharField(blank=True, max_length=255, null=True)),
+                ('posted_at', models.DateTimeField(blank=True, null=True)),
+                ('error_message', models.TextField(blank=True, null=True)),
+                ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+            ],
+            options={
+                'db_table': 'schedule_posts',
+                'ordering': ['-scheduled_datetime'],
+            },
+        ),
+    ] 

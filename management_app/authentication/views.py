@@ -82,13 +82,35 @@ class LoginView(APIView):
             # Get validated data from serializer
             validated_data = serializer.validated_data
             
-            # Create custom response
+            # Get the user from the request data to save tokens
+            email = request.data.get('email')
+            user = User.objects.get(email=email)
+            
+            # Save JWT tokens to database
+            access_token = validated_data['access']
+            refresh_token = validated_data['refresh']
+            
+            # Calculate token expiration (JWT access tokens typically expire in 5 minutes by default)
+            from rest_framework_simplejwt.settings import api_settings
+            access_token_lifetime = api_settings.ACCESS_TOKEN_LIFETIME
+            token_expires_at = timezone.now() + access_token_lifetime
+            
+            # Update user with tokens
+            user.simple_login_access_token = access_token
+            user.simple_login_refresh_token = refresh_token
+            user.simple_login_token_expires_at = token_expires_at
+            user.save(update_fields=['simple_login_access_token', 'simple_login_refresh_token', 'simple_login_token_expires_at'])
+            
+            # Refresh user data to get updated token fields
+            user.refresh_from_db()
+            
+            # Create custom response with updated user data
             response_data = {
                 'success': True,
                 'message': 'Login successful',
-                'refresh': validated_data['refresh'],
-                'access': validated_data['access'],
-                'user': validated_data['user']
+                'refresh': refresh_token,
+                'access': access_token,
+                'user': UserSerializer(user).data  # Use fresh user data with tokens
             }
             
             return Response(response_data, status=status.HTTP_200_OK)
@@ -186,6 +208,8 @@ class GoogleLoginCallbackView(APIView):
             
             # Get or create user
             email = user_info.get('email')
+            google_profile_id = user_info.get('sub')  # Google's user ID
+            
             if not email:
                 return Response({
                     'success': False,
@@ -208,13 +232,27 @@ class GoogleLoginCallbackView(APIView):
             
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
+            jwt_access_token = str(refresh.access_token)
+            jwt_refresh_token = str(refresh)
+            
+            # Calculate JWT token expiration
+            from rest_framework_simplejwt.settings import api_settings
+            access_token_lifetime = api_settings.ACCESS_TOKEN_LIFETIME
+            jwt_token_expires_at = timezone.now() + access_token_lifetime
+            
+            # Save JWT tokens and profile ID to database in Google-specific fields
+            user.google_login_access_token = jwt_access_token
+            user.google_login_refresh_token = jwt_refresh_token
+            user.google_login_token_expires_at = jwt_token_expires_at
+            user.google_profile_id = google_profile_id
+            user.save(update_fields=['google_login_access_token', 'google_login_refresh_token', 'google_login_token_expires_at', 'google_profile_id'])
             
             # Return tokens
             response_data = {
                 'success': True,
                 'message': 'Google login successful',
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
+                'refresh': jwt_refresh_token,
+                'access': jwt_access_token,
                 'user': UserSerializer(user).data
             }
             
@@ -224,7 +262,7 @@ class GoogleLoginCallbackView(APIView):
                 
             # For browser flow, redirect to frontend with tokens
             frontend_url = os.environ.get('FRONTEND_URL')
-            redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
+            redirect_url = f"{frontend_url}/login/success?access={jwt_access_token}&refresh={jwt_refresh_token}"
             return redirect(redirect_url)
             
         except Exception as e:
