@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.postgres.fields import ArrayField
 from django.utils import timezone
 
 
@@ -123,6 +124,7 @@ class SchedulePosts(models.Model):
     STATUS_CHOICES = [
         ('scheduled', 'Scheduled'),
         ('posted', 'Posted'),
+        ('partially_posted', 'Partially Posted'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
     ]
@@ -134,7 +136,7 @@ class SchedulePosts(models.Model):
     linkedin_username = models.CharField(max_length=150, default='')  # LinkedIn profile username
     
     # Post content
-    content = models.TextField()  # The LinkedIn post content
+    content = ArrayField(models.TextField(), default=list)  # The LinkedIn post content as array
     image_urls = models.JSONField(default=list, blank=True)  # Optional images to post
     images_count = models.IntegerField(default=0)  # Number of images
     post_type = models.CharField(max_length=20, default='text')  # 'text' or 'image'

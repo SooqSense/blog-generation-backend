@@ -25,6 +25,9 @@ services:
     environment:
       - DB_HOST=host.docker.internal
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
     command: >
@@ -50,6 +53,9 @@ services:
     environment:
       - DB_HOST=host.docker.internal
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web
@@ -76,6 +82,9 @@ services:
     environment:
       - DB_HOST=host.docker.internal
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web
@@ -83,7 +92,7 @@ services:
       sh -c "
         echo 'Starting Celery beat scheduler...' &&
         cd management_app &&
-        celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+        celery -A config beat --loglevel=info
       "
     profiles: [development]
 
@@ -99,6 +108,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
     deploy:
@@ -117,6 +127,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-staging
@@ -133,10 +144,11 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-staging
-    command: celery -A management_app.config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A management_app.config beat --loglevel=info
     profiles: [staging]
 
   # Production environment
@@ -151,6 +163,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
     deploy:
@@ -172,6 +185,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-production
@@ -195,10 +209,11 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-production
-    command: celery -A management_app.config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A management_app.config beat --loglevel=info
     deploy:
       resources:
         limits:
