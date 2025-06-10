@@ -26,6 +26,7 @@ from .models import (
     ImageGeneration,
     TrendingTopics,
     LinkedinAnalytics,
+    SchedulePosts,
 )
 
 # Set up logging
@@ -66,6 +67,10 @@ from .serializers import (
     DailyAINewsResponseSerializer,
     LinkedinPostingRequestSerializer,
     LinkedinPostingResponseSerializer,
+    ScheduleLinkedinPostRequestSerializer,
+    ScheduleLinkedinPostResponseSerializer,
+    ScheduledPostsListResponseSerializer,
+    CancelScheduledPostResponseSerializer,
 )
 
 def convert_markdown_to_json(markdown_content):
@@ -2234,6 +2239,331 @@ def validate_linkedin_token_api(request):
                     "Try again in a few moments",
                     "Contact support if the issue persists"
                 ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# Schedule LinkedIn Post Endpoints
+
+@extend_schema(
+    request=ScheduleLinkedinPostRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=ScheduleLinkedinPostResponseSerializer,
+            description="LinkedIn post scheduled successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input or missing LinkedIn access token."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid or expired LinkedIn access token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Schedule a LinkedIn post to be published at a specific date and time. Requires LinkedIn authentication and validates the scheduled time is in the future.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schedule_linkedin_post_api(request):
+    """
+    Schedule a LinkedIn post to be published at a specific date and time.
+    
+    This endpoint:
+    1. Validates the user has LinkedIn authentication
+    2. Validates the scheduled time is in the future
+    3. Creates a scheduled post record in the database
+    4. Schedules a Celery task to post at the specified time
+    
+    Body Parameters:
+    - content: The LinkedIn post content (max 3000 characters)
+    - scheduled_date: Date to publish (YYYY-MM-DD format)
+    - scheduled_time: Time to publish (HH:MM:SS format)
+    - timezone: Timezone for the scheduled time (optional, default: UTC)
+    - image_urls: Optional list of image URLs to include
+    
+    Returns:
+    - schedule_id: Unique ID for the scheduled post
+    - scheduled_datetime: When the post will be published
+    - celery_task_id: Task ID for tracking/cancellation
+    """
+    
+    # Get the authenticated user
+    user = request.user
+    
+    # Check if user has LinkedIn access token
+    linkedin_access_token = getattr(user, 'linkedin_access_token', None)
+    linkedin_profile_id = getattr(user, 'linkedin_profile_id', None)
+    
+    if not linkedin_access_token or not linkedin_profile_id:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {
+                "error": "LinkedIn authentication required.",
+                "details": "User has not connected their LinkedIn account.",
+                "solution": "Please login with LinkedIn first to connect your account."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Validate request data
+    serializer = ScheduleLinkedinPostRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            {"error": "Invalid input data.", "details": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    validated_data = serializer.validated_data
+    
+    try:
+        # Get LinkedIn username (optional, for display purposes)
+        linkedin_username = ""
+        try:
+            profile_url = "https://api.linkedin.com/v2/userinfo"
+            headers = {
+                'Authorization': f'Bearer {linkedin_access_token}',
+                'Content-Type': 'application/json',
+            }
+            profile_response = requests.get(profile_url, headers=headers)
+            if profile_response.status_code == 200:
+                profile_data = profile_response.json()
+                linkedin_username = profile_data.get('name', '')
+        except:
+            pass  # Continue without username if API call fails
+        
+        # Determine post type
+        post_type = 'image' if validated_data.get('image_urls') else 'text'
+        images_count = len(validated_data.get('image_urls', []))
+        
+        # Create scheduled post record
+        scheduled_post = SchedulePosts.objects.create(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            linkedin_profile_id=linkedin_profile_id,
+            linkedin_username=linkedin_username,
+            content=validated_data['content'],
+            image_urls=validated_data.get('image_urls', []),
+            images_count=images_count,
+            post_type=post_type,
+            scheduled_datetime=validated_data['scheduled_datetime'],
+            user_timezone=validated_data.get('timezone', 'UTC'),
+            status='scheduled'
+        )
+        
+        # Schedule Celery task
+        from tools.ai.schedule_linkedin_post.tasks import schedule_linkedin_post_task
+        from celery import current_app
+        
+        # Calculate ETA (when to execute the task)
+        eta = validated_data['scheduled_datetime']
+        
+        # Schedule the task
+        task = schedule_linkedin_post_task.apply_async(
+            args=[scheduled_post.id],
+            eta=eta
+        )
+        
+        # Save the Celery task ID for potential cancellation
+        scheduled_post.celery_task_id = task.id
+        scheduled_post.save()
+        
+        logger.info(f"Scheduled LinkedIn post {scheduled_post.id} for user {user.id} at {eta}")
+        
+        # Prepare response
+        response_data = {
+            "status": "success",
+            "message": f"LinkedIn post scheduled successfully for {validated_data['scheduled_datetime'].strftime('%Y-%m-%d %H:%M:%S %Z')}",
+            "schedule_id": scheduled_post.id,
+            "content": scheduled_post.content,
+            "scheduled_datetime": scheduled_post.scheduled_datetime,
+            "timezone": scheduled_post.user_timezone,
+            "linkedin_profile_id": scheduled_post.linkedin_profile_id,
+            "linkedin_username": scheduled_post.linkedin_username,
+            "post_type": scheduled_post.post_type,
+            "images_count": scheduled_post.images_count,
+            "celery_task_id": scheduled_post.celery_task_id,
+            "created_at": scheduled_post.created_at
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error scheduling LinkedIn post for user {user.id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {
+                "error": "Failed to schedule LinkedIn post.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=ScheduledPostsListResponseSerializer,
+            description="Scheduled posts retrieved successfully.",
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get all scheduled LinkedIn posts for the authenticated user, including their status and details.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_scheduled_posts_api(request):
+    """
+    Get all scheduled LinkedIn posts for the authenticated user.
+    
+    Returns a list of all scheduled posts with their current status:
+    - scheduled: Waiting to be posted
+    - posted: Successfully posted
+    - failed: Failed to post
+    - cancelled: Cancelled by user
+    """
+    
+    user = request.user
+    
+    try:
+        # Get all scheduled posts for the user
+        scheduled_posts = SchedulePosts.objects.filter(user_id=user.id).order_by('-scheduled_datetime')
+        
+        # Prepare response data
+        posts_data = []
+        for post in scheduled_posts:
+            posts_data.append({
+                "schedule_id": post.id,
+                "content": post.content,
+                "scheduled_datetime": post.scheduled_datetime,
+                "timezone": post.user_timezone,
+                "status": post.status,
+                "linkedin_profile_id": post.linkedin_profile_id,
+                "linkedin_username": post.linkedin_username,
+                "post_type": post.post_type,
+                "images_count": post.images_count,
+                "created_at": post.created_at,
+                "posted_at": post.posted_at,
+                "linkedin_post_id": post.linkedin_post_id,
+                "error_message": post.error_message
+            })
+        
+        response_data = {
+            "status": "success",
+            "message": f"Retrieved {len(posts_data)} scheduled posts",
+            "total_scheduled": len(posts_data),
+            "scheduled_posts": posts_data
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving scheduled posts for user {user.id}: {str(e)}")
+        return Response(
+            {
+                "error": "Failed to retrieve scheduled posts.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=CancelScheduledPostResponseSerializer,
+            description="Scheduled post cancelled successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid schedule ID or post cannot be cancelled."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Not Found - Scheduled post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Cancel a scheduled LinkedIn post. Only posts with 'scheduled' status can be cancelled.",
+)
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def cancel_scheduled_post_api(request, schedule_id):
+    """
+    Cancel a scheduled LinkedIn post.
+    
+    Path Parameters:
+    - schedule_id: The ID of the scheduled post to cancel
+    
+    Only posts with 'scheduled' status can be cancelled.
+    This will also revoke the associated Celery task.
+    """
+    
+    user = request.user
+    
+    try:
+        # Get the scheduled post
+        try:
+            scheduled_post = SchedulePosts.objects.get(id=schedule_id, user_id=user.id)
+        except SchedulePosts.DoesNotExist:
+            return Response(
+                {
+                    "error": "Scheduled post not found.",
+                    "details": f"No scheduled post found with ID {schedule_id} for this user."
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        
+        # Check if post can be cancelled
+        if scheduled_post.status != 'scheduled':
+            return Response(
+                {
+                    "error": "Post cannot be cancelled.",
+                    "details": f"Post status is '{scheduled_post.status}'. Only 'scheduled' posts can be cancelled.",
+                    "current_status": scheduled_post.status
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        previous_status = scheduled_post.status
+        
+        # Cancel the Celery task if it exists
+        if scheduled_post.celery_task_id:
+            try:
+                from celery import current_app
+                current_app.control.revoke(scheduled_post.celery_task_id, terminate=True)
+                logger.info(f"Revoked Celery task {scheduled_post.celery_task_id} for scheduled post {schedule_id}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Celery task {scheduled_post.celery_task_id}: {str(e)}")
+        
+        # Update post status
+        scheduled_post.status = 'cancelled'
+        scheduled_post.save()
+        
+        logger.info(f"Cancelled scheduled post {schedule_id} for user {user.id}")
+        
+        response_data = {
+            "status": "success",
+            "message": f"Scheduled post {schedule_id} cancelled successfully",
+            "schedule_id": scheduled_post.id,
+            "previous_status": previous_status,
+            "current_status": scheduled_post.status
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error cancelling scheduled post {schedule_id} for user {user.id}: {str(e)}")
+        return Response(
+            {
+                "error": "Failed to cancel scheduled post.",
+                "details": str(e)
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )

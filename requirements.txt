@@ -37,6 +37,12 @@ serpapi
 python-dotenv
 social-auth-app-django
 
+# Celery for background tasks
+celery
+redis
+django-celery-beat
+kombu
+
 # Data processing
 pandas
 

@@ -582,4 +582,106 @@ class LinkedinPostingResponseSerializer(serializers.Serializer):
         required=False,
         default="text",
         help_text="Type of post: 'text' for text-only, 'image' for posts with images"
-    ) 
+    )
+
+
+# Serializers for Schedule LinkedIn Post API
+class ScheduleLinkedinPostRequestSerializer(serializers.Serializer):
+    content = serializers.CharField(
+        max_length=3000,
+        help_text="The LinkedIn post content to be scheduled."
+    )
+    scheduled_date = serializers.DateField(
+        help_text="The date when the post should be published (YYYY-MM-DD format)."
+    )
+    scheduled_time = serializers.TimeField(
+        help_text="The time when the post should be published (HH:MM:SS format)."
+    )
+    timezone = serializers.CharField(
+        max_length=50,
+        required=False,
+        default="UTC",
+        help_text="Timezone for the scheduled time (e.g., 'UTC', 'America/New_York', 'Europe/London'). Default is UTC."
+    )
+    image_urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        default=list,
+        help_text="Optional list of image URLs to include with the post."
+    )
+    
+    def validate(self, data):
+        from datetime import datetime, timezone as tz
+        from django.utils import timezone
+        
+        # Combine date and time
+        scheduled_datetime = datetime.combine(
+            data['scheduled_date'], 
+            data['scheduled_time']
+        )
+        
+        # Make timezone aware
+        if data.get('timezone', 'UTC') == 'UTC':
+            scheduled_datetime = scheduled_datetime.replace(tzinfo=tz.utc)
+        else:
+            # For other timezones, you might want to use pytz
+            import pytz
+            try:
+                tz_obj = pytz.timezone(data.get('timezone', 'UTC'))
+                scheduled_datetime = tz_obj.localize(scheduled_datetime)
+            except:
+                # Fallback to UTC if timezone is invalid
+                scheduled_datetime = scheduled_datetime.replace(tzinfo=tz.utc)
+        
+        # Check if scheduled time is in the future
+        if scheduled_datetime <= timezone.now():
+            raise serializers.ValidationError("Scheduled time must be in the future.")
+        
+        data['scheduled_datetime'] = scheduled_datetime
+        return data
+
+
+class ScheduleLinkedinPostResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    schedule_id = serializers.IntegerField(help_text="Unique ID for the scheduled post")
+    content = serializers.CharField(help_text="The scheduled post content")
+    scheduled_datetime = serializers.DateTimeField(help_text="When the post is scheduled to be published")
+    timezone = serializers.CharField(help_text="Timezone for the scheduled time")
+    linkedin_profile_id = serializers.CharField(help_text="LinkedIn profile ID where the post will be published")
+    linkedin_username = serializers.CharField(help_text="LinkedIn profile username")
+    post_type = serializers.CharField(help_text="Type of post: 'text' or 'image'")
+    images_count = serializers.IntegerField(help_text="Number of images to be posted")
+    celery_task_id = serializers.CharField(help_text="Celery task ID for tracking/cancellation")
+    created_at = serializers.DateTimeField(help_text="When the schedule was created")
+
+
+class ScheduledPostListSerializer(serializers.Serializer):
+    schedule_id = serializers.IntegerField()
+    content = serializers.CharField()
+    scheduled_datetime = serializers.DateTimeField()
+    timezone = serializers.CharField()
+    status = serializers.CharField()
+    linkedin_profile_id = serializers.CharField()
+    linkedin_username = serializers.CharField()
+    post_type = serializers.CharField()
+    images_count = serializers.IntegerField()
+    created_at = serializers.DateTimeField()
+    posted_at = serializers.DateTimeField(required=False, allow_null=True)
+    linkedin_post_id = serializers.CharField(required=False, allow_null=True)
+    error_message = serializers.CharField(required=False, allow_null=True)
+
+
+class ScheduledPostsListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    total_scheduled = serializers.IntegerField()
+    scheduled_posts = serializers.ListField(child=ScheduledPostListSerializer())
+
+
+class CancelScheduledPostResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    schedule_id = serializers.IntegerField()
+    previous_status = serializers.CharField()
+    current_status = serializers.CharField() 

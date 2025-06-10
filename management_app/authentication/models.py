@@ -31,7 +31,18 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False) # Required for admin access
 
-    # LinkedIn integration fields
+    # Simple login JWT tokens
+    simple_login_access_token = models.TextField(blank=True, null=True, help_text="JWT access token for simple login")
+    simple_login_refresh_token = models.TextField(blank=True, null=True, help_text="JWT refresh token for simple login")
+    simple_login_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When simple login access token expires")
+
+    # Google login JWT tokens
+    google_login_access_token = models.TextField(blank=True, null=True, help_text="JWT access token for Google login")
+    google_login_refresh_token = models.TextField(blank=True, null=True, help_text="JWT refresh token for Google login")
+    google_login_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When Google login JWT token expires")
+    google_profile_id = models.CharField(max_length=100, blank=True, null=True, help_text="Google profile ID")
+
+    # LinkedIn integration fields (keeping existing structure)
     linkedin_access_token = models.TextField(blank=True, null=True, help_text="LinkedIn OAuth access token")
     linkedin_profile_id = models.CharField(max_length=100, blank=True, null=True, help_text="LinkedIn profile ID")
     linkedin_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When LinkedIn token expires")
