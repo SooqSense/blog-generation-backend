@@ -587,15 +587,17 @@ class LinkedinPostingResponseSerializer(serializers.Serializer):
 
 # Serializers for Schedule LinkedIn Post API
 class ScheduleLinkedinPostRequestSerializer(serializers.Serializer):
-    content = serializers.CharField(
-        max_length=3000,
-        help_text="The LinkedIn post content to be scheduled."
+    content = serializers.ListField(
+        child=serializers.CharField(max_length=3000),
+        min_length=1,
+        max_length=10,  # Maximum 10 posts at once
+        help_text="Array of LinkedIn post content to be scheduled. Each post content max 3000 characters. Maximum 10 posts at once."
     )
     scheduled_date = serializers.DateField(
-        help_text="The date when the post should be published (YYYY-MM-DD format)."
+        help_text="The date when the posts should be published (YYYY-MM-DD format)."
     )
     scheduled_time = serializers.TimeField(
-        help_text="The time when the post should be published (HH:MM:SS format)."
+        help_text="The time when the posts should be published (HH:MM:SS format)."
     )
     timezone = serializers.CharField(
         max_length=50,
@@ -607,8 +609,22 @@ class ScheduleLinkedinPostRequestSerializer(serializers.Serializer):
         child=serializers.URLField(),
         required=False,
         default=list,
-        help_text="Optional list of image URLs to include with the post."
+        help_text="Optional list of image URLs to include with the posts. Will be distributed across posts if multiple posts are provided."
     )
+    delay_between_posts = serializers.IntegerField(
+        required=False,
+        default=5,
+        min_value=1,
+        max_value=60,
+        help_text="Delay in minutes between each post if multiple posts are scheduled. Default is 5 minutes."
+    )
+    
+    def validate_content(self, value):
+        """Validate each content item in the array"""
+        for i, content_item in enumerate(value):
+            if not content_item or not content_item.strip():
+                raise serializers.ValidationError(f"Content item {i+1} cannot be empty.")
+        return [content.strip() for content in value]
     
     def validate(self, data):
         from datetime import datetime, timezone as tz
@@ -644,21 +660,28 @@ class ScheduleLinkedinPostRequestSerializer(serializers.Serializer):
 class ScheduleLinkedinPostResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
-    schedule_id = serializers.IntegerField(help_text="Unique ID for the scheduled post")
-    content = serializers.CharField(help_text="The scheduled post content")
-    scheduled_datetime = serializers.DateTimeField(help_text="When the post is scheduled to be published")
+    schedule_id = serializers.IntegerField(help_text="Unique ID for the scheduled post batch")
+    content = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Array of scheduled post content"
+    )
+    total_posts = serializers.IntegerField(help_text="Total number of posts scheduled")
+    scheduled_datetime = serializers.DateTimeField(help_text="When the first post is scheduled to be published")
     timezone = serializers.CharField(help_text="Timezone for the scheduled time")
-    linkedin_profile_id = serializers.CharField(help_text="LinkedIn profile ID where the post will be published")
+    linkedin_profile_id = serializers.CharField(help_text="LinkedIn profile ID where the posts will be published")
     linkedin_username = serializers.CharField(help_text="LinkedIn profile username")
-    post_type = serializers.CharField(help_text="Type of post: 'text' or 'image'")
+    post_type = serializers.CharField(help_text="Type of posts: 'text' or 'image'")
     images_count = serializers.IntegerField(help_text="Number of images to be posted")
+    delay_between_posts = serializers.IntegerField(help_text="Delay in minutes between each post")
     celery_task_id = serializers.CharField(help_text="Celery task ID for tracking/cancellation")
     created_at = serializers.DateTimeField(help_text="When the schedule was created")
 
 
 class ScheduledPostListSerializer(serializers.Serializer):
     schedule_id = serializers.IntegerField()
-    content = serializers.CharField()
+    content = serializers.JSONField(help_text="Array of post content or single content for backward compatibility")
+    content_preview = serializers.CharField(help_text="Preview of the first post content")
+    total_posts = serializers.IntegerField(help_text="Total number of posts in this schedule")
     scheduled_datetime = serializers.DateTimeField()
     timezone = serializers.CharField()
     status = serializers.CharField()

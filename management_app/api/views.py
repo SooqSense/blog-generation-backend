@@ -2251,7 +2251,7 @@ def validate_linkedin_token_api(request):
     responses={
         200: OpenApiResponse(
             response=ScheduleLinkedinPostResponseSerializer,
-            description="LinkedIn post scheduled successfully.",
+            description="LinkedIn posts scheduled successfully.",
         ),
         400: OpenApiResponse(
             response=ErrorResponseSerializer, description="Bad Request - Invalid input or missing LinkedIn access token."
@@ -2263,30 +2263,32 @@ def validate_linkedin_token_api(request):
             response=ErrorResponseSerializer, description="Internal Server Error."
         ),
     },
-    description="Schedule a LinkedIn post to be published at a specific date and time. Requires LinkedIn authentication and validates the scheduled time is in the future.",
+    description="Schedule multiple LinkedIn posts to be published at a specific date and time with delays between posts. Requires LinkedIn authentication and validates the scheduled time is in the future.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def schedule_linkedin_post_api(request):
     """
-    Schedule a LinkedIn post to be published at a specific date and time.
+    Schedule multiple LinkedIn posts to be published at a specific date and time.
     
     This endpoint:
     1. Validates the user has LinkedIn authentication
     2. Validates the scheduled time is in the future
-    3. Creates a scheduled post record in the database
-    4. Schedules a Celery task to post at the specified time
+    3. Creates a scheduled post record in the database with multiple content
+    4. Schedules a Celery task to post at the specified time with delays between posts
     
     Body Parameters:
-    - content: The LinkedIn post content (max 3000 characters)
+    - content: Array of LinkedIn post content (each max 3000 characters, max 10 posts)
     - scheduled_date: Date to publish (YYYY-MM-DD format)
     - scheduled_time: Time to publish (HH:MM:SS format)
     - timezone: Timezone for the scheduled time (optional, default: UTC)
-    - image_urls: Optional list of image URLs to include
+    - image_urls: Optional list of image URLs to distribute across posts
+    - delay_between_posts: Delay in minutes between each post (default: 5 minutes)
     
     Returns:
-    - schedule_id: Unique ID for the scheduled post
-    - scheduled_datetime: When the post will be published
+    - schedule_id: Unique ID for the scheduled post batch
+    - total_posts: Number of posts scheduled
+    - scheduled_datetime: When the first post will be published
     - celery_task_id: Task ID for tracking/cancellation
     """
     
@@ -2334,18 +2336,23 @@ def schedule_linkedin_post_api(request):
         except:
             pass  # Continue without username if API call fails
         
+        # Get multiple content posts
+        content_array = validated_data['content']
+        total_posts = len(content_array)
+        delay_between_posts = validated_data.get('delay_between_posts', 5)
+        
         # Determine post type
         post_type = 'image' if validated_data.get('image_urls') else 'text'
         images_count = len(validated_data.get('image_urls', []))
         
-        # Create scheduled post record
+        # Create scheduled post record with array content
         scheduled_post = SchedulePosts.objects.create(
             user_id=user.id,
             username=user.username,
             email=user.email,
             linkedin_profile_id=linkedin_profile_id,
             linkedin_username=linkedin_username,
-            content=validated_data['content'],
+            content=content_array,  # Now storing as array
             image_urls=validated_data.get('image_urls', []),
             images_count=images_count,
             post_type=post_type,
@@ -2355,15 +2362,15 @@ def schedule_linkedin_post_api(request):
         )
         
         # Schedule Celery task
-        from tools.ai.schedule_linkedin_post.tasks import schedule_linkedin_post_task
+        from tools.ai.schedule_linkedin_post.tasks import schedule_linkedin_post_batch_task
         from celery import current_app
         
         # Calculate ETA (when to execute the task)
         eta = validated_data['scheduled_datetime']
         
-        # Schedule the task
-        task = schedule_linkedin_post_task.apply_async(
-            args=[scheduled_post.id],
+        # Schedule the batch task with delay information
+        task = schedule_linkedin_post_batch_task.apply_async(
+            args=[scheduled_post.id, delay_between_posts],
             eta=eta
         )
         
@@ -2371,20 +2378,22 @@ def schedule_linkedin_post_api(request):
         scheduled_post.celery_task_id = task.id
         scheduled_post.save()
         
-        logger.info(f"Scheduled LinkedIn post {scheduled_post.id} for user {user.id} at {eta}")
+        logger.info(f"Scheduled LinkedIn post batch {scheduled_post.id} with {total_posts} posts for user {user.id} at {eta}")
         
         # Prepare response
         response_data = {
             "status": "success",
-            "message": f"LinkedIn post scheduled successfully for {validated_data['scheduled_datetime'].strftime('%Y-%m-%d %H:%M:%S %Z')}",
+            "message": f"{total_posts} LinkedIn posts scheduled successfully starting at {validated_data['scheduled_datetime'].strftime('%Y-%m-%d %H:%M:%S %Z')}",
             "schedule_id": scheduled_post.id,
             "content": scheduled_post.content,
+            "total_posts": total_posts,
             "scheduled_datetime": scheduled_post.scheduled_datetime,
             "timezone": scheduled_post.user_timezone,
             "linkedin_profile_id": scheduled_post.linkedin_profile_id,
             "linkedin_username": scheduled_post.linkedin_username,
             "post_type": scheduled_post.post_type,
             "images_count": scheduled_post.images_count,
+            "delay_between_posts": delay_between_posts,
             "celery_task_id": scheduled_post.celery_task_id,
             "created_at": scheduled_post.created_at
         }
@@ -2438,9 +2447,20 @@ def get_scheduled_posts_api(request):
         # Prepare response data
         posts_data = []
         for post in scheduled_posts:
+            # Handle both array and single content for backward compatibility
+            content = post.content
+            if isinstance(content, list):
+                total_posts = len(content)
+                content_preview = content[0][:100] + "..." if content and len(content[0]) > 100 else (content[0] if content else "")
+            else:
+                total_posts = 1
+                content_preview = content[:100] + "..." if content and len(content) > 100 else content
+            
             posts_data.append({
                 "schedule_id": post.id,
                 "content": post.content,
+                "content_preview": content_preview,
+                "total_posts": total_posts,
                 "scheduled_datetime": post.scheduled_datetime,
                 "timezone": post.user_timezone,
                 "status": post.status,

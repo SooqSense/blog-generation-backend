@@ -311,9 +311,20 @@ CORS_ALLOW_HEADERS = [
 ]
 
 # Celery Configuration
-REDIS_URL = os.environ.get('REDIS_URL')
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND')
+# For Docker: use redis service name, for local: use localhost
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# Override with Docker-friendly URLs if we're in Docker environment
+if os.environ.get('DOCKER_ENV') == 'true':
+    REDIS_URL = 'redis://redis:6379/0'
+
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', REDIS_URL)
+
+# Debug Redis configuration
+print(f"Settings Debug - REDIS_URL: {REDIS_URL}")
+print(f"Settings Debug - CELERY_BROKER_URL: {CELERY_BROKER_URL}")
+print(f"Settings Debug - CELERY_RESULT_BACKEND: {CELERY_RESULT_BACKEND}")
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -325,5 +336,5 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
-# Celery Beat Configuration (for scheduled tasks)
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler' 
+# Celery Beat Configuration (for scheduled tasks) - Use default Redis scheduler for ETA-based tasks
+# CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'  # Disabled to use Redis-based scheduling 
