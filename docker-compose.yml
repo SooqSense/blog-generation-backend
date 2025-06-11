@@ -20,14 +20,6 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - DB_HOST=host.docker.internal
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DOCKER_ENV=true
     depends_on:
       - redis
     command: >
@@ -48,14 +40,6 @@ services:
       - .:/app
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - DB_HOST=host.docker.internal
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DOCKER_ENV=true
     depends_on:
       - redis
       - web
@@ -77,14 +61,7 @@ services:
       - .:/app
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - DB_HOST=host.docker.internal
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DOCKER_ENV=true
+      # Override Redis URLs for Docker network, fallback to .env v
     depends_on:
       - redis
       - web
@@ -107,8 +84,11 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
+      # Override Redis URLs for Docker network, fallback to .env values
+      REDIS_URL: ${DOCKER_REDIS_URL:-${REDIS_URL}}
+      CELERY_BROKER_URL: ${DOCKER_CELERY_BROKER_URL:-${CELERY_BROKER_URL}}
+      CELERY_RESULT_BACKEND: ${DOCKER_CELERY_RESULT_BACKEND:-${CELERY_RESULT_BACKEND}}
+      DOCKER_ENV: "true"
     depends_on:
       - redis
     deploy:
@@ -126,8 +106,11 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
+      # Override Redis URLs for Docker network, fallback to .env values
+      REDIS_URL: ${DOCKER_REDIS_URL:-${REDIS_URL}}
+      CELERY_BROKER_URL: ${DOCKER_CELERY_BROKER_URL:-${CELERY_BROKER_URL}}
+      CELERY_RESULT_BACKEND: ${DOCKER_CELERY_RESULT_BACKEND:-${CELERY_RESULT_BACKEND}}
+      DOCKER_ENV: "true"
     depends_on:
       - redis
       - web-staging
@@ -143,8 +126,11 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
+      # Override Redis URLs for Docker network, fallback to .env values
+      REDIS_URL: ${DOCKER_REDIS_URL:-${REDIS_URL}}
+      CELERY_BROKER_URL: ${DOCKER_CELERY_BROKER_URL:-${CELERY_BROKER_URL}}
+      CELERY_RESULT_BACKEND: ${DOCKER_CELERY_RESULT_BACKEND:-${CELERY_RESULT_BACKEND}}
+      DOCKER_ENV: "true"
     depends_on:
       - redis
       - web-staging
@@ -161,9 +147,6 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
     depends_on:
       - redis
     deploy:
@@ -183,9 +166,6 @@ services:
       target: production
     env_file:
       - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-production
@@ -207,9 +187,6 @@ services:
       target: production
     env_file:
       - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_ENV=true
     depends_on:
       - redis
       - web-production
