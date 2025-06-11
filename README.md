@@ -1,7 +1,5 @@
 # AI Blog Generator
 
-A good Tutorial for this is [here](https://www.youtube.com/watch?v=dNpKQk5uxHw&list=PLpkzjZ2JCjKJMmSRr3sXn22HoFW3lBFPE)
-
 A multi-agent system for automated blog content creation leveraging CrewAI and large language models.
 
 ## Overview
@@ -105,44 +103,15 @@ The API is available at:
 
 ## Tools and Technologies
 
+- **Django**: Web framework for building the API
+- **PostgreSQL**: Database for storing content
+- **Docker**: Containerization for deployment
 - **CrewAI**: Framework for orchestrating multiple AI agents
 - **LangChain**: For integrating with various language models
 - **OpenAI's GPT-3.5/4**: For content generation
-- **Google's Gemini** (optional): Alternative LLM option
+- **Google's Gemini**: Alternative LLM option
 - **DALL-E 3**: For generating banner images
 - **SerperDev**: For web search capabilities
-
-## Command Line Arguments
-
-- `--topic`: Topic for the blog post (required)
-- `--output`: Output file for the blog post
-- `--custom-llm`: Use Google's Gemini model instead of OpenAI
-- `--include-designer`: Include the designer agent in the workflow
-- `--no-image`: Skip banner image generation
-- `--image-size`: Banner image size (choices: "1024x1024", "1792x1024", "1024x1792")
-
-## 🛠️ Installation
-
-1. **Clone the repository**:
-
-```bash
-git clone https://github.com/yourusername/blog-writer-multi-agent.git
-cd blog-writer-multi-agent
-```
-
-2. **Install dependencies**:
-
-```bash
-pip install openai requests python-dotenv crewai crewai-tools langchain-google-genai langchain-openai
-```
-
-3. **Set up environment variables** by creating a `.env` file in the project root:
-
-```
-OPENAI_API_KEY=your_openai_api_key
-SERPER_API_KEY=your_serper_dev_api_key
-GOOGLE_API_KEY=your_google_api_key (optional for Gemini)
-```
 
 ## 🔑 API Keys
 
@@ -179,28 +148,6 @@ The system follows a collaborative workflow that mimics a real content creation 
 
 5. **Output**: The final blog post is saved as a Markdown file with the banner image embedded.
 
-## 📋 Usage
-
-Run the script with a topic for your blog post:
-
-```bash
-python blog_writer.py --topic "The Future of Artificial Intelligence"
-```
-
-### Optional Arguments
-
-- `--output`: Specify a custom output filename
-- `--custom-llm`: Use Google's Gemini model instead of OpenAI
-- `--include-designer`: Add a designer agent to the workflow
-- `--no-image`: Skip banner image generation
-- `--image-size`: Set banner image size (default: 1792x1024)
-
-Example with options:
-
-```bash
-python blog_writer.py --topic "Sustainable Living Tips" --output sustainability_blog.md --image-size 1024x1024
-```
-
 ## 🌟 Use Cases
 
 - **Content Marketing**: Generate blog posts for your company's website
@@ -218,15 +165,6 @@ The Blog Writer Multi-Agent system demonstrates an emerging paradigm in AI appli
 - **Quality Control**: Multiple review stages ensure higher content quality
 - **Emergent Capabilities**: The combined system achieves results beyond individual agents
 
-## 🔧 Technology Stack
-
-- **Python**: Core programming language
-- **CrewAI**: Framework for agent collaboration
-- **LangChain**: Tool integration and LLM interface
-- **OpenAI API**: Powers GPT models and DALL-E 3
-- **Google Generative AI**: Optional Gemini model integration
-- **Serper API**: Web search capabilities
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -238,5 +176,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 **Elevating AI creativity—one image at a time! 🌟**
-
----
