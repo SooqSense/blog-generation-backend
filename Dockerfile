@@ -49,7 +49,7 @@ USER django
 WORKDIR /app/management_app
 
 EXPOSE 8000
-CMD sh -c "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"
+CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
 
 # Production stage
 FROM base as production
@@ -74,4 +74,4 @@ USER django
 WORKDIR /app/management_app
 
 EXPOSE 8000
-CMD sh -c "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300" 
+CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
