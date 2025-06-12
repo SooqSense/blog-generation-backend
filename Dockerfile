@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     netcat-traditional \
-    supervisor \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -38,24 +37,19 @@ COPY . .
 RUN groupadd -r django && useradd -r -g django -m -d /home/django django
 
 # Create necessary directories
-RUN mkdir -p /app/logs /var/log/supervisor /var/run/supervisor
-
-# Copy supervisor configuration and entrypoint script
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY entrypoint.sh /app/entrypoint.sh
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
+RUN mkdir -p /app/logs
 
 # Set up directory permissions
-RUN chown -R django:django /app /var/log/supervisor /var/run/supervisor /home/django
+RUN chown -R django:django /app /home/django
 
 # Switch to non-root user
 USER django
 
+# Set working directory for Django app
+WORKDIR /app/management_app
+
 EXPOSE 8000
-EXPOSE ${PORT}
-CMD ["/app/entrypoint.sh"]
+CMD sh -c "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"
 
 # Production stage
 FROM base as production
@@ -68,20 +62,16 @@ COPY . .
 RUN groupadd -r django && useradd -r -g django -m -d /home/django django
 
 # Create necessary directories
-RUN mkdir -p /app/logs /var/log/supervisor /var/run/supervisor
-
-# Copy supervisor configuration and entrypoint script
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY entrypoint.sh /app/entrypoint.sh
-
-# Make entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
+RUN mkdir -p /app/logs
 
 # Set up directory permissions
-RUN chown -R django:django /app /var/log/supervisor /var/run/supervisor /home/django
+RUN chown -R django:django /app /home/django
 
 # Switch to non-root user
 USER django
 
+# Set working directory for Django app
+WORKDIR /app/management_app
+
 EXPOSE 8000
-CMD ["/app/entrypoint.sh"] 
+CMD sh -c "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300" 
