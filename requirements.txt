@@ -5,6 +5,9 @@ djangorestframework-simplejwt
 drf-spectacular
 django-cors-headers
 
+# Production server
+gunicorn
+
 # AI and LLM packages (updated for Python 3.13 compatibility)
 crewai
 crewai-tools
