@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 # from api import views as api_views # No longer needed for home_view here
 from drf_spectacular.views import (
@@ -23,3 +25,9 @@ urlpatterns = [
     ),
     # path('', api_views.home_view, name='home'), # Removed old home view
 ]
+
+# Serve static files in production (usually handled by web server like nginx)
+if (
+    settings.DEBUG or True
+):  # Force serving static files in production for this deployment
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

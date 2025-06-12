@@ -40,8 +40,12 @@ RUN groupadd -r django && useradd -r -g django -m -d /home/django django
 # Create necessary directories
 RUN mkdir -p /app/logs /var/log/supervisor /var/run/supervisor
 
-# Copy supervisor configuration
+# Copy supervisor configuration and entrypoint script
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY entrypoint.sh /app/entrypoint.sh
+
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
 
 # Set up directory permissions
 RUN chown -R django:django /app /var/log/supervisor /var/run/supervisor /home/django
@@ -51,7 +55,7 @@ USER django
 
 EXPOSE 8000
 EXPOSE ${PORT}
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/app/entrypoint.sh"]
 
 # Production stage
 FROM base as production
@@ -66,8 +70,12 @@ RUN groupadd -r django && useradd -r -g django -m -d /home/django django
 # Create necessary directories
 RUN mkdir -p /app/logs /var/log/supervisor /var/run/supervisor
 
-# Copy supervisor configuration
+# Copy supervisor configuration and entrypoint script
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY entrypoint.sh /app/entrypoint.sh
+
+# Make entrypoint script executable
+RUN chmod +x /app/entrypoint.sh
 
 # Set up directory permissions
 RUN chown -R django:django /app /var/log/supervisor /var/run/supervisor /home/django
@@ -76,4 +84,4 @@ RUN chown -R django:django /app /var/log/supervisor /var/run/supervisor /home/dj
 USER django
 
 EXPOSE 8000
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"] 
+CMD ["/app/entrypoint.sh"] 
