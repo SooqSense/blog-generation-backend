@@ -1,4 +1,4 @@
-FROM python:3.12.8-slim as base
+FROM python:3.12.8-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     netcat-traditional \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,13 +22,13 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Development stage
-FROM base as development
+FROM base AS development
 ENV DEBUG=True
 EXPOSE 8000
 CMD ["sh", "-c", "python management_app/manage.py migrate && python management_app/manage.py runserver 0.0.0.0:8000"]
 
 # Staging stage
-FROM base as staging
+FROM base AS staging
 ENV DEBUG=False
 ENV PORT=8000
 
@@ -47,12 +48,16 @@ USER django
 
 # Set working directory for Django app
 WORKDIR /app/management_app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300 && wait"]
 
 # Production stage
-FROM base as production
+FROM base AS production
 ENV DEBUG=False
 ENV PORT=8000
 
@@ -72,6 +77,10 @@ USER django
 
 # Set working directory for Django app
 WORKDIR /app/management_app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
 CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
