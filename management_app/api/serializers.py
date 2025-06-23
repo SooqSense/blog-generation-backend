@@ -122,11 +122,11 @@ class BlogRequestSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Optional URL of a sample blog to analyze and replicate the style (without plagiarism)."
     )
-    tone = serializers.ChoiceField(
-        choices=["professional", "creative", "casual", "informative", "persuasive"],
+    blog_type = serializers.ChoiceField(
+        choices=["News", "Comparison"],
         required=False,
-        default="professional",
-        help_text="The tone of the blog post."
+        default="News",
+        help_text="The type of blog post to generate. 'News' creates a news-style blog with current information and reporting format. 'Comparison' creates a comparative analysis blog with structured comparison between subjects."
     )
     length_min = serializers.IntegerField(
         required=False,
@@ -207,6 +207,11 @@ class BlogRequestSerializer(serializers.Serializer):
             
         return data
 
+class SourceSerializer(serializers.Serializer):
+    url = serializers.URLField()
+    title = serializers.CharField()
+    type = serializers.CharField(default="research_source")
+
 class BlogResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
@@ -214,7 +219,7 @@ class BlogResponseSerializer(serializers.Serializer):
     keywords = serializers.JSONField(required=False, default=list, help_text="Keywords with their usage counts")
     sample_blog_url = serializers.URLField(required=False, allow_blank=True, help_text="Sample blog URL used for style analysis")
     sample_blog_analysis = serializers.CharField(required=False, allow_blank=True, allow_null=True, help_text="Analysis of the sample blog style")
-    tone = serializers.CharField(required=False)
+    blog_type = serializers.CharField(required=False, help_text="The type of blog generated (News or Comparison)")
     length_min = serializers.IntegerField(required=False)
     length_max = serializers.IntegerField(required=False)
     introduction = serializers.BooleanField(required=False)
@@ -227,6 +232,8 @@ class BlogResponseSerializer(serializers.Serializer):
     max_image_prompts = serializers.IntegerField(required=False)
     image_prompts = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Generated image prompts based on blog headings")
     prompts_count = serializers.IntegerField(required=False, default=0, help_text="Number of generated image prompts")
+    research_sources = serializers.ListField(child=SourceSerializer(), required=False, default=list, help_text="Research sources discovered using SERPER API")
+    sources_count = serializers.IntegerField(required=False, default=0, help_text="Number of research sources found")
     content = serializers.JSONField(help_text="Structured JSON representation of the blog content")
     raw_content = serializers.CharField(required=False, help_text="Original markdown content of the blog")
 

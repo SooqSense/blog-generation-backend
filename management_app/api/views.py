@@ -299,7 +299,7 @@ def generate_blog_api(request):
         topic = serializer.validated_data["topic"]
         keywords = serializer.validated_data.get("keywords", [])
         sample_blog_url = serializer.validated_data.get("sample_blog_url", "")
-        tone = serializer.validated_data.get("tone", "professional")
+        blog_type = serializer.validated_data.get("blog_type", "News")  # Changed from tone to blog_type
         length_min = serializer.validated_data.get("length_min", 800)
         length_max = serializer.validated_data.get("length_max", 1500)
         introduction = serializer.validated_data.get("introduction", True)
@@ -319,13 +319,13 @@ def generate_blog_api(request):
 
         try:
             logger.info(
-                f"Starting blog generation for topic: '{topic}' with customized parameters"
+                f"Starting blog generation for topic: '{topic}' with blog type: '{blog_type}' and research-based workflow"
             )
 
             blog_writer_instance = BlogWriter(
                 topic=topic,
                 keywords=keywords,
-                tone=tone,
+                blog_type=blog_type,  # Changed from tone to blog_type
                 length_min=length_min,
                 length_max=length_max,
                 introduction=introduction,
@@ -361,6 +361,15 @@ def generate_blog_api(request):
             image_prompts = getattr(blog_writer_instance, 'image_prompts', [])
             prompts_count = len(image_prompts)
             
+            # Debug logging for image prompts
+            logger.info(f"Image prompts generated: {prompts_count}")
+            for i, prompt in enumerate(image_prompts[:3]):  # Log first 3 prompts for debugging
+                logger.info(f"Image Prompt {i+1} (length: {len(prompt)}): {prompt[:100]}...")
+            
+            # Get research sources
+            research_sources = getattr(blog_writer_instance, 'research_sources', [])
+            sources_count = len(research_sources)
+            
             # Save to database (still save the markdown version)
             blog = BlogGeneral(
                 user_id=request.user.id,  # Use authenticated user's ID
@@ -374,16 +383,16 @@ def generate_blog_api(request):
                 created_at=timezone.now(),
             )
             blog.save()
-            logger.info(f"Saved blog to database with ID: {blog.id} with {prompts_count} image prompts")
+            logger.info(f"Saved blog to database with ID: {blog.id} with {prompts_count} image prompts and {sources_count} research sources")
 
             response_data = {
                 "status": "success",
-                "message": "Blog generated successfully!",
+                "message": f"Research-based {blog_type.lower()} blog generated successfully!",
                 "topic": topic,
                 "keywords": keywords,
                 "sample_blog_url": sample_blog_url,
                 "sample_blog_analysis": getattr(blog_writer_instance, 'sample_blog_analysis', None) if hasattr(blog_writer_instance, 'sample_blog_analysis') else None,
-                "tone": tone,
+                "blog_type": blog_type,  # Changed from tone to blog_type
                 "length_min": length_min,
                 "length_max": length_max,
                 "introduction": introduction,
@@ -396,6 +405,8 @@ def generate_blog_api(request):
                 "max_image_prompts": max_image_prompts,
                 "image_prompts": image_prompts,
                 "prompts_count": prompts_count,
+                "research_sources": research_sources,  # New: Include research sources
+                "sources_count": sources_count,  # New: Include sources count
                 "content": structured_content,
                 "raw_content": blog_content,  # Include the original markdown as well
             }
