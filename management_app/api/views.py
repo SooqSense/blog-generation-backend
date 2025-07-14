@@ -5,7 +5,7 @@ import requests
 from django.conf import settings
 from django.http import HttpResponse
 from django.contrib.auth.models import User
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.response import Response
@@ -16,6 +16,7 @@ from django.utils import timezone
 from datetime import datetime
 import re
 import urllib.parse
+from rest_framework.parsers import MultiPartParser, FormParser
 
 # Import models
 from .models import (
@@ -27,6 +28,7 @@ from .models import (
     TrendingTopics,
     LinkedinAnalytics,
     SchedulePosts,
+    ImageEditing,
 )
 
 # Set up logging
@@ -48,6 +50,12 @@ from tools.ai.linkedin_post_generator.linkedin_post_generator import (
 
 # Import the Trending Queries service (using Serper API)
 from tools.ai.trends_ai.trending_queries import fetch_trending_queries
+
+# Import the image editing functionality
+from tools.ai.image_generation.edit_images import (
+    edit_image_with_flux,
+    convert_image_to_base64,
+)
 
 # Import serializers
 from .serializers import (
@@ -71,6 +79,8 @@ from .serializers import (
     ScheduleLinkedinPostResponseSerializer,
     ScheduledPostsListResponseSerializer,
     CancelScheduledPostResponseSerializer,
+    ImageEditingRequestSerializer,
+    ImageEditingResponseSerializer,
 )
 
 def convert_markdown_to_json(markdown_content):
@@ -575,15 +585,19 @@ def generate_daily_ai_news(request):
             description="Internal Server Error / Image Generation Failed.",
         ),
     },
-    description="Generate one or more professional, cinematic-style images based on a prompt and/or keywords using Sora-style AI generation. Creates clean, realistic, and visually appealing images perfect for blog content.",
+    description="Generate one or more professional images using either Sora-style cinematic generation or FLUX AI artistic generation. Supports both clean, realistic Sora-style images and detailed, artistic FLUX AI images based on the selected generation method.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
-    Generate one or more professional, cinematic-style images based on a prompt and/or keywords.
-    Uses Sora-style AI generation to create clean, realistic, and visually appealing images 
-    perfect for blog content and professional use.
+    Generate one or more professional images using either Sora-style or FLUX AI generation.
+    
+    Supports two generation methods:
+    - 'sora': Creates clean, realistic, cinematic-style images perfect for professional content
+    - 'flux': Creates detailed, artistic, high-quality images with rich visual elements
+    
+    Both methods use AI-optimized prompts tailored to each generation engine's strengths.
     """
     serializer = ImageGenerationRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -593,16 +607,17 @@ def generate_image_api(request):
     prompt = serializer.validated_data.get("prompt", "")
     keywords = serializer.validated_data.get("keywords", "")
     count = serializer.validated_data.get("count", 1)
+    generation_method = serializer.validated_data.get("generation_method", "sora")
     
-    # Set default values for Sora-style generation
+    # Set default values
     image_type = "content"  # Default to content type for professional images
     size = "1024x1024"  # Default size
 
     logger.info(
-        f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}"
+        f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}, method: {generation_method}"
     )
 
-    # Build final prompt for Sora-style generation
+    # Build final prompt
     final_prompt = prompt
     if keywords and keywords.strip():
         # Split keywords by comma and join them
@@ -610,12 +625,18 @@ def generate_image_api(request):
         if keyword_list:
             final_prompt += " " + " ".join(keyword_list)
 
-    # Enhance prompt for professional, cinematic-style images
-    if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['cinematic', 'professional', 'realistic', 'dramatic']):
-        final_prompt = f"Create a professional, cinematic image about: {final_prompt}. Use dramatic lighting, clean composition, and realistic style."
+    # Enhance prompt based on generation method
+    if generation_method == "sora":
+        if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['cinematic', 'professional', 'realistic', 'dramatic']):
+            final_prompt = f"Create a professional, cinematic image about: {final_prompt}. Use dramatic lighting, clean composition, and realistic style."
+        method_description = "Sora-style cinematic"
+    else:  # flux
+        if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['artistic', 'detailed', 'intricate', 'high-quality']):
+            final_prompt = f"Create a detailed, artistic image about: {final_prompt}. Use intricate details, rich colors, and high-quality artistic composition."
+        method_description = "FLUX AI artistic"
 
     try:
-        # Call generate_image with Sora-style parameters
+        # Call generate_image with the selected generation method
         images_data, total_generated, failed_generations = generate_image(
             prompt=final_prompt, 
             size=size, 
@@ -623,7 +644,8 @@ def generate_image_api(request):
             topic=None,
             image_type=image_type,
             count=count,
-            keywords=keywords.split(',') if keywords else None
+            keywords=keywords.split(',') if keywords else None,
+            generation_method=generation_method
         )
 
         if total_generated > 0:
@@ -642,26 +664,26 @@ def generate_image_api(request):
                 image_urls=all_image_urls,  # Store all image URLs
                 images_count=total_generated,  # Store count of generated images
                 enhanced_prompts=all_enhanced_prompts,  # Store all enhanced prompts
-                generation_method="sora_style",
-                image_style="professional_cinematic",
+                generation_method=generation_method,
+                image_style=method_description,
                 created_at=timezone.now(),
             )
             image_record.save()
-            logger.info(f"Saved image generation session with {total_generated} images for prompt: '{final_prompt}' with ID: {image_record.id}")
+            logger.info(f"Saved image generation session with {total_generated} images using {generation_method} method for prompt: '{final_prompt}' with ID: {image_record.id}")
 
             # Determine response message
             if failed_generations == 0:
-                message = f"All {total_generated} professional images generated successfully!"
+                message = f"All {total_generated} {method_description} images generated successfully!"
             else:
-                message = f"{total_generated} professional images generated successfully, {failed_generations} failed."
+                message = f"{total_generated} {method_description} images generated successfully, {failed_generations} failed."
 
             response_data = {
                 "status": "success",
                 "message": message,
                 "prompt_used": final_prompt,
                 "count": count,
-                "image_style": "professional_cinematic",  # Updated from image_type
-                "generation_method": "sora_style",
+                "generation_method": generation_method,
+                "image_style": method_description,
                 "images": images_data,
                 "total_generated": total_generated,
                 "failed_generations": failed_generations,
@@ -683,10 +705,10 @@ def generate_image_api(request):
                 )
         else:
             logger.error(
-                f"All image generations failed for prompt: '{final_prompt}'. No images generated."
+                f"All image generations failed for prompt: '{final_prompt}' using {generation_method} method. No images generated."
             )
             return Response(
-                {"error": f"All {count} image generation attempts failed. Please try again with a different prompt."},
+                {"error": f"All {count} image generation attempts failed using {generation_method} method. Please try again with a different prompt."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -703,6 +725,2155 @@ def generate_image_api(request):
         traceback.print_exc()
         return Response(
             {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    request=LinkedInPostRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=LinkedInPostResponseSerializer,
+            description="LinkedIn post generated successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Generate a professional LinkedIn post based on the given topic.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def generate_linkedin_post_api(request):
+    """
+    Generates a professional LinkedIn post for a given topic.
+    Input is a JSON object with a "topic" field.
+    """
+    # Validate request data using the serializer
+    serializer = LinkedInPostRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        topic = serializer.validated_data["topic"]
+        keywords = serializer.validated_data.get("keywords", [])
+
+        try:
+            logger.info(
+                f"Starting LinkedIn post generation for topic: '{topic}' with keywords: {keywords}"
+            )
+
+            linkedin_generator = LinkedInPostGenerator(topic=topic, keywords=keywords)
+            linkedin_post_content, _ = linkedin_generator.generate_post(
+                topic=topic, keywords=keywords
+            )
+
+            if linkedin_post_content:
+                # Save to database
+                linkedin_post = LinkedinPost(
+                    user_id=request.user.id,  # Use authenticated user's ID
+                    username=request.user.username,  # Use authenticated user's username
+                    email=request.user.email,  # Use authenticated user's email
+                    topic=topic,
+                    content=linkedin_post_content,
+                    created_at=timezone.now(),
+                )
+                linkedin_post.save()
+                logger.info(
+                    f"Saved LinkedIn post to database with ID: {linkedin_post.id}"
+                )
+
+                response_data = {
+                    "status": "success",
+                    "message": "LinkedIn post generated successfully!",
+                    "topic": topic,
+                    "keywords": keywords,
+                    "linkedin_post": linkedin_post_content,
+                }
+
+                # Serialize the successful response
+                response_serializer = LinkedInPostResponseSerializer(data=response_data)
+                if response_serializer.is_valid():
+                    logger.info(
+                        f"Successfully generated LinkedIn post for topic: '{topic}'"
+                    )
+                    return Response(response_serializer.data, status=status.HTTP_200_OK)
+                else:
+                    logger.error(
+                        f"Error serializing successful response: {response_serializer.errors}"
+                    )
+                    return Response(
+                        {
+                            "error": "Internal server error during response serialization."
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+            else:
+                logger.error(f"LinkedIn post generation failed for topic: '{topic}'")
+                return Response(
+                    {"error": "LinkedIn post generation failed. Check server logs."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Unexpected error in LinkedIn post generation API: {type(e).__name__} - {e}"
+            )
+            import traceback
+
+            traceback.print_exc()
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    else:
+        # If serializer validation fails, return errors
+        logger.warning(
+            f"Invalid input for LinkedIn post generation: {serializer.errors}"
+        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(
+    request=RelatedTopicsRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=RelatedTopicsResponseSerializer,
+            description="Trending queries fetched and saved successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Internal Server Error or error during trending queries fetching.",
+        ),
+    },
+    description="Fetch trending queries related to a given topic using Serper API and save to database. Fetches 30 trending queries worldwide related to the topic from the past 30 days.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def fetch_and_save_related_topics(request):
+    """
+    Fetches trending queries related to a given topic using Serper API and saves to database.
+    Fetches 30 trending queries worldwide related to the topic from the past 30 days.
+
+    Input is a JSON object with:
+    - "topic" (required string): Main topic to find trending queries for.
+    - "region" (optional string): Region code for trends (e.g., 'US'). Defaults to worldwide.
+    - "limit" (optional int): Max queries to return. Default 30.
+    """
+    serializer = RelatedTopicsRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        logger.warning(f"Invalid input for trending queries: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    topic = serializer.validated_data["topic"]
+    region = serializer.validated_data.get("region", "")
+    limit = serializer.validated_data.get("limit", 30)
+
+    try:
+        logger.info(
+            f"Starting trending queries fetch for topic: '{topic}', region: '{region}', limit: {limit}"
+        )
+
+        # Use the updated fetch_trending_queries from trending_queries.py
+        trending_queries_data = fetch_trending_queries(
+            topic=topic, region=region, limit=limit
+        )
+
+        rising_queries = trending_queries_data.get("rising", [])
+        top_queries = trending_queries_data.get("top", [])
+        total_queries = len(rising_queries) + len(top_queries)
+
+        record_id = None
+        if rising_queries or top_queries:
+            # Save to database using the keyword field for the topic
+            db_record, created = TrendingTopics.objects.update_or_create(
+                keyword=topic,  # Using keyword field to store the topic
+                defaults={
+                    "rising_topics": rising_queries,  # Store as rising_topics
+                    "top_topics": top_queries,        # Store as top_topics
+                    "created_at": timezone.now(),     # Update timestamp on modification
+                },
+            )
+            record_id = db_record.id
+            action = "updated" if not created else "created"
+            logger.info(
+                f"Successfully {action} and saved {len(rising_queries)} rising and {len(top_queries)} top trending queries for topic '{topic}' with ID: {record_id}"
+            )
+        else:
+            logger.warning(
+                f"No trending queries found for topic: '{topic}'. Not saving to DB."
+            )
+
+        response_data = {
+            "status": "success",
+            "message": f"Trending queries fetched and saved successfully for topic '{topic}'.",
+            "topic": topic,
+            "region": region,
+            "rising_queries": rising_queries,
+            "top_queries": top_queries,
+            "total_queries": total_queries,
+            "database_record_id": record_id,
+        }
+
+        # Serialize the successful response
+        response_serializer = RelatedTopicsResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(
+                f"Error serializing response for trending queries: {response_serializer.errors}"
+            )
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Internal server error during response serialization.",
+                    "details": response_serializer.errors,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    except Exception as e:
+        logger.error(
+            f"Error processing topic '{topic}': {type(e).__name__} - {str(e)}"
+        )
+        return Response(
+            {
+                "status": "error",
+                "message": f"Failed to fetch trending queries for topic '{topic}': {str(e)}",
+                "topic": topic,
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinAnalyticsResponseSerializer,
+            description="LinkedIn analytics fetched successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Missing LinkedIn access token."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid or expired LinkedIn access token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Fetch LinkedIn profile analytics including followers, posts, and engagement metrics using stored LinkedIn access token from user profile. No parameters required - automatically uses authenticated user's LinkedIn token.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def fetch_linkedin_analytics_api(request):
+    """
+    Fetch LinkedIn profile analytics including:
+    - Total number of followers
+    - Total number of posts
+    - Per post analytics (reactions, comments, reposts, impressions, engagement)
+    
+    Uses the LinkedIn access token stored in the user's profile from OAuth login.
+    No parameters required - automatically fetches analytics for the authenticated user.
+    
+    Usage:
+    GET /api/linkedin-analytics/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    """
+    
+    # Get the authenticated user
+    user = request.user
+    
+    # Check if user has LinkedIn access token
+    linkedin_access_token = getattr(user, 'linkedin_access_token', None)
+    
+    if not linkedin_access_token:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {"error": "No LinkedIn access token found. Please login with LinkedIn first to connect your account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Check if token is expired
+    if hasattr(user, 'linkedin_token_expires_at') and user.linkedin_token_expires_at and user.linkedin_token_expires_at < timezone.now():
+        logger.warning(f"LinkedIn access token expired for user {user.id}")
+        return Response(
+            {"error": "LinkedIn access token has expired. Please login with LinkedIn again to refresh your token."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    # Get stored LinkedIn profile ID from user
+    linkedin_profile_id = getattr(user, 'linkedin_profile_id', None)
+
+    logger.info(f"Fetching LinkedIn analytics for user {user.id} with profile ID: {linkedin_profile_id}")
+
+    try:
+        # Initialize analytics data structure
+        analytics_data = {
+            'linkedin_profile_id': linkedin_profile_id or 'unknown',
+            'total_followers': 0,
+            'total_posts': 0,
+            'posts_analytics': [],
+            'total_reactions': 0,
+            'total_comments': 0,
+            'total_reposts': 0,
+            'total_impressions': 0,
+            'total_engagement': 0,
+            'available_scopes': ['openid', 'profile', 'email'],
+            'api_limitations': [],
+            'data_quality': 'basic'
+        }
+
+        # Get stored LinkedIn scopes from user model
+        stored_scopes = getattr(user, 'linkedin_scopes', '') or ''
+        if stored_scopes:
+            # Parse stored scopes - LinkedIn can return them comma-separated or space-separated
+            if ',' in stored_scopes:
+                # Handle comma-separated scopes: "email,openid,profile,w_member_social"
+                scope_list = [scope.strip() for scope in stored_scopes.split(',')]
+            else:
+                # Handle space-separated scopes: "openid profile w_member_social email"
+                scope_list = stored_scopes.split()
+            
+            analytics_data['available_scopes'] = scope_list
+            logger.info(f"Using stored LinkedIn scopes: {scope_list}")
+            logger.info(f"Raw stored scopes: '{stored_scopes}'")
+        else:
+            logger.warning("No stored LinkedIn scopes found, using default scopes")
+            
+        # Additional debug: Try to get current token info from LinkedIn
+        logger.info("Attempting to verify current token scopes with LinkedIn...")
+        try:
+            # Test what the current token can actually access
+            token_test_url = "https://api.linkedin.com/v2/me"
+            token_headers = {
+                'Authorization': f'Bearer {linkedin_access_token}',
+                'X-Restli-Protocol-Version': '2.0.0'
+            }
+            
+            token_response = requests.get(token_test_url, headers=token_headers, timeout=10)
+            logger.info(f"Token test with /v2/me endpoint: {token_response.status_code}")
+            
+            if token_response.status_code == 200:
+                me_data = token_response.json()
+                logger.info(f"Successfully accessed /v2/me endpoint: {me_data}")
+            else:
+                logger.warning(f"Failed to access /v2/me endpoint: {token_response.status_code} - {token_response.text}")
+                
+        except Exception as e:
+            logger.warning(f"Error testing token with /v2/me: {str(e)}")
+
+        # Check if w_member_social scope is available
+        has_w_member_social = 'w_member_social' in analytics_data['available_scopes']
+        logger.info(f"w_member_social scope available: {has_w_member_social}")
+        logger.info(f"All available scopes: {analytics_data['available_scopes']}")
+        
+        # Set up headers for LinkedIn API calls (define early so it's available for all subsequent code)
+        headers = {
+            'Authorization': f'Bearer {linkedin_access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        # Debug: Test w_member_social scope with a simple endpoint
+        if has_w_member_social:
+            logger.info("Testing w_member_social scope with a simple endpoint...")
+            test_headers = headers.copy()
+            test_headers['X-Restli-Protocol-Version'] = '2.0.0'
+            
+            try:
+                # Test with a simpler endpoint that should work with w_member_social
+                test_url = "https://api.linkedin.com/v2/people/~"
+                test_response = requests.get(test_url, headers=test_headers, timeout=10)
+                logger.info(f"Simple people endpoint test: {test_response.status_code}")
+                
+                if test_response.status_code == 200:
+                    logger.info("✅ w_member_social scope is working with basic people endpoint")
+                else:
+                    logger.warning(f"❌ w_member_social scope test failed: {test_response.status_code} - {test_response.text}")
+                    
+            except Exception as e:
+                logger.warning(f"Error testing w_member_social scope: {str(e)}")
+
+        # Step 1: Get profile information using userinfo endpoint
+        logger.info("Fetching LinkedIn profile information...")
+        profile_url = "https://api.linkedin.com/v2/userinfo"
+        
+        try:
+            profile_response = requests.get(profile_url, headers=headers, timeout=30)
+            
+            if profile_response.status_code == 200:
+                profile_data = profile_response.json()
+                
+                # Extract profile ID if not stored
+                if not linkedin_profile_id:
+                    linkedin_profile_id = profile_data.get('sub', profile_data.get('id', ''))
+                    analytics_data['linkedin_profile_id'] = linkedin_profile_id
+                    logger.info(f"Auto-detected LinkedIn profile ID: {linkedin_profile_id}")
+                
+                logger.info("Successfully fetched LinkedIn profile information")
+                
+            else:
+                logger.warning(f"Failed to fetch profile info: {profile_response.status_code}")
+                analytics_data['api_limitations'].append('Profile information access limited')
+                
+        except Exception as e:
+            logger.warning(f"Error fetching profile info: {str(e)}")
+            analytics_data['api_limitations'].append('Profile information access failed')
+
+        # Step 2: Scope detection is now handled above using stored scopes from user model
+        # No need to test API endpoints since we have the granted scopes stored
+
+        # Step 3: Connection fetching is now handled in Step 5 with correct LinkedIn API endpoints
+
+        # Step 4: Get posts data with w_member_social scope
+        logger.info("Attempting to fetch posts data...")
+        try:
+            if has_w_member_social and linkedin_profile_id:
+                # URL encode the URN parameters as required by LinkedIn API v2
+                encoded_person_urn = urllib.parse.quote(f"urn:li:person:{linkedin_profile_id}", safe='')
+                
+                # Use the correct LinkedIn API format for fetching posts with URL encoding
+                posts_endpoints = [
+                    f"https://api.linkedin.com/v2/ugcPosts?q=authors&authors={encoded_person_urn}",
+                    f"https://api.linkedin.com/v2/shares?q=owners&owners={encoded_person_urn}",
+                ]
+                
+                # Add required headers for LinkedIn API v2
+                api_headers = headers.copy()
+                api_headers['X-Restli-Protocol-Version'] = '2.0.0'
+                
+                posts_found = False
+                for endpoint in posts_endpoints:
+                    try:
+                        logger.info(f"Trying posts endpoint: {endpoint}")
+                        posts_response = requests.get(endpoint, headers=api_headers, timeout=30)
+                        
+                        logger.info(f"Posts endpoint {endpoint} response: {posts_response.status_code}")
+                        if posts_response.status_code == 200:
+                            posts_data = posts_response.json()
+                            posts = posts_data.get('elements', [])
+                            
+                            logger.info(f"Posts data received: {len(posts)} posts")
+                            logger.info(f"Sample posts data: {posts_data}")
+                            
+                            analytics_data['total_posts'] = len(posts)
+                            logger.info(f"✅ Successfully fetched {len(posts)} posts from {endpoint}")
+                            
+                            # Process posts for analytics
+                            for i, post in enumerate(posts[:20]):  # Process up to 20 posts
+                                post_analytics = {
+                                    'post_id': post.get('id', f'post_{i}'),
+                                    'post_content': str(post.get('text', post.get('commentary', post.get('specificContent', {}).get('com.linkedin.ugc.ShareContent', {}).get('shareCommentary', {}).get('text', ''))))[:200],
+                                    'post_date': post.get('created', {}).get('time') if isinstance(post.get('created'), dict) else None,
+                                    'reactions': 0,
+                                    'comments': 0,
+                                    'reposts': 0,
+                                    'impressions': 0,
+                                    'engagement': 0
+                                }
+                                
+                                # Try to extract engagement data from different possible locations
+                                # UGC Posts format
+                                if 'socialDetail' in post:
+                                    social = post['socialDetail']
+                                    if 'totalSocialActivityCounts' in social:
+                                        counts = social['totalSocialActivityCounts']
+                                        post_analytics['reactions'] = counts.get('numLikes', 0)
+                                        post_analytics['comments'] = counts.get('numComments', 0)
+                                        post_analytics['reposts'] = counts.get('numShares', 0)
+                                
+                                # Shares format
+                                elif 'totalSocialActivityCounts' in post:
+                                    counts = post['totalSocialActivityCounts']
+                                    post_analytics['reactions'] = counts.get('numLikes', 0)
+                                    post_analytics['comments'] = counts.get('numComments', 0)
+                                    post_analytics['reposts'] = counts.get('numShares', 0)
+                                
+                                # Calculate total engagement
+                                post_analytics['engagement'] = (
+                                    post_analytics['reactions'] + 
+                                    post_analytics['comments'] + 
+                                    post_analytics['reposts']
+                                )
+                                
+                                analytics_data['posts_analytics'].append(post_analytics)
+                                
+                                # Add to totals
+                                analytics_data['total_reactions'] += post_analytics['reactions']
+                                analytics_data['total_comments'] += post_analytics['comments']
+                                analytics_data['total_reposts'] += post_analytics['reposts']
+                                analytics_data['total_engagement'] += post_analytics['engagement']
+                            
+                            posts_found = True
+                            break
+                        elif posts_response.status_code == 403:
+                            logger.warning(f"Posts endpoint {endpoint} failed: 403 - Access denied. This indicates the LinkedIn app needs approval for r_member_social permission.")
+                            analytics_data['api_limitations'].append('Posts data requires LinkedIn app approval for r_member_social permission')
+                            continue
+                        else:
+                            logger.warning(f"Posts endpoint {endpoint} failed: {posts_response.status_code} - {posts_response.text}")
+                            continue
+                            
+                    except Exception as e:
+                        logger.debug(f"Posts endpoint {endpoint} failed: {str(e)}")
+                        continue
+                
+                if not posts_found:
+                    if 'Posts data requires LinkedIn app approval for r_member_social permission' not in analytics_data['api_limitations']:
+                        analytics_data['api_limitations'].append('Posts data not available - API access denied')
+                        
+            else:
+                analytics_data['api_limitations'].append('Posts data requires w_member_social scope')
+                
+        except Exception as e:
+            logger.warning(f"Error fetching posts: {str(e)}")
+            analytics_data['api_limitations'].append('Posts data access failed')
+
+        # Step 5: Get connections count using correct LinkedIn API endpoints
+        logger.info("Attempting to fetch connections count with correct endpoints...")
+        try:
+            connections_found = False
+            
+            if has_w_member_social and linkedin_profile_id:
+                # URL encode the URN parameters as required by LinkedIn API v2
+                encoded_person_urn = urllib.parse.quote(f"urn:li:person:{linkedin_profile_id}", safe='')
+                
+                # Try the correct LinkedIn API endpoints for connections with URL encoding
+                connection_endpoints = [
+                    f"https://api.linkedin.com/v2/people/{encoded_person_urn}?projection=(id,numConnections,numConnectionsDisplay)",
+                    "https://api.linkedin.com/v2/people/~?projection=(id,numConnections,numConnectionsDisplay)",
+                    "https://api.linkedin.com/v2/networkSizes?edgeType=FIRST_DEGREE_CONNECTIONS",
+                ]
+                
+                # Add required headers for LinkedIn API v2
+                api_headers = headers.copy()
+                api_headers['X-Restli-Protocol-Version'] = '2.0.0'
+                
+                for endpoint in connection_endpoints:
+                    try:
+                        logger.info(f"Trying connection endpoint: {endpoint}")
+                        conn_response = requests.get(endpoint, headers=api_headers, timeout=30)
+                        
+                        logger.info(f"Connection endpoint {endpoint} response: {conn_response.status_code}")
+                        if conn_response.status_code == 200:
+                            conn_data = conn_response.json()
+                            logger.info(f"Connection endpoint data: {conn_data}")
+                            
+                            # Extract connection count from different possible fields
+                            connections = (
+                                conn_data.get('numConnections', 0) or
+                                conn_data.get('connectionCount', 0) or
+                                conn_data.get('numConnectionsDisplay', 0) or
+                                conn_data.get('firstDegreeSize', 0) or
+                                conn_data.get('elements', [{}])[0].get('firstDegreeSize', 0) if conn_data.get('elements') else 0
+                            )
+                            
+                            if connections > 0:
+                                analytics_data['total_followers'] = connections
+                                logger.info(f"✅ Successfully fetched connections count: {connections}")
+                                connections_found = True
+                                break
+                        elif conn_response.status_code == 403:
+                            logger.warning(f"Connection endpoint {endpoint} failed: 403 - Access denied. This indicates the LinkedIn app needs approval for r_member_social permission.")
+                            analytics_data['api_limitations'].append('Connection data requires LinkedIn app approval for r_member_social permission')
+                            continue
+                        else:
+                            logger.warning(f"Connection endpoint {endpoint} failed: {conn_response.status_code} - {conn_response.text}")
+                            continue
+                            
+                    except Exception as e:
+                        logger.debug(f"Connection endpoint {endpoint} failed: {str(e)}")
+                        continue
+                        
+            if not connections_found:
+                if has_w_member_social:
+                    analytics_data['api_limitations'].append('Connections count not available - API access denied')
+                else:
+                    analytics_data['api_limitations'].append('Connections count requires w_member_social scope')
+                
+        except Exception as e:
+            logger.warning(f"Error fetching connections: {str(e)}")
+            analytics_data['api_limitations'].append('Connections data access failed')
+
+        # Determine data quality based on available data and scope
+        if has_w_member_social and len(analytics_data['api_limitations']) <= 1:
+            analytics_data['data_quality'] = 'enhanced'
+        elif analytics_data['total_followers'] > 0 or analytics_data['total_posts'] > 0:
+            analytics_data['data_quality'] = 'partial'
+        else:
+            analytics_data['data_quality'] = 'limited'
+
+        # Check if user needs to re-authenticate for w_member_social scope
+        needs_reauth = False
+        reauth_reason = ""
+        
+        # Check if the issue is LinkedIn app approval rather than scope
+        app_approval_needed = any('LinkedIn app approval' in limitation for limitation in analytics_data['api_limitations'])
+        
+        if app_approval_needed:
+            needs_reauth = False  # Re-auth won't help, app needs approval
+            reauth_reason = "Your LinkedIn app needs approval for r_member_social permission. Re-authentication won't resolve this issue."
+        elif not has_w_member_social:
+            needs_reauth = True
+            reauth_reason = "Your LinkedIn token doesn't have the 'w_member_social' scope required for posts and engagement data."
+        elif len(analytics_data['api_limitations']) > 2:
+            needs_reauth = True
+            reauth_reason = "Your LinkedIn token has w_member_social scope but API responses are limited. Re-authentication might help refresh permissions."
+        else:
+            needs_reauth = False
+            reauth_reason = "Your token has the required scopes but LinkedIn API access is limited."
+        
+        # Save or update analytics data in database
+        linkedin_analytics, created = LinkedinAnalytics.objects.update_or_create(
+            user_id=user.id,
+            linkedin_profile_id=analytics_data['linkedin_profile_id'],
+            defaults={
+                'username': user.username,
+                'email': user.email,
+                'total_followers': analytics_data['total_followers'],
+                'total_posts': analytics_data['total_posts'],
+                'posts_analytics': analytics_data['posts_analytics'],
+                'total_reactions': analytics_data['total_reactions'],
+                'total_comments': analytics_data['total_comments'],
+                'total_reposts': analytics_data['total_reposts'],
+                'total_impressions': analytics_data['total_impressions'],
+                'total_engagement': analytics_data['total_engagement'],
+                'last_updated': timezone.now(),
+            }
+        )
+
+        action = "updated" if not created else "created"
+        logger.info(f"Successfully {action} LinkedIn analytics for profile {analytics_data['linkedin_profile_id']} with ID: {linkedin_analytics.id}")
+
+        # Prepare response data
+        response_data = {
+            "status": "success",
+            "message": f"LinkedIn analytics {action} successfully!",
+            "linkedin_profile_id": analytics_data['linkedin_profile_id'],
+            "data_source": "official_api",
+            "data_quality": analytics_data['data_quality'],
+            "available_scopes": analytics_data['available_scopes'],
+            "api_limitations": analytics_data['api_limitations'],
+            "total_followers": analytics_data['total_followers'],
+            "total_posts": analytics_data['total_posts'],
+            "posts_analytics": analytics_data['posts_analytics'],
+            "total_reactions": analytics_data['total_reactions'],
+            "total_comments": analytics_data['total_comments'],
+            "total_reposts": analytics_data['total_reposts'],
+            "total_impressions": analytics_data['total_impressions'],
+            "total_engagement": analytics_data['total_engagement'],
+            "last_updated": linkedin_analytics.last_updated,
+            "created_at": linkedin_analytics.created_at,
+        }
+
+        # Add re-authentication guidance if needed
+        if needs_reauth:
+            response_data.update({
+                "needs_reauth": True,
+                "reauth_reason": reauth_reason,
+                "reauth_instructions": {
+                    "step1": "Visit the LinkedIn login endpoint to re-authenticate",
+                    "step2": "Grant the 'w_member_social' permission when prompted",
+                    "step3": "This will enable access to posts, engagement data, and connections",
+                    "endpoint": "/auth/linkedin/login/",
+                    "required_scopes": ["openid", "profile", "w_member_social", "email"],
+                    "benefits": [
+                        "Access to your LinkedIn posts and their engagement metrics",
+                        "Detailed analytics including reactions, comments, and reposts",
+                        "Connection count and follower information",
+                        "Enhanced data quality for better insights"
+                    ]
+                },
+                "current_limitations": analytics_data['api_limitations']
+            })
+        elif app_approval_needed:
+            response_data.update({
+                "needs_reauth": False,
+                "reauth_reason": reauth_reason,
+                "linkedin_app_approval_required": True,
+                "app_approval_instructions": {
+                    "issue": "Your LinkedIn app needs approval for restricted permissions",
+                    "required_permissions": ["r_member_social", "w_member_social"],
+                    "explanation": "The r_member_social permission is restricted and only available to approved LinkedIn apps",
+                    "solution_steps": [
+                        "Contact LinkedIn Developer Support to request approval for r_member_social permission",
+                        "Provide business justification for needing access to member's posts and connections",
+                        "Wait for LinkedIn's approval process to complete",
+                        "Once approved, the existing token with w_member_social scope should work"
+                    ],
+                    "alternative": "Use the posting functionality which works with w_member_social scope",
+                    "documentation": "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api"
+                },
+                "current_limitations": analytics_data['api_limitations'],
+                "working_features": [
+                    "LinkedIn posting (w_member_social scope)",
+                    "Basic profile information (openid, profile scopes)",
+                    "Token validation and management"
+                ]
+            })
+        else:
+            response_data.update({
+                "needs_reauth": False,
+                "reauth_reason": reauth_reason,
+                "scope_status": {
+                    "has_w_member_social": has_w_member_social,
+                    "detected_scopes": analytics_data['available_scopes'],
+                    "data_quality": analytics_data['data_quality'],
+                    "note": "Token has required scopes but LinkedIn API access may be limited by app permissions"
+                }
+            })
+
+        # Serialize the successful response
+        response_serializer = LinkedinAnalyticsResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Error serializing LinkedIn analytics response: {response_serializer.errors}")
+            return Response(
+                {"error": "Internal server error during response serialization."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error during LinkedIn API call: {str(e)}")
+        return Response(
+            {"error": f"Network error while communicating with LinkedIn API: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in LinkedIn analytics: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    request=LinkedinPostingRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostingResponseSerializer,
+            description="Content posted to LinkedIn successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input or missing LinkedIn access token."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid or expired LinkedIn access token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error or LinkedIn API error."
+        ),
+    },
+    description="Post content to LinkedIn using the user's stored LinkedIn access token. Supports both text-only posts and posts with images (up to 9 images from S3 URLs). Validates the token, retrieves profile information, uploads images if provided, and posts the content.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def post_on_linkedin_api(request):
+    """
+    Post content to LinkedIn using the user's stored LinkedIn access token.
+    
+    This endpoint:
+    1. Validates the user's LinkedIn access token from the users table
+    2. Retrieves the user's LinkedIn profile information
+    3. Uploads images to LinkedIn if provided (up to 9 images from S3 URLs)
+    4. Posts the provided content with or without images to LinkedIn
+    5. Saves the post details to the database
+    
+    Usage:
+    POST /api/post-on-linkedin/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    Body:
+        {
+            "content": "Your LinkedIn post content here...",
+            "image_urls": ["https://s3.amazonaws.com/bucket/image1.jpg", "https://s3.amazonaws.com/bucket/image2.jpg"]  // Optional
+        }
+    
+    Supported features:
+    - Text-only posts
+    - Posts with up to 9 images from S3 URLs
+    - Automatic image upload to LinkedIn
+    - Post type detection (text/image)
+    - Comprehensive error handling
+    
+    Note: Content should be properly escaped JSON. If you're copying from another response,
+    make sure to escape quotes and handle newlines properly. Image URLs must be publicly accessible S3 URLs.
+    """
+    
+    # Get the authenticated user
+    user = request.user
+    
+    # Check if user has LinkedIn access token
+    linkedin_access_token = getattr(user, 'linkedin_access_token', None)
+    
+    if not linkedin_access_token:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {"error": "No LinkedIn access token found. Please login with LinkedIn first to connect your account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Check if token is expired
+    if hasattr(user, 'linkedin_token_expires_at') and user.linkedin_token_expires_at and user.linkedin_token_expires_at < timezone.now():
+        logger.warning(f"LinkedIn access token expired for user {user.id}")
+        return Response(
+            {"error": "LinkedIn access token has expired. Please login with LinkedIn again to refresh your token."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    # Enhanced error handling for JSON parsing issues
+    try:
+        # Check if request.data is available and has content
+        if not hasattr(request, 'data') or not request.data:
+            logger.error("No request data received")
+            return Response(
+                {
+                    "error": "No request data received. Please provide content in JSON format.",
+                    "example": {
+                        "content": "Your LinkedIn post content here...",
+                        "image_urls": ["https://s3.amazonaws.com/bucket/image1.jpg", "https://s3.amazonaws.com/bucket/image2.jpg"]  // Optional
+                    },
+                    "tip": "Make sure to escape quotes in your content. Use \\\" instead of \" inside the content string."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Check if content field exists
+        if 'content' not in request.data:
+            logger.error("Missing 'content' field in request data")
+            return Response(
+                {
+                    "error": "Missing 'content' field in request data.",
+                    "received_fields": list(request.data.keys()) if request.data else [],
+                    "expected_format": {
+                        "content": "Your LinkedIn post content here...",
+                        "image_urls": ["https://s3.amazonaws.com/bucket/image1.jpg", "https://s3.amazonaws.com/bucket/image2.jpg"]  // Optional
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    except Exception as json_error:
+        logger.error(f"JSON parsing error: {str(json_error)}")
+        return Response(
+            {
+                "error": "JSON parsing error. Please check your request format.",
+                "details": str(json_error),
+                "tip": "Common issues: unescaped quotes, missing commas, or invalid JSON structure. Use a JSON validator to check your request.",
+                "correct_format": {
+                    "content": "Your content here with properly escaped quotes like \\\"this\\\""
+                }
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate request data
+    serializer = LinkedinPostingRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        logger.warning(f"Invalid request data for LinkedIn posting: {serializer.errors}")
+        
+        # Provide more helpful error messages
+        error_details = {}
+        for field, errors in serializer.errors.items():
+            error_details[field] = errors
+            
+        return Response(
+            {
+                "error": "Invalid request data", 
+                "details": error_details,
+                "tips": {
+                    "content": "Content must be a non-empty string with max 3000 characters",
+                    "image_urls": "Optional list of S3 image URLs (max 9 images)",
+                    "json_format": "Ensure your JSON is properly formatted with escaped quotes"
+                }
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Get and clean the content
+    content = serializer.validated_data['content']
+    image_urls = serializer.validated_data.get('image_urls', [])
+    
+    # Determine post type
+    post_type = 'image' if image_urls else 'text'
+    images_count = len(image_urls)
+    
+    logger.info(f"Received LinkedIn posting request for user {user.id} with content length: {len(content)}, images: {images_count}")
+
+    # Clean and normalize the content
+    try:
+        # Remove any potential duplicate content (sometimes copy-paste creates duplicates)
+        content_lines = content.split('\n')
+        seen_lines = set()
+        cleaned_lines = []
+        
+        for line in content_lines:
+            line_stripped = line.strip()
+            if line_stripped and line_stripped not in seen_lines:
+                cleaned_lines.append(line)
+                seen_lines.add(line_stripped)
+            elif not line_stripped:  # Keep empty lines for formatting
+                cleaned_lines.append(line)
+        
+        content = '\n'.join(cleaned_lines)
+        
+        # Final validation
+        if len(content.strip()) == 0:
+            return Response(
+                {"error": "Content cannot be empty after cleaning."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+            
+    except Exception as content_error:
+        logger.error(f"Error processing content: {str(content_error)}")
+        return Response(
+            {"error": f"Error processing content: {str(content_error)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    logger.info(f"Received LinkedIn posting request for user {user.id} with content length: {len(content)}, images: {images_count}")
+
+    try:
+        # First, validate the LinkedIn access token and get user profile information
+        # Use the userinfo endpoint which works with OpenID Connect scope
+        profile_url = "https://api.linkedin.com/v2/userinfo"
+        headers = {
+            'Authorization': f'Bearer {linkedin_access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        profile_response = requests.get(profile_url, headers=headers)
+        
+        if profile_response.status_code != 200:
+            logger.error(f"Failed to fetch LinkedIn profile: {profile_response.status_code} - {profile_response.text}")
+            
+            # Check if it's a permission error
+            if profile_response.status_code == 403:
+                error_data = {}
+                try:
+                    error_data = profile_response.json()
+                except:
+                    pass
+                
+                return Response(
+                    {
+                        "error": "LinkedIn access token lacks required permissions.",
+                        "details": "The stored LinkedIn token doesn't have sufficient permissions to access profile information.",
+                        "linkedin_error": error_data.get('message', 'Access denied'),
+                        "solution": "Please re-authenticate with LinkedIn to grant the required permissions.",
+                        "required_scopes": ["openid", "profile", "w_member_social", "email"],
+                        "current_error": f"Status {profile_response.status_code}: {error_data.get('message', 'Access denied')}"
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            else:
+                return Response(
+                    {
+                        "error": "Failed to validate LinkedIn access token or fetch profile information.",
+                        "linkedin_error": f"Status {profile_response.status_code}: {profile_response.text[:200]}...",
+                        "suggestion": "Please try re-authenticating with LinkedIn."
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+        
+        profile_data = profile_response.json()
+        
+        # Extract profile information from userinfo endpoint (OpenID Connect format)
+        linkedin_profile_id = profile_data.get('sub', '')  # 'sub' is the standard user ID in OpenID Connect
+        linkedin_username = profile_data.get('name', '')
+        
+        # If we don't have the profile ID, try to extract it from the user's stored data
+        if not linkedin_profile_id and hasattr(user, 'linkedin_profile_id') and user.linkedin_profile_id:
+            linkedin_profile_id = user.linkedin_profile_id
+            logger.info(f"Using stored LinkedIn profile ID: {linkedin_profile_id}")
+        
+        if not linkedin_profile_id:
+            logger.error("Could not determine LinkedIn profile ID")
+            return Response(
+                {
+                    "error": "Could not determine LinkedIn profile ID.",
+                    "details": "The LinkedIn token validation succeeded but profile ID is missing.",
+                    "suggestion": "Please re-authenticate with LinkedIn to ensure proper profile access."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        logger.info(f"Retrieved LinkedIn profile - ID: {linkedin_profile_id}, Username: {linkedin_username}")
+
+        # Helper function to upload image to LinkedIn
+        def upload_image_to_linkedin(image_url, linkedin_access_token, linkedin_profile_id):
+            """Upload an image from S3 URL to LinkedIn and return the asset URN"""
+            try:
+                # Step 1: Register upload for image
+                register_url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+                register_headers = {
+                    'Authorization': f'Bearer {linkedin_access_token}',
+                    'Content-Type': 'application/json',
+                    'X-Restli-Protocol-Version': '2.0.0'
+                }
+                
+                register_data = {
+                    "registerUploadRequest": {
+                        "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                        "owner": f"urn:li:person:{linkedin_profile_id}",
+                        "serviceRelationships": [
+                            {
+                                "relationshipType": "OWNER",
+                                "identifier": "urn:li:userGeneratedContent"
+                            }
+                        ]
+                    }
+                }
+                
+                register_response = requests.post(register_url, headers=register_headers, json=register_data)
+                
+                if register_response.status_code != 200:
+                    logger.error(f"Failed to register image upload: {register_response.status_code} - {register_response.text}")
+                    return None
+                
+                register_result = register_response.json()
+                upload_url = register_result['value']['uploadMechanism']['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']['uploadUrl']
+                asset_urn = register_result['value']['asset']
+                
+                # Step 2: Download image from S3
+                image_response = requests.get(image_url, timeout=30)
+                if image_response.status_code != 200:
+                    logger.error(f"Failed to download image from S3: {image_response.status_code}")
+                    return None
+                
+                # Step 3: Upload image to LinkedIn
+                upload_headers = {
+                    'Authorization': f'Bearer {linkedin_access_token}',
+                }
+                
+                upload_response = requests.put(upload_url, headers=upload_headers, data=image_response.content)
+                
+                if upload_response.status_code not in [200, 201]:
+                    logger.error(f"Failed to upload image to LinkedIn: {upload_response.status_code} - {upload_response.text}")
+                    return None
+                
+                logger.info(f"Successfully uploaded image to LinkedIn: {asset_urn}")
+                return asset_urn
+                
+            except Exception as e:
+                logger.error(f"Error uploading image to LinkedIn: {str(e)}")
+                return None
+
+        # Upload images to LinkedIn if provided
+        uploaded_assets = []
+        if image_urls:
+            logger.info(f"Uploading {len(image_urls)} images to LinkedIn...")
+            for i, image_url in enumerate(image_urls):
+                logger.info(f"Uploading image {i+1}/{len(image_urls)}: {image_url}")
+                asset_urn = upload_image_to_linkedin(image_url, linkedin_access_token, linkedin_profile_id)
+                if asset_urn:
+                    uploaded_assets.append(asset_urn)
+                else:
+                    logger.warning(f"Failed to upload image {i+1}: {image_url}")
+            
+            logger.info(f"Successfully uploaded {len(uploaded_assets)}/{len(image_urls)} images")
+
+        # Now post the content to LinkedIn using UGC Posts API
+        post_url = "https://api.linkedin.com/v2/ugcPosts"
+        
+        # Prepare the post data according to LinkedIn API v2 format
+        if uploaded_assets:
+            # Post with images
+            media_list = []
+            for asset_urn in uploaded_assets:
+                media_list.append({
+                    "status": "READY",
+                    "description": {
+                        "text": ""
+                    },
+                    "media": asset_urn,
+                    "title": {
+                        "text": ""
+                    }
+                })
+            
+            post_data = {
+                "author": f"urn:li:person:{linkedin_profile_id}",
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {
+                            "text": content
+                        },
+                        "shareMediaCategory": "IMAGE",
+                        "media": media_list
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                }
+            }
+        else:
+            # Text-only post
+            post_data = {
+                "author": f"urn:li:person:{linkedin_profile_id}",
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {
+                            "text": content
+                        },
+                        "shareMediaCategory": "NONE"
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                }
+            }
+        
+        post_response = requests.post(post_url, headers=headers, json=post_data)
+        
+        if post_response.status_code not in [200, 201]:
+            logger.error(f"Failed to post to LinkedIn: {post_response.status_code} - {post_response.text}")
+            
+            # Parse LinkedIn error response
+            linkedin_error = "Unknown error"
+            try:
+                error_data = post_response.json()
+                linkedin_error = error_data.get('message', error_data.get('error_description', 'Unknown error'))
+            except:
+                linkedin_error = post_response.text[:200] + "..." if len(post_response.text) > 200 else post_response.text
+            
+            # Save failed post attempt to database
+            linkedin_post = LinkedinPostingContent.objects.create(
+                user_id=user.id,
+                username=user.username,
+                email=user.email,
+                linkedin_profile_id=linkedin_profile_id,
+                linkedin_username=linkedin_username,
+                content=content,
+                post_date=timezone.now(),
+                post_status='failed',
+                image_urls=image_urls,
+                images_count=images_count,
+                post_type=post_type,
+            )
+            
+            # Provide specific error messages based on status code
+            if post_response.status_code == 403:
+                error_message = "LinkedIn posting permission denied. Your token may not have 'w_member_social' scope."
+            elif post_response.status_code == 401:
+                error_message = "LinkedIn access token is invalid or expired."
+            elif post_response.status_code == 422:
+                error_message = "LinkedIn rejected the post content. Please check content format and length."
+            else:
+                error_message = f"LinkedIn API error (Status {post_response.status_code})"
+            
+            return Response(
+                {
+                    "error": error_message,
+                    "linkedin_error": linkedin_error,
+                    "status_code": post_response.status_code,
+                    "database_record_id": linkedin_post.id,
+                    "image_urls": image_urls,
+                    "images_count": images_count,
+                    "post_type": post_type,
+                    "suggestion": "Please re-authenticate with LinkedIn if the token is expired or lacks permissions."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+        # Extract LinkedIn post ID from response
+        post_response_data = post_response.json()
+        linkedin_post_id = post_response_data.get('id', '')
+        
+        logger.info(f"Successfully posted to LinkedIn - Post ID: {linkedin_post_id}, Type: {post_type}, Images: {images_count}")
+
+        # Save successful post to database
+        linkedin_post = LinkedinPostingContent.objects.create(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            linkedin_profile_id=linkedin_profile_id,
+            linkedin_username=linkedin_username,
+            content=content,
+            post_date=timezone.now(),
+            linkedin_post_id=linkedin_post_id,
+            post_status='success',
+            image_urls=image_urls,
+            images_count=images_count,
+            post_type=post_type,
+        )
+
+        logger.info(f"Successfully saved LinkedIn post to database with ID: {linkedin_post.id}")
+
+        # Prepare response data
+        response_data = {
+            "status": "success",
+            "message": f"Content posted to LinkedIn successfully! ({post_type} post with {images_count} images)" if images_count > 0 else "Content posted to LinkedIn successfully!",
+            "profile_id": linkedin_profile_id,
+            "username": linkedin_username,
+            "content": content,
+            "post_date": linkedin_post.post_date,
+            "linkedin_post_id": linkedin_post_id,
+            "database_record_id": linkedin_post.id,
+            "image_urls": image_urls,
+            "images_count": images_count,
+            "post_type": post_type,
+        }
+
+        # Serialize the successful response
+        response_serializer = LinkedinPostingResponseSerializer(data=response_data)
+        if response_serializer.is_valid():
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Error serializing LinkedIn posting response: {response_serializer.errors}")
+            return Response(
+                {"error": "Internal server error during response serialization."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error during LinkedIn API call: {str(e)}")
+        return Response(
+            {"error": f"Network error while communicating with LinkedIn API: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in LinkedIn posting: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="LinkedIn re-authentication URL generated successfully.",
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Generate a LinkedIn re-authentication URL with w_member_social scope to enable full analytics access. This endpoint helps users upgrade their LinkedIn token permissions.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def linkedin_reauth_url_api(request):
+    """
+    Generate a LinkedIn re-authentication URL with w_member_social scope.
+    
+    This endpoint helps users who have basic LinkedIn tokens to re-authenticate
+    and get enhanced permissions for accessing posts, engagement data, and connections.
+    
+    Usage:
+    GET /api/linkedin-reauth-url/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    
+    Returns:
+        {
+            "auth_url": "https://www.linkedin.com/oauth/v2/authorization?...",
+            "required_scopes": ["openid", "profile", "w_member_social", "email"],
+            "benefits": ["Access to posts data", "Engagement metrics", "Connection count"],
+            "instructions": "Click the auth_url to re-authenticate with enhanced permissions"
+        }
+    """
+    
+    try:
+        import hashlib
+        import os
+        from django.conf import settings
+        
+        # Get LinkedIn OAuth settings
+        LINKEDIN_CLIENT_ID = os.environ.get('LINKEDIN_CLIENT_ID', '')
+        LINKEDIN_REDIRECT_URI = os.environ.get('LINKEDIN_REDIRECT_URI', '')
+        
+        if not LINKEDIN_CLIENT_ID or not LINKEDIN_REDIRECT_URI:
+            logger.error("LinkedIn OAuth settings not configured")
+            return Response(
+                {
+                    "error": "LinkedIn OAuth not configured",
+                    "details": "LINKEDIN_CLIENT_ID or LINKEDIN_REDIRECT_URI not set in environment variables"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
+        # Generate state parameter for security
+        state = hashlib.sha256(os.urandom(32).hex().encode()).hexdigest()
+        
+        # Construct LinkedIn OAuth URL with w_member_social scope
+        linkedin_auth_url = "https://www.linkedin.com/oauth/v2/authorization"
+        params = {
+            "client_id": LINKEDIN_CLIENT_ID,
+            "redirect_uri": LINKEDIN_REDIRECT_URI,
+            "response_type": "code",
+            "scope": "openid profile w_member_social email",  # Include w_member_social
+            "state": state
+        }
+        
+        # Construct full URL with parameters
+        auth_url = f"{linkedin_auth_url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
+        
+        logger.info(f"Generated LinkedIn re-auth URL for user {request.user.id}")
+        
+        return Response({
+            "status": "success",
+            "message": "LinkedIn re-authentication URL generated successfully",
+            "auth_url": auth_url,
+            "required_scopes": ["openid", "profile", "w_member_social", "email"],
+            "current_user": {
+                "id": request.user.id,
+                "username": request.user.username,
+                "email": request.user.email,
+                "has_linkedin_token": bool(getattr(request.user, 'linkedin_access_token', None))
+            },
+            "benefits": [
+                "Access to your LinkedIn posts and their content",
+                "Detailed engagement metrics (reactions, comments, reposts)",
+                "Connection count and follower information",
+                "Enhanced analytics data quality",
+                "Full social media insights"
+            ],
+            "instructions": {
+                "step1": "Click the 'auth_url' to open LinkedIn authorization page",
+                "step2": "Login to LinkedIn if not already logged in",
+                "step3": "Review and accept the requested permissions",
+                "step4": "You'll be redirected back to the application",
+                "step5": "Your token will be automatically updated with new permissions",
+                "note": "This will replace your existing LinkedIn token with an enhanced one"
+            },
+            "what_happens_next": [
+                "Your existing LinkedIn token will be replaced",
+                "You'll have access to enhanced analytics features",
+                "Posts and engagement data will be available",
+                "Connection count will be accessible"
+            ]
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error generating LinkedIn re-auth URL: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="LinkedIn token validation successful.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - No LinkedIn token found."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid or expired LinkedIn token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Validate the user's stored LinkedIn access token and check available permissions. Useful for debugging token issues before posting content.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def validate_linkedin_token_api(request):
+    """
+    Validate the user's stored LinkedIn access token and check available permissions.
+    
+    This endpoint helps debug token issues by:
+    1. Checking if a LinkedIn token exists for the user
+    2. Validating the token with LinkedIn's API
+    3. Retrieving available scopes/permissions
+    4. Checking token expiration
+    
+    Usage:
+    GET /api/validate-linkedin-token/
+    Headers:
+        Authorization: Bearer <your_jwt_token>
+    """
+    
+    # Get the authenticated user
+    user = request.user
+    
+    # Check if user has LinkedIn access token
+    linkedin_access_token = getattr(user, 'linkedin_access_token', None)
+    
+    if not linkedin_access_token:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {
+                "valid": False,
+                "error": "No LinkedIn access token found.",
+                "details": "User has not connected their LinkedIn account.",
+                "solution": "Please login with LinkedIn first to connect your account.",
+                "user_id": user.id,
+                "username": user.username
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Check if token is expired (if we have expiration info)
+    token_expired = False
+    if hasattr(user, 'linkedin_token_expires_at') and user.linkedin_token_expires_at:
+        if user.linkedin_token_expires_at < timezone.now():
+            token_expired = True
+    
+    try:
+        # Test the token with LinkedIn's userinfo endpoint
+        profile_url = "https://api.linkedin.com/v2/userinfo"
+        headers = {
+            'Authorization': f'Bearer {linkedin_access_token}',
+            'Content-Type': 'application/json',
+        }
+        
+        profile_response = requests.get(profile_url, headers=headers)
+        
+        # Prepare response data
+        response_data = {
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "token_exists": True,
+            "token_length": len(linkedin_access_token),
+            "token_preview": linkedin_access_token[:20] + "..." if len(linkedin_access_token) > 20 else linkedin_access_token,
+            "token_expired_by_date": token_expired,
+            "token_expires_at": user.linkedin_token_expires_at if hasattr(user, 'linkedin_token_expires_at') else None,
+            "stored_linkedin_profile_id": getattr(user, 'linkedin_profile_id', None),
+        }
+        
+        if profile_response.status_code == 200:
+            # Token is valid
+            profile_data = profile_response.json()
+            
+            response_data.update({
+                "valid": True,
+                "status": "success",
+                "message": "LinkedIn token is valid and working!",
+                "profile_data": {
+                    "linkedin_id": profile_data.get('sub', ''),
+                    "name": profile_data.get('name', ''),
+                    "email": profile_data.get('email', ''),
+                    "picture": profile_data.get('picture', ''),
+                },
+                "available_endpoints": {
+                    "userinfo": "✅ Working",
+                    "posting": "✅ Should work (requires w_member_social scope)"
+                },
+                "recommendations": [
+                    "Token is working correctly",
+                    "You can proceed with posting content to LinkedIn"
+                ]
+            })
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        elif profile_response.status_code == 403:
+            # Permission denied
+            error_data = {}
+            try:
+                error_data = profile_response.json()
+            except:
+                pass
+            
+            response_data.update({
+                "valid": False,
+                "status": "permission_denied",
+                "message": "LinkedIn token lacks required permissions.",
+                "error": error_data.get('message', 'Access denied'),
+                "linkedin_error_code": error_data.get('serviceErrorCode', 'Unknown'),
+                "available_endpoints": {
+                    "userinfo": "❌ Permission denied",
+                    "posting": "❌ Likely to fail"
+                },
+                "required_scopes": ["openid", "profile", "w_member_social", "email"],
+                "recommendations": [
+                    "Re-authenticate with LinkedIn to grant required permissions",
+                    "Ensure your LinkedIn app has the correct scopes configured",
+                    "Check if your LinkedIn app is approved for the required permissions"
+                ]
+            })
+            
+            return Response(response_data, status=status.HTTP_401_UNAUTHORIZED)
+            
+        elif profile_response.status_code == 401:
+            # Token invalid or expired
+            response_data.update({
+                "valid": False,
+                "status": "invalid_or_expired",
+                "message": "LinkedIn token is invalid or expired.",
+                "linkedin_response": profile_response.text[:200] + "..." if len(profile_response.text) > 200 else profile_response.text,
+                "available_endpoints": {
+                    "userinfo": "❌ Unauthorized",
+                    "posting": "❌ Will fail"
+                },
+                "recommendations": [
+                    "Re-authenticate with LinkedIn to get a fresh token",
+                    "Check if the token has expired",
+                    "Verify LinkedIn app credentials"
+                ]
+            })
+            
+            return Response(response_data, status=status.HTTP_401_UNAUTHORIZED)
+            
+        else:
+            # Other error
+            response_data.update({
+                "valid": False,
+                "status": "api_error",
+                "message": f"LinkedIn API returned unexpected status: {profile_response.status_code}",
+                "linkedin_response": profile_response.text[:200] + "..." if len(profile_response.text) > 200 else profile_response.text,
+                "available_endpoints": {
+                    "userinfo": f"❌ Error {profile_response.status_code}",
+                    "posting": "❌ Likely to fail"
+                },
+                "recommendations": [
+                    "Check LinkedIn API status",
+                    "Try re-authenticating with LinkedIn",
+                    "Contact support if the issue persists"
+                ]
+            })
+            
+            return Response(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error during LinkedIn token validation: {str(e)}")
+        return Response(
+            {
+                "valid": False,
+                "status": "network_error",
+                "message": "Network error while validating LinkedIn token.",
+                "error": str(e),
+                "recommendations": [
+                    "Check your internet connection",
+                    "Try again in a few moments",
+                    "Contact support if the issue persists"
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in LinkedIn token validation: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {
+                "valid": False,
+                "status": "unexpected_error",
+                "message": "An unexpected error occurred during token validation.",
+                "error": str(e),
+                "recommendations": [
+                    "Try again in a few moments",
+                    "Contact support if the issue persists"
+                ]
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# Schedule LinkedIn Post Endpoints
+
+@extend_schema(
+    request=ScheduleLinkedinPostRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=ScheduleLinkedinPostResponseSerializer,
+            description="LinkedIn posts scheduled successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input or missing LinkedIn access token."
+        ),
+        401: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Unauthorized - Invalid or expired LinkedIn access token."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Schedule multiple LinkedIn posts to be published at a specific date and time with delays between posts. Requires LinkedIn authentication and validates the scheduled time is in the future.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def schedule_linkedin_post_api(request):
+    """
+    Schedule multiple LinkedIn posts to be published at a specific date and time.
+    
+    This endpoint:
+    1. Validates the user has LinkedIn authentication
+    2. Validates the scheduled time is in the future
+    3. Creates a scheduled post record in the database with multiple content
+    4. Schedules a Celery task to post at the specified time with delays between posts
+    
+    Body Parameters:
+    - content: Array of LinkedIn post content (each max 3000 characters, max 10 posts)
+    - scheduled_date: Date to publish (YYYY-MM-DD format)
+    - scheduled_time: Time to publish (HH:MM:SS format)
+    - timezone: Timezone for the scheduled time (optional, default: UTC)
+    - image_urls: Optional list of image URLs to distribute across posts
+    - delay_between_posts: Delay in minutes between each post (default: 5 minutes)
+    
+    Returns:
+    - schedule_id: Unique ID for the scheduled post batch
+    - total_posts: Number of posts scheduled
+    - scheduled_datetime: When the first post will be published
+    - celery_task_id: Task ID for tracking/cancellation
+    """
+    
+    # Get the authenticated user
+    user = request.user
+    
+    # Check if user has LinkedIn access token
+    linkedin_access_token = getattr(user, 'linkedin_access_token', None)
+    linkedin_profile_id = getattr(user, 'linkedin_profile_id', None)
+    
+    if not linkedin_access_token or not linkedin_profile_id:
+        logger.warning(f"No LinkedIn access token found for user {user.id}")
+        return Response(
+            {
+                "error": "LinkedIn authentication required.",
+                "details": "User has not connected their LinkedIn account.",
+                "solution": "Please login with LinkedIn first to connect your account."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    # Validate request data
+    serializer = ScheduleLinkedinPostRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            {"error": "Invalid input data.", "details": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    
+    validated_data = serializer.validated_data
+    
+    try:
+        # Get LinkedIn username (optional, for display purposes)
+        linkedin_username = ""
+        try:
+            profile_url = "https://api.linkedin.com/v2/userinfo"
+            headers = {
+                'Authorization': f'Bearer {linkedin_access_token}',
+                'Content-Type': 'application/json',
+            }
+            profile_response = requests.get(profile_url, headers=headers)
+            if profile_response.status_code == 200:
+                profile_data = profile_response.json()
+                linkedin_username = profile_data.get('name', '')
+        except:
+            pass  # Continue without username if API call fails
+        
+        # Get multiple content posts
+        content_array = validated_data['content']
+        total_posts = len(content_array)
+        delay_between_posts = validated_data.get('delay_between_posts', 5)
+        
+        # Determine post type
+        post_type = 'image' if validated_data.get('image_urls') else 'text'
+        images_count = len(validated_data.get('image_urls', []))
+        
+        # Create scheduled post record with array content
+        scheduled_post = SchedulePosts.objects.create(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            linkedin_profile_id=linkedin_profile_id,
+            linkedin_username=linkedin_username,
+            content=content_array,  # Now storing as array
+            image_urls=validated_data.get('image_urls', []),
+            images_count=images_count,
+            post_type=post_type,
+            scheduled_datetime=validated_data['scheduled_datetime'],
+            user_timezone=validated_data.get('timezone', 'UTC'),
+            status='scheduled'
+        )
+        
+        # Schedule Celery task
+        from tools.ai.schedule_linkedin_post.tasks import schedule_linkedin_post_batch_task
+        from celery import current_app
+        
+        # Calculate ETA (when to execute the task)
+        eta = validated_data['scheduled_datetime']
+        
+        # Schedule the batch task with delay information
+        task = schedule_linkedin_post_batch_task.apply_async(
+            args=[scheduled_post.id, delay_between_posts],
+            eta=eta
+        )
+        
+        # Save the Celery task ID for potential cancellation
+        scheduled_post.celery_task_id = task.id
+        scheduled_post.save()
+        
+        logger.info(f"Scheduled LinkedIn post batch {scheduled_post.id} with {total_posts} posts for user {user.id} at {eta}")
+        
+        # Prepare response
+        response_data = {
+            "status": "success",
+            "message": f"{total_posts} LinkedIn posts scheduled successfully starting at {validated_data['scheduled_datetime'].strftime('%Y-%m-%d %H:%M:%S %Z')}",
+            "schedule_id": scheduled_post.id,
+            "content": scheduled_post.content,
+            "total_posts": total_posts,
+            "scheduled_datetime": scheduled_post.scheduled_datetime,
+            "timezone": scheduled_post.user_timezone,
+            "linkedin_profile_id": scheduled_post.linkedin_profile_id,
+            "linkedin_username": scheduled_post.linkedin_username,
+            "post_type": scheduled_post.post_type,
+            "images_count": scheduled_post.images_count,
+            "delay_between_posts": delay_between_posts,
+            "celery_task_id": scheduled_post.celery_task_id,
+            "created_at": scheduled_post.created_at
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error scheduling LinkedIn post for user {user.id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {
+                "error": "Failed to schedule LinkedIn post.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=ScheduledPostsListResponseSerializer,
+            description="Scheduled posts retrieved successfully.",
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get all scheduled LinkedIn posts for the authenticated user, including their status and details.",
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_scheduled_posts_api(request):
+    """
+    Get all scheduled LinkedIn posts for the authenticated user.
+    
+    Returns a list of all scheduled posts with their current status:
+    - scheduled: Waiting to be posted
+    - posted: Successfully posted
+    - failed: Failed to post
+    - cancelled: Cancelled by user
+    """
+    
+    user = request.user
+    
+    try:
+        # Get all scheduled posts for the user
+        scheduled_posts = SchedulePosts.objects.filter(user_id=user.id).order_by('-scheduled_datetime')
+        
+        # Prepare response data
+        posts_data = []
+        for post in scheduled_posts:
+            # Handle both array and single content for backward compatibility
+            content = post.content
+            if isinstance(content, list):
+                total_posts = len(content)
+                content_preview = content[0][:100] + "..." if content and len(content[0]) > 100 else (content[0] if content else "")
+            else:
+                total_posts = 1
+                content_preview = content[:100] + "..." if content and len(content) > 100 else content
+            
+            posts_data.append({
+                "schedule_id": post.id,
+                "content": post.content,
+                "content_preview": content_preview,
+                "total_posts": total_posts,
+                "scheduled_datetime": post.scheduled_datetime,
+                "timezone": post.user_timezone,
+                "status": post.status,
+                "linkedin_profile_id": post.linkedin_profile_id,
+                "linkedin_username": post.linkedin_username,
+                "post_type": post.post_type,
+                "images_count": post.images_count,
+                "created_at": post.created_at,
+                "posted_at": post.posted_at,
+                "linkedin_post_id": post.linkedin_post_id,
+                "error_message": post.error_message
+            })
+        
+        response_data = {
+            "status": "success",
+            "message": f"Retrieved {len(posts_data)} scheduled posts",
+            "total_scheduled": len(posts_data),
+            "scheduled_posts": posts_data
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving scheduled posts for user {user.id}: {str(e)}")
+        return Response(
+            {
+                "error": "Failed to retrieve scheduled posts.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=CancelScheduledPostResponseSerializer,
+            description="Scheduled post cancelled successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid schedule ID or post cannot be cancelled."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Not Found - Scheduled post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Cancel a scheduled LinkedIn post. Only posts with 'scheduled' status can be cancelled.",
+)
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def cancel_scheduled_post_api(request, schedule_id):
+    """
+    Cancel a scheduled LinkedIn post.
+    
+    Path Parameters:
+    - schedule_id: The ID of the scheduled post to cancel
+    
+    Only posts with 'scheduled' status can be cancelled.
+    This will also revoke the associated Celery task.
+    """
+    
+    user = request.user
+    
+    try:
+        # Get the scheduled post
+        try:
+            scheduled_post = SchedulePosts.objects.get(id=schedule_id, user_id=user.id)
+        except SchedulePosts.DoesNotExist:
+            return Response(
+                {
+                    "error": "Scheduled post not found.",
+                    "details": f"No scheduled post found with ID {schedule_id} for this user."
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        
+        # Check if post can be cancelled
+        if scheduled_post.status != 'scheduled':
+            return Response(
+                {
+                    "error": "Post cannot be cancelled.",
+                    "details": f"Post status is '{scheduled_post.status}'. Only 'scheduled' posts can be cancelled.",
+                    "current_status": scheduled_post.status
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        previous_status = scheduled_post.status
+        
+        # Cancel the Celery task if it exists
+        if scheduled_post.celery_task_id:
+            try:
+                from celery import current_app
+                current_app.control.revoke(scheduled_post.celery_task_id, terminate=True)
+                logger.info(f"Revoked Celery task {scheduled_post.celery_task_id} for scheduled post {schedule_id}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Celery task {scheduled_post.celery_task_id}: {str(e)}")
+        
+        # Update post status
+        scheduled_post.status = 'cancelled'
+        scheduled_post.save()
+        
+        logger.info(f"Cancelled scheduled post {schedule_id} for user {user.id}")
+        
+        response_data = {
+            "status": "success",
+            "message": f"Scheduled post {schedule_id} cancelled successfully",
+            "schedule_id": scheduled_post.id,
+            "previous_status": previous_status,
+            "current_status": scheduled_post.status
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error cancelling scheduled post {schedule_id} for user {user.id}: {str(e)}")
+        return Response(
+            {
+                "error": "Failed to cancel scheduled post.",
+                "details": str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    request={
+        'multipart/form-data': {
+            'type': 'object',
+            'properties': {
+                'prompt': {
+                    'type': 'string',
+                    'description': 'The editing instruction/prompt describing what changes to make to the image.',
+                    'maxLength': 1000
+                },
+                'keywords': {
+                    'type': 'array',
+                    'items': {'type': 'string'},
+                    'description': 'Optional keywords to guide the editing process.',
+                    'default': []
+                },
+                'image': {
+                    'type': 'string',
+                    'format': 'binary',
+                    'description': 'The image file to edit. Supported formats: JPEG, PNG, WebP. Maximum size: 10MB.'
+                }
+            },
+            'required': ['prompt', 'image']
+        }
+    },
+    responses={
+        200: OpenApiResponse(
+            response=ImageEditingResponseSerializer,
+            description="Image edited successfully using FLUX AI.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input or image format."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Internal Server Error / Image Editing Failed.",
+        ),
+    },
+    description="Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords. Upload an image file and provide editing instructions to transform the image using advanced AI editing capabilities.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def edit_image_api(request):
+    """
+    Edit an uploaded image using FLUX AI based on the provided prompt and keywords.
+    
+    This endpoint:
+    1. Accepts multipart form data with prompt, keywords, and image file
+    2. Converts the image to base64 format
+    3. Optimizes the editing prompt using AI
+    4. Sends the image and prompt to FLUX AI for editing
+    5. Downloads and uploads the edited result to S3
+    6. Saves the editing session to the database
+    
+    Request format:
+    - Multipart form data with prompt (string), keywords (array), and image (file)
+    """
+    import json
+    
+    # Extract prompt and keywords from form data
+    prompt = request.data.get('prompt')
+    keywords = request.data.get('keywords', [])
+    
+    # Handle keywords if sent as JSON string
+    if isinstance(keywords, str):
+        try:
+            keywords = json.loads(keywords)
+        except json.JSONDecodeError:
+            # If not valid JSON, treat as comma-separated string
+            keywords = [k.strip() for k in keywords.split(',') if k.strip()]
+    
+    # Validate prompt
+    if not prompt or not prompt.strip():
+        return Response(
+            {"error": "Missing or empty 'prompt'. Please provide an editing instruction."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate prompt length
+    if len(prompt) > 1000:
+        return Response(
+            {"error": "Prompt exceeds maximum length of 1000 characters."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Convert keywords array to string for processing
+    if isinstance(keywords, list):
+        keywords_str = ", ".join(keywords) if keywords else ""
+    else:
+        keywords_str = str(keywords) if keywords else ""
+    
+    # Validate keywords length if provided
+    if keywords_str and len(keywords_str) > 500:
+        return Response(
+            {"error": "Keywords exceed maximum length of 500 characters."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate the image file
+    uploaded_image = request.FILES.get('image')
+    if not uploaded_image:
+        return Response(
+            {"error": "Missing image file. Please upload an image file."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate image file
+    if uploaded_image.size > 10 * 1024 * 1024:
+        return Response(
+            {"error": "Image file size cannot exceed 10MB."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    allowed_formats = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+    if uploaded_image.content_type not in allowed_formats:
+        return Response(
+            {"error": "Unsupported image format. Please use JPEG, PNG, or WebP."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    logger.info(
+        f"Received image editing request for prompt: '{prompt}' with keywords: '{keywords_str}', image size: {uploaded_image.size} bytes"
+    )
+
+    start_time = timezone.now()
+
+    try:
+        # Convert uploaded image to base64
+        image_base64 = convert_image_to_base64(uploaded_image)
+        if not image_base64:
+            logger.error("Failed to convert uploaded image to base64")
+            return Response(
+                {"error": "Failed to process the uploaded image. Please ensure it's a valid image file."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Edit the image using FLUX AI
+        success, edited_image_url, enhanced_prompt, error_message = edit_image_with_flux(
+            prompt=prompt,
+            image_base64=image_base64,
+            keywords=keywords_str,
+            output_dir="edited_images"
+        )
+
+        # Calculate processing time
+        processing_time = (timezone.now() - start_time).total_seconds()
+
+        if success and edited_image_url:
+            # Save the image editing session to database
+            image_editing_record = ImageEditing(
+                user_id=request.user.id,
+                username=request.user.username,
+                email=request.user.email,
+                prompt=prompt,
+                keywords=keywords_str,
+                uploaded_image=image_base64,  # Store base64 of original image
+                image_url=edited_image_url,
+                enhanced_prompt=enhanced_prompt,
+                edit_status='success',
+                created_at=timezone.now(),
+            )
+            image_editing_record.save()
+            
+            logger.info(f"Successfully edited image for prompt: '{prompt}' with ID: {image_editing_record.id}")
+
+            response_data = {
+                "status": "success", 
+                "message": "Image edited successfully using FLUX AI!",
+                "prompt_used": prompt,
+                "enhanced_prompt": enhanced_prompt,
+                "keywords": keywords_str,
+                "original_image_size": uploaded_image.size,
+                "edited_image_url": edited_image_url,
+                "database_record_id": image_editing_record.id,
+                "edit_status": "success",
+                "processing_time": processing_time,
+                "created_at": image_editing_record.created_at,
+            }
+
+            response_serializer = ImageEditingResponseSerializer(data=response_data)
+            if response_serializer.is_valid():
+                return Response(response_serializer.data, status=status.HTTP_200_OK)
+            else:
+                logger.error(
+                    f"Error serializing successful response for image editing: {response_serializer.errors}"
+                )
+                return Response(
+                    {"error": "Internal server error during response serialization."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        else:
+            # Save failed editing attempt to database
+            image_editing_record = ImageEditing(
+                user_id=request.user.id,
+                username=request.user.username,
+                email=request.user.email,
+                prompt=prompt,
+                keywords=keywords_str,
+                uploaded_image=image_base64,
+                image_url="",  # No result URL for failed attempts
+                enhanced_prompt=enhanced_prompt or prompt,
+                edit_status='failed',
+                created_at=timezone.now(),
+            )
+            image_editing_record.save()
+            
+            logger.error(f"Image editing failed for prompt: '{prompt}'. Error: {error_message}")
+            return Response(
+                {
+                    "error": f"Image editing failed: {error_message}",
+                    "database_record_id": image_editing_record.id,
+                    "edit_status": "failed",
+                    "processing_time": processing_time,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    except Exception as e:
+        processing_time = (timezone.now() - start_time).total_seconds()
+        logger.error(f"Unexpected error in image editing: {type(e).__name__} - {e}")
+        
+        # Try to save error to database
+        try:
+            image_editing_record = ImageEditing(
+                user_id=request.user.id,
+                username=request.user.username,
+                email=request.user.email,
+                prompt=prompt,
+                keywords=keywords,
+                uploaded_image="",  # Don't store image on error
+                image_url="",
+                enhanced_prompt=prompt,
+                edit_status='failed',
+                created_at=timezone.now(),
+            )
+            image_editing_record.save()
+            record_id = image_editing_record.id
+        except:
+            record_id = None
+            
+        import traceback
+        traceback.print_exc()
+        return Response(
+            {
+                "error": f"An unexpected error occurred: {str(e)}",
+                "database_record_id": record_id,
+                "edit_status": "failed", 
+                "processing_time": processing_time,
+            },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
