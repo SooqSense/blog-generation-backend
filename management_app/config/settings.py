@@ -316,10 +316,7 @@ if os.environ.get("DOCKER_ENV") == "true":
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
 
-# Debug Redis configuration
-print(f"Settings Debug - REDIS_URL: {REDIS_URL}")
-print(f"Settings Debug - CELERY_BROKER_URL: {CELERY_BROKER_URL}")
-print(f"Settings Debug - CELERY_RESULT_BACKEND: {CELERY_RESULT_BACKEND}")
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"

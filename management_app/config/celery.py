@@ -42,10 +42,7 @@ if os.environ.get('DOCKER_ENV') == 'true':
 broker_url = os.environ.get('CELERY_BROKER_URL', redis_url)
 result_backend = os.environ.get('CELERY_RESULT_BACKEND', redis_url)
 
-# Debug logging to see what URLs are being used
-print(f"Celery Debug - REDIS_URL: {redis_url}")
-print(f"Celery Debug - BROKER_URL: {broker_url}")
-print(f"Celery Debug - RESULT_BACKEND: {result_backend}")
+
 
 app.conf.update(
     broker_url=broker_url,

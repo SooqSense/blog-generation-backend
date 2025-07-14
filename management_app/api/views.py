@@ -514,6 +514,7 @@ def generate_daily_ai_news(request):
             keywords=keywords,
             summary=news_result["summary"],
             content=news_result["content"],
+            sources=news_result.get("sources", []),
             created_at=timezone.now(),
         )
         news_blog.save()
@@ -530,6 +531,7 @@ def generate_daily_ai_news(request):
             "keywords": keywords,
             "news_date": datetime.now().date(),
             "articles_count": news_result["articles_count"],
+            "sources": news_result.get("sources", []),
             "content": structured_content,
             "raw_content": news_result["content"],
         }

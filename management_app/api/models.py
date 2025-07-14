@@ -27,6 +27,7 @@ class BlogAiNews(models.Model):
     keywords = models.JSONField(default=list, blank=True)  # Keywords used for news search
     summary = models.TextField()
     content = models.TextField()  # Markdown content
+    sources = models.JSONField(default=list, blank=True)  # Source articles with title, link, source, etc.
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
