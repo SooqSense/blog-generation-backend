@@ -265,7 +265,7 @@ Keep it concise and focus only on the most significant developments."""
             num_results: Number of news articles to fetch (default: 5 for concise daily summary)
             
         Returns:
-            Dictionary with processed news data
+            Dictionary with processed news data including sources
         """
         try:
             print(f"Fetching daily AI headlines for {country.upper()} with keywords: {', '.join(keywords)}")
@@ -280,10 +280,24 @@ Keep it concise and focus only on the most significant developments."""
                     "message": "No AI news found for today",
                     "summary": "",
                     "content": "",
-                    "articles_count": 0
+                    "articles_count": 0,
+                    "sources": []
                 }
             
             print(f"Found {len(news_articles)} news articles")
+            
+            # Extract sources from articles
+            sources = []
+            for article in news_articles:
+                source_info = {
+                    "title": article.get("title", "No title"),
+                    "source": article.get("source", "Unknown source"),
+                    "link": article.get("link", ""),
+                    "snippet": article.get("snippet", "No description"),
+                    "date": article.get("date", ""),
+                    "position": article.get("position", 0)
+                }
+                sources.append(source_info)
             
             # Generate content
             content_data = self.generate_news_content(news_articles, keywords, country)
@@ -294,6 +308,7 @@ Keep it concise and focus only on the most significant developments."""
                 "summary": content_data["summary"],
                 "content": content_data["content"],
                 "articles_count": len(news_articles),
+                "sources": sources,
                 "country": country,
                 "keywords": keywords,
                 "news_date": date.today().isoformat()
@@ -306,7 +321,8 @@ Keep it concise and focus only on the most significant developments."""
                 "message": f"Error fetching daily AI news: {str(e)}",
                 "summary": "",
                 "content": "",
-                "articles_count": 0
+                "articles_count": 0,
+                "sources": []
             }
 
 # Example usage
