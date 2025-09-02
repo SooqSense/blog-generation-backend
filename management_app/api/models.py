@@ -161,4 +161,20 @@ class SchedulePosts(models.Model):
 
     class Meta:
         db_table = 'schedule_posts'
-        ordering = ['-scheduled_datetime'] 
+        ordering = ['-scheduled_datetime']
+
+
+class ImageEditing(models.Model):
+    user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
+    prompt = models.TextField()  # Edit instruction/prompt
+    keywords = models.CharField(max_length=500, blank=True, default='')  # Optional keywords
+    uploaded_image = models.TextField()  # Store base64 encoded original image
+    image_url = models.URLField(max_length=500)  # URL of the edited result image
+    enhanced_prompt = models.TextField(blank=True, default='')  # AI-optimized prompt used
+    edit_status = models.CharField(max_length=50, default='success')  # success, failed, processing
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'image_editing' 

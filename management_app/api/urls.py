@@ -7,6 +7,7 @@ urlpatterns = [
     path("daily-ai-news/", views.generate_daily_ai_news, name="daily_ai_news"),
     # New API endpoints
     path("generate-image/", views.generate_image_api, name="generate_image_api"),
+    path("edit-image/", views.edit_image_api, name="edit_image_api"),
     path(
         "generate-linkedin-post/",
         views.generate_linkedin_post_api,
