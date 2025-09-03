@@ -40,7 +40,7 @@ if settings.TOOLS_DIR not in sys.path:
 if os.path.dirname(settings.TOOLS_DIR) not in sys.path:
     sys.path.insert(0, os.path.dirname(settings.TOOLS_DIR))
 
-from tools.ai.blog_generator.blog_writer import BlogWriter
+from tools.ai.blog_generator.blog_writing.blog_writer import BlogWriter
 from tools.ai.image_generation.image_generator import generate_image
 
 # Import the new LinkedInPostGenerator service
@@ -293,7 +293,7 @@ def convert_markdown_to_json(markdown_content):
             response=ErrorResponseSerializer, description="Internal Server Error."
         ),
     },
-    description="Generate a detailed blog post based on the given topic and optional parameters for customization.",
+    description="Generate a detailed blog post based on the given topic and optional parameters for customization. Set 'generate_image_prompts' to true (default) to include 5 section-specific images, or false for text-only blog content.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -319,7 +319,7 @@ def generate_blog_api(request):
         conclusion = serializer.validated_data.get("conclusion", True)
         target_audience = serializer.validated_data.get("target_audience", [])
         generate_image_prompts = serializer.validated_data.get("generate_image_prompts", True)
-        max_image_prompts = serializer.validated_data.get("max_image_prompts", 5)
+        generate_images = serializer.validated_data.get("generate_images", True)
         
         # Keywords are already processed by the serializer into the correct format
         # No additional processing needed as KeywordWithCountField handles all formats:
@@ -346,7 +346,7 @@ def generate_blog_api(request):
                 target_audience=target_audience,
                 sample_blog_url=sample_blog_url if sample_blog_url else None,
                 generate_image_prompts=generate_image_prompts,
-                max_image_prompts=max_image_prompts,
+                generate_images=generate_images,
             )
 
             # Generate the blog content without saving to file
@@ -367,37 +367,45 @@ def generate_blog_api(request):
             # Convert markdown content to JSON structure
             structured_content = convert_markdown_to_json(blog_content)
 
-            # Get generated image prompts
+            # Get generated image prompts (legacy support)
             image_prompts = getattr(blog_writer_instance, 'image_prompts', [])
             prompts_count = len(image_prompts)
             
-            # Debug logging for image prompts
-            logger.info(f"Image prompts generated: {prompts_count}")
-            for i, prompt in enumerate(image_prompts[:3]):  # Log first 3 prompts for debugging
-                logger.info(f"Image Prompt {i+1} (length: {len(prompt)}): {prompt[:100]}...")
+            # Get section-specific image data
+            section_images = getattr(blog_writer_instance, 'section_images', {})
+            image_urls = getattr(blog_writer_instance, 'image_urls', [])
+            images_count = len([img for img in section_images.values() if img.get('image_url')])
+            
+            # Debug logging for images
+            logger.info(f"Section-specific images generated: {images_count}")
+            logger.info(f"S3 URLs stored: {len(image_urls)}")
+            for section, img_data in section_images.items():
+                if img_data.get('image_url'):
+                    logger.info(f"Section '{section}' image: {img_data['image_url']}")
             
             # Get research sources
             research_sources = getattr(blog_writer_instance, 'research_sources', [])
             sources_count = len(research_sources)
             
-            # Save to database (still save the markdown version)
+            # Save to database with section-specific image URLs
             blog = BlogGeneral(
                 user_id=request.user.id,  # Use authenticated user's ID
                 username=request.user.username,  # Use authenticated user's username
                 email=request.user.email,  # Use authenticated user's email
                 topic=topic,
-                content=blog_content,
+                content=blog_content.replace('\\n', '\n').replace('\\t', '\t').strip(),  # This now includes embedded images
                 sample_blog_url=sample_blog_url if sample_blog_url else None,
-                image_prompts=image_prompts,
-                prompts_count=prompts_count,
+                image_prompts=image_prompts,  # Legacy field for backward compatibility
+                prompts_count=prompts_count,  # Legacy field
+                image_urls=image_urls,  # New field: list of S3 URLs
                 created_at=timezone.now(),
             )
             blog.save()
-            logger.info(f"Saved blog to database with ID: {blog.id} with {prompts_count} image prompts and {sources_count} research sources")
+            logger.info(f"Saved blog to database with ID: {blog.id} with {images_count} section images and {sources_count} research sources")
 
             response_data = {
                 "status": "success",
-                "message": f"Research-based {blog_type.lower()} blog generated successfully!",
+                "message": f"Research-based {blog_type.lower()} blog generated successfully with {images_count} section-specific images!",
                 "topic": topic,
                 "keywords": keywords,
                 "sample_blog_url": sample_blog_url,
@@ -412,13 +420,16 @@ def generate_blog_api(request):
                 "conclusion": conclusion,
                 "target_audience": target_audience,
                 "generate_image_prompts": generate_image_prompts,
-                "max_image_prompts": max_image_prompts,
-                "image_prompts": image_prompts,
-                "prompts_count": prompts_count,
-                "research_sources": research_sources,  # New: Include research sources
-                "sources_count": sources_count,  # New: Include sources count
+                "generate_images": generate_images,
+                "image_prompts": image_prompts,  # Legacy field for backward compatibility
+                "prompts_count": prompts_count,  # Legacy field
+                "image_urls": image_urls,  # New: S3 URLs of section-specific images
+                "section_images": section_images,  # New: Complete section image data with prompts and metadata
+                "images_count": images_count,  # New: Number of successfully generated images
+                "research_sources": research_sources,  # Include research sources
+                "sources_count": sources_count,  # Include sources count
                 "content": structured_content,
-                "raw_content": blog_content,  # Include the original markdown as well
+                "raw_content": blog_content.replace('\\n', '\n').replace('\\t', '\t').strip(),  # Include the markdown with embedded images
             }
 
             # Serialize the successful response
@@ -523,7 +534,7 @@ def generate_daily_ai_news(request):
             country=country,
             keywords=keywords,
             summary=news_result["summary"],
-            content=news_result["content"],
+            content=news_result["content"].replace('\\n', '\n').replace('\\t', '\t').strip(),
             sources=news_result.get("sources", []),
             created_at=timezone.now(),
         )
@@ -543,7 +554,7 @@ def generate_daily_ai_news(request):
             "articles_count": news_result["articles_count"],
             "sources": news_result.get("sources", []),
             "content": structured_content,
-            "raw_content": news_result["content"],
+            "raw_content": news_result["content"].replace('\\n', '\n').replace('\\t', '\t').strip(),
         }
 
         # Serialize the successful response

@@ -1,5 +1,5 @@
 import argparse
-from tools.ai.blog_generator.blog_writer import BlogWriter
+from tools.ai.blog_generator.blog_writing.blog_writer import BlogWriter
 
 def main():
     """Main function to run the blog writer system."""

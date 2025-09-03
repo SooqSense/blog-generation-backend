@@ -176,14 +176,12 @@ class BlogRequestSerializer(serializers.Serializer):
     generate_image_prompts = serializers.BooleanField(
         required=False,
         default=True,
-        help_text="Whether to generate image prompts based on blog headings."
+        help_text="Whether to generate image prompts for blog sections. If False, no image prompts will be created. Default is True."
     )
-    max_image_prompts = serializers.IntegerField(
+    generate_images = serializers.BooleanField(
         required=False,
-        default=5,
-        min_value=1,
-        max_value=15,
-        help_text="Maximum number of image prompts to generate (1-15). Default is 5."
+        default=True,
+        help_text="Whether to actually generate images from the prompts. If True and generate_image_prompts is also True, generates 5 section-specific images (Banner, Main Content, Supporting Details, Evidence, Conclusion) and embeds them in markdown. If False, only generates prompts without actual images. Default is True."
     )
     
     # Add validation to ensure length_min is less than length_max and validate sample_blog_url
@@ -204,6 +202,13 @@ class BlogRequestSerializer(serializers.Serializer):
             # Check if URL scheme is http or https
             if parsed_url.scheme not in ['http', 'https']:
                 raise serializers.ValidationError("sample_blog_url must use http:// or https:// protocol")
+        
+        # Validate image generation flags
+        generate_image_prompts = data.get('generate_image_prompts', True)
+        generate_images = data.get('generate_images', True)
+        
+        if generate_images and not generate_image_prompts:
+            raise serializers.ValidationError("Cannot generate images without generating image prompts. If generate_images is True, generate_image_prompts must also be True.")
             
         return data
 
@@ -228,14 +233,17 @@ class BlogResponseSerializer(serializers.Serializer):
     cta = serializers.BooleanField(required=False)
     conclusion = serializers.BooleanField(required=False)
     target_audience = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    generate_image_prompts = serializers.BooleanField(required=False)
-    max_image_prompts = serializers.IntegerField(required=False)
-    image_prompts = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Generated image prompts based on blog headings")
-    prompts_count = serializers.IntegerField(required=False, default=0, help_text="Number of generated image prompts")
+    generate_image_prompts = serializers.BooleanField(required=False, help_text="Whether image prompts were generated for blog sections")
+    generate_images = serializers.BooleanField(required=False, help_text="Whether actual images were generated from the prompts")
+    image_prompts = serializers.ListField(child=serializers.CharField(), required=False, default=list, help_text="Generated image prompts for each section (deprecated, use section_images)")
+    prompts_count = serializers.IntegerField(required=False, default=0, help_text="Number of generated image prompts (deprecated, use image_urls length)")
+    image_urls = serializers.ListField(child=serializers.URLField(), required=False, default=list, help_text="S3 bucket URLs of generated section-specific images (Banner, Main Content, Supporting Details, Evidence, Conclusion)")
+    section_images = serializers.JSONField(required=False, default=dict, help_text="Section-specific image data with prompts, URLs, and metadata")
+    images_count = serializers.IntegerField(required=False, default=0, help_text="Number of successfully generated section images")
     research_sources = serializers.ListField(child=SourceSerializer(), required=False, default=list, help_text="Research sources discovered using SERPER API")
     sources_count = serializers.IntegerField(required=False, default=0, help_text="Number of research sources found")
     content = serializers.JSONField(help_text="Structured JSON representation of the blog content")
-    raw_content = serializers.CharField(required=False, help_text="Original markdown content of the blog")
+    raw_content = serializers.CharField(required=False, help_text="Clean markdown content of the blog with embedded images, optimized for copying and pasting into markdown viewers")
 
 # Serializers for Trending Keywords API
 class TrendingKeywordsRequestSerializer(serializers.Serializer):
@@ -534,7 +542,7 @@ class DailyAINewsResponseSerializer(serializers.Serializer):
     articles_count = serializers.IntegerField()
     sources = serializers.ListField(child=NewsSourceSerializer(), help_text="Source articles used for generating the news")
     content = serializers.JSONField(help_text="Structured JSON representation of the news content")
-    raw_content = serializers.CharField(help_text="Original markdown content of the news")
+    raw_content = serializers.CharField(help_text="Clean markdown content of the news, optimized for copying and pasting into markdown viewers")
 
 # Serializers for LinkedIn Posting API
 class LinkedinPostingRequestSerializer(serializers.Serializer):

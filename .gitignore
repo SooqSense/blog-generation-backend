@@ -98,9 +98,23 @@ poetry.lock
 # PEP 582
 __pypackages__/
 
-# Celery stuff
+# Celery stuff (can cause memory issues on deployment)
 celerybeat-schedule
 celerybeat.pid
+celerybeat-schedule.*
+celery.pid
+celeryd.pid
+*.celery
+celery_worker.log
+celery_beat.log
+celery-worker-*.log
+celery-beat-*.log
+celeryev.pid
+celerymon.pid
+worker*.log
+beat*.log
+*.celerydb
+celerydb*
 
 # SageMath parsed files
 *.sage.py
@@ -197,6 +211,85 @@ crewai+scrapgraph.ipynb
 # Log files
 *.log
 logs/
+*.log.*
+log/
+Log/
+LOGS/
+
+# Documentation files (can be large and cause memory issues)
+*.pdf
+*.doc
+*.docx
+*.odt
+*.rtf
+docs/
+documentation/
+Documentation/
+DOCS/
+
+# Image files (can cause memory issues on deployment)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.bmp
+*.webp
+*.ico
+*.tiff
+*.tif
+
+# Downloaded files and media
+downloads/
+Downloads/
+media/
+Media/
+assets/large/
+static/media/
+uploaded/
+upload/
+
+# Cache and temporary files that can cause memory issues
+*.cache
+cache/
+Cache/
+tmp/
+temp/
+temporary/
+
+# Database files (can be large and cause memory issues)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+database/
+Database/
+data/
+Data/
+
+# Backup and archive files
+*.backup
+*.bak
+*.old
+*.orig
+*.save
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Generated and downloaded content
+generated/
+Generated/
+output/
+Output/
+exports/
+Exports/
+reports/
+Reports/
 
 # Docker
 .dockerignore
