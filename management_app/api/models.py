@@ -11,7 +11,8 @@ class BlogGeneral(models.Model):
     content = models.TextField()
     sample_blog_url = models.URLField(max_length=500, blank=True, null=True)  # Optional sample blog URL
     image_prompts = models.JSONField(default=list, blank=True)  # Store generated image prompts
-    prompts_count = models.IntegerField(default=0)  # Number of generated prompts
+    prompts_count = models.IntegerField(default=0)  # Number of generated prompts (deprecated - use image_urls length)
+    image_urls = models.JSONField(default=list, blank=True)  # Store S3 bucket URLs for section-specific images
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

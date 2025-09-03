@@ -54,7 +54,7 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300 && wait"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
 
 # Production stage
 FROM base AS production
@@ -83,4 +83,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && celery -A config worker --loglevel=info --concurrency=1 & celery -A config beat --loglevel=info --scheduler=django_celery_beat.schedulers:DatabaseScheduler & gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
