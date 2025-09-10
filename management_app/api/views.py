@@ -387,13 +387,54 @@ def generate_blog_api(request):
             research_sources = getattr(blog_writer_instance, 'research_sources', [])
             sources_count = len(research_sources)
             
+            # Clean and properly format the blog content for proper markdown rendering
+            clean_blog_content = blog_content
+            if isinstance(clean_blog_content, str):
+                # Handle various escape sequences that might come from CrewAI or JSON serialization
+                # First handle double newlines to preserve paragraph breaks
+                clean_blog_content = clean_blog_content.replace('\\n\\n', '\n\n')
+                # Then handle single newlines
+                clean_blog_content = clean_blog_content.replace('\\n', '\n')
+                # Handle tabs
+                clean_blog_content = clean_blog_content.replace('\\t', '\t')
+                # Handle other common escape sequences
+                clean_blog_content = clean_blog_content.replace('\\r', '\r')
+                # Handle escaped quotes and backslashes if they exist
+                clean_blog_content = clean_blog_content.replace('\\"', '"')
+                clean_blog_content = clean_blog_content.replace("\\'", "'")
+                # Remove any remaining double backslashes
+                clean_blog_content = clean_blog_content.replace('\\\\', '\\')
+                # Strip leading/trailing whitespace
+                clean_blog_content = clean_blog_content.strip()
+                
+                # Additional cleaning: ensure proper markdown structure
+                # Split by lines and clean each line
+                lines = clean_blog_content.split('\n')
+                cleaned_lines = []
+                for line in lines:
+                    # Remove any remaining escape characters that might affect rendering
+                    cleaned_line = line.replace('\\n', '').replace('\\t', '\t').strip()
+                    cleaned_lines.append(cleaned_line)
+                
+                # Rejoin with proper newlines
+                clean_blog_content = '\n'.join(cleaned_lines)
+                
+                # Ensure proper spacing around headers and sections
+                # Fix spacing around headers
+                clean_blog_content = re.sub(r'\n(#{1,6}\s)', r'\n\n\1', clean_blog_content)
+                clean_blog_content = re.sub(r'(#{1,6}[^\n]*)\n([^\n#])', r'\1\n\n\2', clean_blog_content)
+                # Remove excessive empty lines (more than 2 consecutive)
+                clean_blog_content = re.sub(r'\n{3,}', '\n\n', clean_blog_content)
+                # Final strip
+                clean_blog_content = clean_blog_content.strip()
+            
             # Save to database with section-specific image URLs
             blog = BlogGeneral(
                 user_id=request.user.id,  # Use authenticated user's ID
                 username=request.user.username,  # Use authenticated user's username
                 email=request.user.email,  # Use authenticated user's email
                 topic=topic,
-                content=blog_content.replace('\\n', '\n').replace('\\t', '\t').strip(),  # This now includes embedded images
+                content=clean_blog_content,  # This now includes embedded images
                 sample_blog_url=sample_blog_url if sample_blog_url else None,
                 image_prompts=image_prompts,  # Legacy field for backward compatibility
                 prompts_count=prompts_count,  # Legacy field
@@ -429,7 +470,7 @@ def generate_blog_api(request):
                 "research_sources": research_sources,  # Include research sources
                 "sources_count": sources_count,  # Include sources count
                 "content": structured_content,
-                "raw_content": blog_content.replace('\\n', '\n').replace('\\t', '\t').strip(),  # Include the markdown with embedded images
+                "raw_content": clean_blog_content,  # Include the properly formatted markdown with embedded images
             }
 
             # Serialize the successful response
@@ -522,8 +563,49 @@ def generate_daily_ai_news(request):
 
         logger.info(f"Successfully generated daily AI news for {country}")
 
+        # Clean and properly format the news content for proper markdown rendering
+        clean_news_content = news_result["content"]
+        if isinstance(clean_news_content, str):
+            # Handle various escape sequences that might come from AI service or JSON serialization
+            # First handle double newlines to preserve paragraph breaks
+            clean_news_content = clean_news_content.replace('\\n\\n', '\n\n')
+            # Then handle single newlines
+            clean_news_content = clean_news_content.replace('\\n', '\n')
+            # Handle tabs
+            clean_news_content = clean_news_content.replace('\\t', '\t')
+            # Handle other common escape sequences
+            clean_news_content = clean_news_content.replace('\\r', '\r')
+            # Handle escaped quotes and backslashes if they exist
+            clean_news_content = clean_news_content.replace('\\"', '"')
+            clean_news_content = clean_news_content.replace("\\'", "'")
+            # Remove any remaining double backslashes
+            clean_news_content = clean_news_content.replace('\\\\', '\\')
+            # Strip leading/trailing whitespace
+            clean_news_content = clean_news_content.strip()
+            
+            # Additional cleaning: ensure proper markdown structure
+            # Split by lines and clean each line
+            lines = clean_news_content.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                # Remove any remaining escape characters that might affect rendering
+                cleaned_line = line.replace('\\n', '').replace('\\t', '\t').strip()
+                cleaned_lines.append(cleaned_line)
+            
+            # Rejoin with proper newlines
+            clean_news_content = '\n'.join(cleaned_lines)
+            
+            # Ensure proper spacing around headers and sections
+            # Fix spacing around headers
+            clean_news_content = re.sub(r'\n(#{1,6}\s)', r'\n\n\1', clean_news_content)
+            clean_news_content = re.sub(r'(#{1,6}[^\n]*)\n([^\n#])', r'\1\n\n\2', clean_news_content)
+            # Remove excessive empty lines (more than 2 consecutive)
+            clean_news_content = re.sub(r'\n{3,}', '\n\n', clean_news_content)
+            # Final strip
+            clean_news_content = clean_news_content.strip()
+        
         # Convert markdown content to JSON structure
-        structured_content = convert_markdown_to_json(news_result["content"])
+        structured_content = convert_markdown_to_json(clean_news_content)
 
         # Save to database
         news_blog = BlogAiNews(
@@ -534,7 +616,7 @@ def generate_daily_ai_news(request):
             country=country,
             keywords=keywords,
             summary=news_result["summary"],
-            content=news_result["content"].replace('\\n', '\n').replace('\\t', '\t').strip(),
+            content=clean_news_content,
             sources=news_result.get("sources", []),
             created_at=timezone.now(),
         )
@@ -554,7 +636,7 @@ def generate_daily_ai_news(request):
             "articles_count": news_result["articles_count"],
             "sources": news_result.get("sources", []),
             "content": structured_content,
-            "raw_content": news_result["content"].replace('\\n', '\n').replace('\\t', '\t').strip(),
+            "raw_content": clean_news_content,
         }
 
         # Serialize the successful response
