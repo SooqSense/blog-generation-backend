@@ -14,10 +14,45 @@ def _schedule_linkedin_post_batch_logic(task_self, schedule_post_id, delay_betwe
     Core logic for posting multiple content items to LinkedIn at the scheduled time with delays
     """
     try:
-        # Import Django and setup if not already done
+        # Import Django and setup if not already done (with comprehensive safety check)
         import django
-        if not django.apps.apps.ready:
-            django.setup()
+        import sys
+        import os
+        
+        # Comprehensive server context check
+        def is_server_context():
+            # Check for Django management command context
+            if 'django.core.management' in sys.modules:
+                return True
+            
+            # Check if Django apps are loading
+            if hasattr(django, 'apps') and django.apps:
+                if django.apps.apps.loading or django.apps.apps.ready:
+                    return True
+            
+            # Check for server commands
+            server_commands = ['runserver', 'gunicorn', 'uwsgi', 'celery', 'manage.py']
+            if any(cmd in ' '.join(sys.argv) for cmd in server_commands):
+                return True
+            
+            # Check environment - likely in server if DJANGO_SETTINGS_MODULE is set
+            if os.environ.get('DJANGO_SETTINGS_MODULE'):
+                return True
+            
+            return False
+        
+        # Only setup if absolutely necessary and safe
+        if not is_server_context():
+            try:
+                if not django.apps.apps.ready and not django.apps.apps.loading:
+                    django.setup()
+            except RuntimeError as e:
+                if "populate() isn't reentrant" in str(e):
+                    print("LinkedIn tasks: Django already initialized - using existing setup")
+                else:
+                    raise e
+        else:
+            print("LinkedIn tasks: Running in server context - skipping Django setup")
         
         # Import models inside the task to avoid Django app context issues
         from api.models import SchedulePosts, LinkedinPostingContent

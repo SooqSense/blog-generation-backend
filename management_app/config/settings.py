@@ -1,6 +1,11 @@
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+import sys
+
+# Django Setup Guard - Prevent premature setup during configuration
+# This prevents conflicts when Django configuration is being read
+_DJANGO_SETTINGS_LOADING = True
 
 # Load environment variables from .env file
 load_dotenv()
