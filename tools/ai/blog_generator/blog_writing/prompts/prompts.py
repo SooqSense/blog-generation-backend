@@ -438,7 +438,7 @@ Generate exactly {max_image_prompts} prompts that directly complement the writte
         """Generate banner image prompt for the main topic"""
         context = content_sections.get('introduction', '') if content_sections else ''
         
-        # Create cinematic, clean prompt optimized for SORA/FLUX
+        # Create cinematic, clean prompt optimized for FLUX AI
         return f"""Professional cinematic wide shot of a modern corporate environment representing {topic}, featuring clean minimalist design with dramatic golden hour lighting streaming through large windows. The scene showcases a sleek, futuristic workspace with subtle technology elements that visually represent the essence of {topic}, captured with high-end cinematography and photorealistic detail. NO text overlays, NO charts, NO data visualization - pure visual storytelling focused on atmosphere and professional aesthetics with rich textures and materials."""
 
     @staticmethod

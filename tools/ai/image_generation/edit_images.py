@@ -2,11 +2,19 @@ import os
 import requests
 import boto3
 import io
-import time
 import base64
 from datetime import datetime
 from openai import OpenAI
+import fal_client
 from .prompts import FLUX_AI_EDITING_PROMPT
+
+# Configure fal_client with API key
+def _configure_fal_client():
+    """Configure fal_client with API key from environment"""
+    api_key = os.environ.get("FAL_KEY")
+    if not api_key:
+        raise ValueError("FAL_KEY not found in environment variables")
+    fal_client.api_key = api_key
 
 def optimize_image_editing_prompt(prompt, keywords=None):
     """
@@ -84,130 +92,96 @@ def convert_image_to_base64(image_file):
         print(f"Error converting image to base64: {str(e)}")
         return None
 
-def edit_image_with_flux(prompt, image_base64, keywords=None, output_dir="edited_images"):
+def upload_image_from_url(image_url, output_dir):
     """
-    Edit an image using FLUX AI API
+    Download image from URL and upload to S3
+    
+    Args:
+        image_url (str): URL of the image to download
+        output_dir (str): Directory prefix for S3 storage
+        
+    Returns:
+        str: S3 URL of uploaded image or local file path
+    """
+    try:
+        # Download the image
+        response = requests.get(image_url, timeout=30)
+        if response.status_code != 200:
+            print(f"Error: Failed to download image from URL: {image_url}")
+            return None
+        
+        # Prepare filename and upload to S3
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"edited_{timestamp}.jpg"
+        
+        return upload_edited_image_to_s3(response.content, output_dir, filename)
+        
+    except Exception as e:
+        print(f"Error downloading and uploading image from URL: {str(e)}")
+        return None
+
+def edit_image_with_flux(prompt, image_base64, keywords=None, output_dir="edited_images", strength=0.8):
+    """
+    Edit an image using FLUX AI image-to-image transformation via fal.ai API
     
     Args:
         prompt (str): The editing prompt
         image_base64 (str): Base64 encoded original image
         keywords (str, optional): Keywords to focus on in the editing
         output_dir (str): Directory to save the edited image
+        strength (float): How much to transform the image (0.1-1.0, higher = more change)
         
     Returns:
         tuple: (success, edited_image_url, enhanced_prompt, error_message)
     """
-    # Check for API key
-    api_key = os.environ.get("BFL_API_KEY")
-    if not api_key:
-        return False, None, prompt, "BFL_API_KEY not found in environment variables"
+    # Configure fal_client
+    try:
+        _configure_fal_client()
+    except ValueError as e:
+        return False, None, prompt, str(e)
 
     try:
-        print(f"Starting FLUX AI image editing...")
+        print(f"Starting FLUX AI image editing via fal.ai...")
         
         # Optimize the editing prompt
         enhanced_prompt = optimize_image_editing_prompt(prompt, keywords)
         print(f"Original prompt: {prompt}")
         print(f"Enhanced prompt: {enhanced_prompt}")
+        
+        # Ensure strength is within valid range
+        strength = max(0.1, min(1.0, strength))
+        
+        # Convert base64 to data URL format for fal.ai
+        image_data_url = f"data:image/jpeg;base64,{image_base64}"
 
-        # Prepare request headers
-        headers = {
-            'accept': 'application/json',
-            'x-key': api_key,
-            'Content-Type': 'application/json'
-        }
-        
-        # Prepare request data for image editing
-        request_data = {
-            'prompt': enhanced_prompt,
-            'input_image': image_base64,
-            'output_format': 'jpeg',
-            'safety_tolerance': 2
-        }
-        
-        # Make request to FLUX AI API for image editing
-        response = requests.post(
-            'https://api.bfl.ai/v1/flux-kontext-pro',
-            headers=headers,
-            json=request_data,
-            timeout=30
+        # Generate edited image using fal.ai FLUX image-to-image model
+        result = fal_client.subscribe(
+            "fal-ai/flux/dev/image-to-image",
+            arguments={
+                "prompt": enhanced_prompt,
+                "image_url": image_data_url,
+                "strength": strength,
+                "num_inference_steps": 28,
+                "guidance_scale": 3.5,
+                "num_images": 1,
+                "enable_safety_checker": True
+            }
         )
         
-        if response.status_code != 200:
-            error_msg = f"FLUX AI API returned status {response.status_code}: {response.text}"
-            print(f"Error: {error_msg}")
-            return False, None, enhanced_prompt, error_msg
-            
-        response_data = response.json()
-        request_id = response_data.get('id')
-        polling_url = response_data.get('polling_url')
-        
-        if not request_id or not polling_url:
-            error_msg = "No request ID or polling URL returned from FLUX AI API"
+        if not result or 'images' not in result or not result['images']:
+            error_msg = "No edited image returned from fal.ai FLUX model"
             print(f"Error: {error_msg}")
             return False, None, enhanced_prompt, error_msg
         
-        # Poll for result
-        print(f"Polling for FLUX AI editing result...")
-        max_polls = 120  # Maximum 2 minutes (60 seconds with 0.5s interval)
-        poll_count = 0
-        
-        while poll_count < max_polls:
-            time.sleep(0.5)
-            poll_count += 1
-            
-            try:
-                poll_response = requests.get(
-                    polling_url,
-                    headers={'accept': 'application/json', 'x-key': api_key},
-                    timeout=10
-                )
-                
-                if poll_response.status_code != 200:
-                    print(f"Error polling FLUX AI result: {poll_response.status_code}")
-                    continue
-                
-                poll_data = poll_response.json()
-                status = poll_data.get('status')
-                
-                print(f"FLUX AI editing status: {status}")
-                
-                if status == 'Ready':
-                    edited_image_url = poll_data.get('result', {}).get('sample')
-                    if edited_image_url:
-                        break
-                    else:
-                        error_msg = "No edited image URL in ready response"
-                        print(f"Error: {error_msg}")
-                        return False, None, enhanced_prompt, error_msg
-                elif status in ['Error', 'Failed']:
-                    error_msg = f"FLUX AI editing failed: {poll_data}"
-                    print(f"Error: {error_msg}")
-                    return False, None, enhanced_prompt, error_msg
-                
-            except Exception as poll_error:
-                print(f"Error polling FLUX AI result: {str(poll_error)}")
-                continue
-        
-        if poll_count >= max_polls:
-            error_msg = "Timeout waiting for FLUX AI editing result"
+        # Get the edited image URL
+        edited_image_url = result['images'][0]['url']
+        if not edited_image_url:
+            error_msg = "No edited image URL returned from fal.ai"
             print(f"Error: {error_msg}")
             return False, None, enhanced_prompt, error_msg
         
-        if status != 'Ready' or not edited_image_url:
-            error_msg = "Failed to get ready edited image"
-            print(f"Error: {error_msg}")
-            return False, None, enhanced_prompt, error_msg
-        
-        # Download the edited image
-        image_response = requests.get(edited_image_url, timeout=30)
-        if image_response.status_code != 200:
-            error_msg = f"Failed to download edited image from URL: {edited_image_url}"
-            print(f"Error: {error_msg}")
-            return False, None, enhanced_prompt, error_msg
-        
-        # Upload to S3
-        final_image_url = upload_edited_image_to_s3(image_response.content, output_dir)
+        # Upload the edited image to S3
+        final_image_url = upload_image_from_url(edited_image_url, output_dir)
         
         if not final_image_url:
             error_msg = "Failed to upload edited image to S3"
@@ -222,21 +196,24 @@ def edit_image_with_flux(prompt, image_base64, keywords=None, output_dir="edited
         print(error_msg)
         return False, None, prompt, error_msg
 
-def upload_edited_image_to_s3(image_content, output_dir):
+def upload_edited_image_to_s3(image_content, output_dir, filename=None):
     """
     Upload edited image to S3
     
     Args:
         image_content (bytes): The edited image content
         output_dir (str): Directory prefix for S3 storage
+        filename (str, optional): Custom filename, generates one if not provided
         
     Returns:
         str: S3 URL of uploaded image or local file path
     """
     try:
-        # Prepare S3 upload
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"edited_{timestamp}.jpg"
+        # Generate filename if not provided
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"edited_{timestamp}.jpg"
+        
         s3_key = f"{output_dir}/{filename}"
         
         # Get S3 credentials from environment
@@ -294,3 +271,77 @@ def upload_edited_image_to_s3(image_content, output_dir):
     except Exception as e:
         print(f"Error uploading edited image: {str(e)}")
         return None
+
+# Alternative function for image editing using image URL instead of base64
+def edit_image_with_flux_from_url(prompt, image_url, keywords=None, output_dir="edited_images", strength=0.8):
+    """
+    Edit an image using FLUX AI image-to-image transformation via fal.ai API using image URL
+    
+    Args:
+        prompt (str): The editing prompt
+        image_url (str): URL of the original image
+        keywords (str, optional): Keywords to focus on in the editing
+        output_dir (str): Directory to save the edited image
+        strength (float): How much to transform the image (0.1-1.0, higher = more change)
+        
+    Returns:
+        tuple: (success, edited_image_url, enhanced_prompt, error_message)
+    """
+    # Configure fal_client
+    try:
+        _configure_fal_client()
+    except ValueError as e:
+        return False, None, prompt, str(e)
+
+    try:
+        print(f"Starting FLUX AI image editing via fal.ai with URL...")
+        
+        # Optimize the editing prompt
+        enhanced_prompt = optimize_image_editing_prompt(prompt, keywords)
+        print(f"Original prompt: {prompt}")
+        print(f"Enhanced prompt: {enhanced_prompt}")
+        
+        # Ensure strength is within valid range
+        strength = max(0.1, min(1.0, strength))
+
+        # Generate edited image using fal.ai FLUX image-to-image model
+        result = fal_client.subscribe(
+            "fal-ai/flux/dev/image-to-image",
+            arguments={
+                "prompt": enhanced_prompt,
+                "image_url": image_url,
+                "strength": strength,
+                "num_inference_steps": 28,
+                "guidance_scale": 3.5,
+                "num_images": 1,
+                "enable_safety_checker": True
+            }
+        )
+        
+        if not result or 'images' not in result or not result['images']:
+            error_msg = "No edited image returned from fal.ai FLUX model"
+            print(f"Error: {error_msg}")
+            return False, None, enhanced_prompt, error_msg
+        
+        # Get the edited image URL
+        edited_image_url = result['images'][0]['url']
+        if not edited_image_url:
+            error_msg = "No edited image URL returned from fal.ai"
+            print(f"Error: {error_msg}")
+            return False, None, enhanced_prompt, error_msg
+        
+        # Upload the edited image to S3
+        final_image_url = upload_image_from_url(edited_image_url, output_dir)
+        
+        if not final_image_url:
+            error_msg = "Failed to upload edited image to S3"
+            print(f"Error: {error_msg}")
+            return False, None, enhanced_prompt, error_msg
+        
+        print(f"Successfully edited image and uploaded to: {final_image_url}")
+        return True, final_image_url, enhanced_prompt, None
+        
+    except Exception as e:
+        error_msg = f"Error in FLUX AI image editing: {str(e)}"
+        print(error_msg)
+        return False, None, prompt, error_msg

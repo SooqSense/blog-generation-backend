@@ -75,7 +75,7 @@ class ImageGeneration(models.Model):
     image_urls = models.JSONField(default=list, blank=True)  # Store multiple image URLs
     images_count = models.IntegerField(default=1)  # Number of images generated
     enhanced_prompts = models.JSONField(default=list, blank=True)  # Store enhanced prompts for each image
-    generation_method = models.CharField(max_length=50, default='sora_style')  # Generation method used
+    generation_method = models.CharField(max_length=50, default='flux')  # Generation method used
     image_style = models.CharField(max_length=50, default='professional_cinematic')  # Style of images
     created_at = models.DateTimeField(default=timezone.now)
 

@@ -49,12 +49,12 @@ def import_ai_tools():
     
     # Image Generation Tools
     try:
-        from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_sora
+        from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
         from tools.ai.image_generation.edit_images import edit_image_with_flux, convert_image_to_base64
         
         tools.update({
             'generate_image_with_flux': generate_image_with_flux,
-            'generate_image_with_sora': generate_image_with_sora,
+            'generate_image_with_flux_schnell': generate_image_with_flux_schnell,
             'edit_image_with_flux': edit_image_with_flux,
             'convert_image_to_base64': convert_image_to_base64
         })
@@ -226,7 +226,7 @@ class StreamlitApp:
             else:
                 st.caption("⚠️ Backend: Limited Mode")
             
-            st.caption("🤖 AI Models: GPT-3.5, FLUX, Sora")
+            st.caption("🤖 AI Models: GPT-3.5, FLUX AI")
             st.caption("🔄 Load Mode: Dynamic Import")
             
         return feature
@@ -251,7 +251,7 @@ class StreamlitApp:
             st.markdown("""
             ### 🎨 Image Generation
             Generate stunning images for your content using AI.
-            - FLUX AI and Sora-style generation
+            - High-quality FLUX AI generation
             - Image editing capabilities
             - Multiple image formats
             - Professional quality output
