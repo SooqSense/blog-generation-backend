@@ -296,11 +296,14 @@ class ImageGenerationRequestSerializer(serializers.Serializer):
         max_value=10,
         help_text="Number of professional images to generate (1-10). Default is 1."
     )
-    generation_method = serializers.ChoiceField(
-        choices=["sora", "flux"],
+    model = serializers.ChoiceField(
+        choices=[
+            ("flux_dev", "FLUX Dev - High Quality (28 steps)"),
+            ("flux_schnell", "FLUX Schnell - Fast Generation (4 steps)")
+        ],
         required=False,
-        default="sora",
-        help_text="Image generation method to use. 'sora' for Sora-style cinematic images, 'flux' for FLUX AI artistic images. Default is 'sora'."
+        default="flux_dev",
+        help_text="FLUX AI model to use. 'flux_dev' for high-quality detailed images with 28 inference steps, 'flux_schnell' for faster generation with 4 steps. Default is 'flux_dev'."
     )
 
     # Add validation to ensure at least one field is provided
@@ -323,8 +326,9 @@ class ImageGenerationResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     prompt_used = serializers.CharField()
     count = serializers.IntegerField()
-    generation_method = serializers.CharField(help_text="Generation method used ('sora' or 'flux')")
-    image_style = serializers.CharField(help_text="Style of generated images (e.g., 'Sora-style cinematic', 'FLUX AI artistic')")
+    model = serializers.CharField(help_text="FLUX AI model used ('flux_dev' or 'flux_schnell')")
+    generation_method = serializers.CharField(help_text="Generation method used (deprecated, use 'model' field)")
+    image_style = serializers.CharField(help_text="Style of generated images (e.g., 'FLUX Dev', 'FLUX Schnell')")
     images = serializers.ListField(child=GeneratedImageSerializer())
     total_generated = serializers.IntegerField()
     failed_generations = serializers.IntegerField()

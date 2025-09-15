@@ -227,13 +227,22 @@ class BlogGenerationFeature:
                 )
                 
                 if generate_actual_images:
-                    image_generation_method = st.selectbox(
-                        "Image Generation Method",
-                        ["FLUX AI", "Sora-style (DALL-E 3)"],
-                        help="Choose the AI model for actual image generation"
+                    # Model selection for image generation
+                    image_model = st.selectbox(
+                        "FLUX AI Model",
+                        [
+                            ("flux_dev", "FLUX Dev - High Quality (28 steps)"),
+                            ("flux_schnell", "FLUX Schnell - Fast Generation (4 steps)")
+                        ],
+                        format_func=lambda x: x[1],
+                        help="Choose between FLUX Dev for highest quality or FLUX Schnell for faster generation"
                     )
+                    selected_image_model = image_model[0]
+                    image_generation_method = image_model[1]
                 else:
-                    image_generation_method = "FLUX AI"  # Default
+                    # Default when not generating actual images
+                    selected_image_model = "flux_dev"
+                    image_generation_method = "FLUX Dev - High Quality (28 steps)"
             
             # Status messages
             if generate_actual_images:
@@ -351,7 +360,7 @@ class BlogGenerationFeature:
                         generate_image_prompts=generate_image_prompts,
                         max_image_prompts=max_image_prompts,
                         generate_actual_images=generate_actual_images,
-                        image_generation_method=image_generation_method
+                        image_model=selected_image_model
                     )
                 else:
                     st.error("Please enter a blog topic")
@@ -387,7 +396,8 @@ class BlogGenerationFeature:
                 generate_image_prompts = kwargs.get('generate_image_prompts', True)
                 max_image_prompts = kwargs.get('max_image_prompts', 5)
                 generate_actual_images = kwargs.get('generate_actual_images', False)
-                image_generation_method = kwargs.get('image_generation_method', 'FLUX AI')
+                # Always use FLUX AI for image generation
+                image_generation_method = 'FLUX AI'
                 
                 # Initialize blog writer with enhanced parameters for SEO
                 status_text.text("⚙️ Configuring SEO and image generation parameters...")
@@ -459,7 +469,7 @@ class BlogGenerationFeature:
                 
                 # Generate the blog using the proper BlogWriter method
                 if generate_actual_images:
-                    status_text.text(f"🖼️ Generating blog with {max_image_prompts} section-wise images using {image_generation_method}...")
+                    status_text.text(f"🖼️ Generating blog with {max_image_prompts} section-wise images using FLUX AI...")
                 elif generate_image_prompts:
                     status_text.text(f"🎨 Generating blog with {max_image_prompts} section-wise image prompts...")
                 else:
@@ -525,13 +535,17 @@ class BlogGenerationFeature:
                 
                 if generate_actual_images:
                     try:
-                        status_text.text(f"🖼️ Generating section-wise images using {image_generation_method}...")
+                        # Get the selected model from kwargs
+                        image_model = kwargs.get('image_model', 'flux_dev')
+                        
+                        # Map model to generation method for backend compatibility
+                        generation_method_param = "flux" if image_model == "flux_dev" else "flux_schnell"
+                        model_name = "FLUX Dev" if image_model == "flux_dev" else "FLUX Schnell"
+                        
+                        status_text.text(f"🖼️ Generating section-wise images using {model_name}...")
                         progress_bar.progress(78)
                         
-                        # Determine generation method for section-wise generation
-                        generation_method_param = "flux" if image_generation_method == "FLUX AI" else "sora"
-                        
-                        print(f"DEBUG: Starting section-wise image generation using {generation_method_param}")
+                        print(f"DEBUG: Starting section-wise image generation using {model_name} (method: {generation_method_param})")
                         
                         # Generate section-specific images (banner, main_content, supporting_details, evidence, conclusion)
                         section_images_data = generate_section_specific_images(
@@ -653,7 +667,7 @@ class BlogGenerationFeature:
                         'generate_image_prompts': generate_image_prompts,
                         'max_image_prompts': max_image_prompts,
                         'generate_actual_images': generate_actual_images,
-                        'image_generation_method': image_generation_method
+                        'image_generation_method': 'FLUX AI'
                     }
                 }
                 
@@ -759,12 +773,21 @@ class BlogGenerationFeature:
             st.markdown("#### 🔧 Generation Details")
             st.info(f"**Generated:** {blog_data.get('generated_at', 'N/A')}")
             st.info(f"**User:** {blog_data.get('user', 'Anonymous')}")
-            settings = blog_data.get('generation_settings', {})
-            llm_used = "Google Gemini" if settings.get('use_custom_llm', False) else "OpenAI GPT"
+            generation_settings = blog_data.get('generation_settings', {})
+            llm_used = "Google Gemini" if generation_settings.get('use_custom_llm', False) else "OpenAI GPT"
             st.info(f"**LLM Used:** {llm_used}")
+        
+        # Initialize variables first before using them
+        generated_images = blog_data.get('generated_images', [])
+        image_prompts = blog_data.get('image_prompts', [])
+        settings = blog_data.get('generation_settings', {})
         
         # Blog content with enhanced display
         st.markdown("### 📝 Blog Content")
+        
+        # Add explanation for image display
+        if generated_images:
+            st.info("ℹ️ **Note:** Any images appearing in the blog content below are embedded. The section-specific images are displayed separately in the gallery below the content.")
         
         # Display the blog content in a nice format
         content = blog_data.get('content', '')
@@ -776,13 +799,22 @@ class BlogGenerationFeature:
             st.warning("No content available to display")
         
         # Enhanced Generated Images section (priority display)
-        generated_images = blog_data.get('generated_images', [])
-        image_prompts = blog_data.get('image_prompts', [])
-        settings = blog_data.get('generation_settings', {})
         
         if generated_images:
-            st.markdown("### 🖼️ Generated Section-wise Images")
-            st.markdown(f"*{len(generated_images)} images generated using {settings.get('image_generation_method', 'AI')} and uploaded to S3*")
+            st.markdown("---")
+            st.markdown("### 🖼️ Section-Specific Generated Images")
+            
+            # Get the model used for generation
+            generation_model = "FLUX AI"
+            if generated_images:
+                first_image_method = generated_images[0].get('generation_method', 'flux')
+                if first_image_method == 'flux_schnell':
+                    generation_model = "FLUX Schnell"
+                else:
+                    generation_model = "FLUX Dev"
+            
+            st.markdown(f"*{len(generated_images)} section-specific images generated using **{generation_model}** and uploaded to S3*")
+            st.info("ℹ️ **Important:** These are section-specific images designed for different parts of your blog content. Each image corresponds to a specific blog section.")
             
             # Display images in a grid layout
             if len(generated_images) == 1:
@@ -807,7 +839,7 @@ class BlogGenerationFeature:
                         st.image(
                             image_url,
                             caption=f"{section_display_name} Section Image",
-                            use_column_width=True
+                            use_container_width=True
                         )
                         
                         # Section image details in expander
@@ -821,9 +853,22 @@ class BlogGenerationFeature:
                                 st.markdown(f"**Enhanced Prompt:**")
                                 st.write(enhanced_prompt)
                             
-                            st.markdown(f"**Generation Method:** {img_data.get('generation_method', 'Unknown')}")
-                            st.markdown(f"**Section Mapping:** This image is designed to be placed at the end of the '{section_display_name}' section")
-                            st.markdown(f"**S3 URL:** [View Full Size]({image_url})")
+                            # Show model-specific information
+                            generation_method = img_data.get('generation_method', 'flux')
+                            if generation_method == 'flux_schnell':
+                                model_info = "FLUX Schnell - Fast Generation (4 steps)"
+                            elif generation_method == 'flux_dev':
+                                model_info = "FLUX Dev - High Quality (28 steps)"
+                            else:
+                                model_info = f"FLUX AI ({generation_method})"
+                                
+                            st.markdown(f"**Model Used:** {model_info}")
+                            st.markdown(f"**Section Purpose:** This image is specifically generated for the '{section_display_name}' section of your blog")
+                            st.markdown(f"**Image URL:** [View Full Size]({image_url})")
+                            
+                            # Add timestamp information if available
+                            if 'timestamp' in img_data:
+                                st.markdown(f"**Generated At:** {img_data.get('timestamp')}")
                         
                         # Download/Copy buttons
                         col_img1, col_img2 = st.columns(2)
@@ -868,6 +913,18 @@ class BlogGenerationFeature:
                         mime="text/plain",
                         use_container_width=True
                     )
+            
+            # Debug information panel
+            with st.expander("🔍 Image Generation Debug Info", expanded=False):
+                st.markdown("**Section Image Mapping:**")
+                for i, img in enumerate(generated_images):
+                    section = img.get('section', 'Unknown')
+                    url = img.get('image_url', 'No URL')
+                    method = img.get('generation_method', 'Unknown')
+                    st.markdown(f"- **{section.replace('_', ' ').title()}**: {method} | URL: `{url[:50]}...`")
+                
+                st.markdown(f"**Total Images Generated:** {len(generated_images)}")
+                st.markdown(f"**Generation Session:** {blog_data.get('generated_at', 'Unknown')}")
         
         # Image prompts section (show if no images were generated but prompts exist)
         elif generated_images and not any(img.get('image_url') for img in generated_images):

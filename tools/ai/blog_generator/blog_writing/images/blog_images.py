@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from ..prompts.prompts import BlogWriterPrompts
-from ....image_generation.image_generator import generate_image_with_flux, generate_image_with_sora
+from ....image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
 
 
 def extract_blog_sections_for_images(blog_content):
@@ -111,15 +111,15 @@ def generate_section_image_prompts_only(topic, blog_type, blog_content):
     return generated_prompts
 
 
-def generate_section_specific_images(topic, blog_type, blog_content, generation_method="sora", output_dir="blog_images"):
+def generate_section_specific_images(topic, blog_type, blog_content, generation_method="flux", output_dir="blog_images"):
     """
-    Generate images for specific blog sections with proper S3 upload and URL mapping
+    Generate images for specific blog sections using FLUX AI models via fal.ai and upload to S3
     
     Args:
         topic (str): The blog topic
         blog_type (str): The type of blog (News, Comparison, etc.)
         blog_content (str): The full blog content in markdown
-        generation_method (str): Generation method to use ("sora" or "flux")
+        generation_method (str): Generation method to use ("flux" or "flux_schnell")
         output_dir (str): Directory prefix for S3 storage
         
     Returns:
@@ -148,9 +148,9 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
             # Get the prompt for this section
             prompt = section_prompts.get(section, f"Professional image for {section} section about {topic}")
             
-            # Generate image using the specified method (using functions from image_generator.py)
-            if generation_method == "flux":
-                images_data, total_generated, failed_generations = generate_image_with_flux(
+            # Generate image using FLUX AI models via fal.ai
+            if generation_method == "flux_schnell":
+                images_data, total_generated, failed_generations = generate_image_with_flux_schnell(
                     prompt=prompt,
                     size="1024x1024",
                     output_dir=f"{output_dir}/{section}",
@@ -159,8 +159,8 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
                     image_type=section,
                     count=1
                 )
-            else:  # sora (default)
-                images_data, total_generated, failed_generations = generate_image_with_sora(
+            else:  # flux (default)
+                images_data, total_generated, failed_generations = generate_image_with_flux(
                     prompt=prompt,
                     size="1024x1024",
                     output_dir=f"{output_dir}/{section}",

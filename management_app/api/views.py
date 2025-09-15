@@ -678,19 +678,19 @@ def generate_daily_ai_news(request):
             description="Internal Server Error / Image Generation Failed.",
         ),
     },
-    description="Generate one or more professional images using either Sora-style cinematic generation or FLUX AI artistic generation. Supports both clean, realistic Sora-style images and detailed, artistic FLUX AI images based on the selected generation method.",
+    description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
-    Generate one or more professional images using either Sora-style or FLUX AI generation.
+    Generate one or more professional images using FLUX AI generation models.
     
-    Supports two generation methods:
-    - 'sora': Creates clean, realistic, cinematic-style images perfect for professional content
-    - 'flux': Creates detailed, artistic, high-quality images with rich visual elements
+    Supports two FLUX AI models:
+    - 'flux_dev': FLUX Dev - High quality detailed images with 28 inference steps
+    - 'flux_schnell': FLUX Schnell - Fast generation with 4 inference steps
     
-    Both methods use AI-optimized prompts tailored to each generation engine's strengths.
+    Both models use AI-optimized prompts tailored to FLUX AI's strengths.
     """
     serializer = ImageGenerationRequestSerializer(data=request.data)
     if not serializer.is_valid():
@@ -700,14 +700,17 @@ def generate_image_api(request):
     prompt = serializer.validated_data.get("prompt", "")
     keywords = serializer.validated_data.get("keywords", "")
     count = serializer.validated_data.get("count", 1)
-    generation_method = serializer.validated_data.get("generation_method", "sora")
+    model = serializer.validated_data.get("model", "flux_dev")
+    
+    # Map model to generation method for backward compatibility
+    generation_method = "flux" if model == "flux_dev" else "flux_schnell"
     
     # Set default values
     image_type = "content"  # Default to content type for professional images
     size = "1024x1024"  # Default size
 
     logger.info(
-        f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}, method: {generation_method}"
+        f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}, model: {model}"
     )
 
     # Build final prompt
@@ -718,15 +721,17 @@ def generate_image_api(request):
         if keyword_list:
             final_prompt += " " + " ".join(keyword_list)
 
-    # Enhance prompt based on generation method
-    if generation_method == "sora":
-        if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['cinematic', 'professional', 'realistic', 'dramatic']):
-            final_prompt = f"Create a professional, cinematic image about: {final_prompt}. Use dramatic lighting, clean composition, and realistic style."
-        method_description = "Sora-style cinematic"
-    else:  # flux
+    # Enhance prompt based on selected model
+    if model == "flux_schnell":
+        if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['fast', 'quick', 'detailed', 'artistic']):
+            final_prompt = f"Create a detailed, artistic image about: {final_prompt}. Use intricate details, rich colors, and high-quality artistic composition."
+        method_description = "FLUX Schnell"
+        model_description = "FLUX Schnell - Fast Generation (4 steps)"
+    else:  # flux_dev
         if final_prompt and not any(style_word in final_prompt.lower() for style_word in ['artistic', 'detailed', 'intricate', 'high-quality']):
             final_prompt = f"Create a detailed, artistic image about: {final_prompt}. Use intricate details, rich colors, and high-quality artistic composition."
-        method_description = "FLUX AI artistic"
+        method_description = "FLUX Dev"
+        model_description = "FLUX Dev - High Quality (28 steps)"
 
     try:
         # Call generate_image with the selected generation method
@@ -757,12 +762,12 @@ def generate_image_api(request):
                 image_urls=all_image_urls,  # Store all image URLs
                 images_count=total_generated,  # Store count of generated images
                 enhanced_prompts=all_enhanced_prompts,  # Store all enhanced prompts
-                generation_method=generation_method,
+                generation_method=model,  # Store the selected model
                 image_style=method_description,
                 created_at=timezone.now(),
             )
             image_record.save()
-            logger.info(f"Saved image generation session with {total_generated} images using {generation_method} method for prompt: '{final_prompt}' with ID: {image_record.id}")
+            logger.info(f"Saved image generation session with {total_generated} images using {model} model for prompt: '{final_prompt}' with ID: {image_record.id}")
 
             # Determine response message
             if failed_generations == 0:
@@ -775,7 +780,8 @@ def generate_image_api(request):
                 "message": message,
                 "prompt_used": final_prompt,
                 "count": count,
-                "generation_method": generation_method,
+                "model": model,
+                "generation_method": generation_method,  # Keep for backward compatibility
                 "image_style": method_description,
                 "images": images_data,
                 "total_generated": total_generated,
@@ -798,10 +804,10 @@ def generate_image_api(request):
                 )
         else:
             logger.error(
-                f"All image generations failed for prompt: '{final_prompt}' using {generation_method} method. No images generated."
+                f"All image generations failed for prompt: '{final_prompt}' using {model} model. No images generated."
             )
             return Response(
-                {"error": f"All {count} image generation attempts failed using {generation_method} method. Please try again with a different prompt."},
+                {"error": f"All {count} image generation attempts failed using {model} model. Please try again with a different prompt."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

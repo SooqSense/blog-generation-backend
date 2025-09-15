@@ -253,7 +253,7 @@ class BlogWriter:
                         topic=self.topic,
                         blog_type=self.blog_type,
                         blog_content=self.blog_content,
-                        generation_method="sora",  # Default to sora, can be made configurable
+                        generation_method="flux",  # Default to flux, can be made configurable
                         output_dir="blog_images"
                     )
                     

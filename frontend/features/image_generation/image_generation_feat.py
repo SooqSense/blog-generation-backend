@@ -12,7 +12,7 @@ sys.path.insert(0, str(project_root))
 
 # Import AI tools directly without Django setup
 try:
-    from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_sora
+    from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
     from tools.ai.image_generation.edit_images import edit_image_with_flux, convert_image_to_base64
     
     AI_TOOLS_AVAILABLE = True
@@ -28,8 +28,8 @@ except Exception as e:
     def generate_image_with_flux(*args, **kwargs):
         raise Exception(f"FLUX AI image generation not available: {AI_TOOLS_ERROR}")
     
-    def generate_image_with_sora(*args, **kwargs):
-        raise Exception(f"Sora AI image generation not available: {AI_TOOLS_ERROR}")
+    def generate_image_with_flux_schnell(*args, **kwargs):
+        raise Exception(f"FLUX AI image generation not available: {AI_TOOLS_ERROR}")
     
     def edit_image_with_flux(*args, **kwargs):
         raise Exception(f"FLUX AI image editing not available: {AI_TOOLS_ERROR}")
@@ -83,11 +83,18 @@ class ImageGenerationFeature:
             col_adv1, col_adv2 = st.columns(2)
             
             with col_adv1:
-                generation_method = st.selectbox(
-                    "Generation Method",
-                    ["FLUX AI", "Sora-style (DALL-E 3)"],
-                    help="Choose the AI model for image generation"
+                model = st.selectbox(
+                    "FLUX AI Model",
+                    [
+                        ("flux_dev", "FLUX Dev - High Quality (28 steps)"),
+                        ("flux_schnell", "FLUX Schnell - Fast Generation (4 steps)")
+                    ],
+                    format_func=lambda x: x[1],
+                    help="Choose between FLUX Dev for high-quality detailed images or FLUX Schnell for faster generation"
                 )
+                
+                # Extract the actual model value (flux_dev or flux_schnell)
+                selected_model = model[0]
                 
                 image_size = st.selectbox(
                     "Image Size",
@@ -170,22 +177,24 @@ class ImageGenerationFeature:
                 else:
                     st.success("✅ Good prompt length")
             
-            # Generation method info
-            if generation_method == "FLUX AI":
+            # Model-specific info
+            if selected_model == "flux_dev":
                 st.markdown("""
-                **FLUX AI Features:**
-                - High detail and quality
-                - Artistic compositions
-                - Fast generation
-                - Great for creative content
+                **FLUX Dev Features:**
+                - Highest quality and detail
+                - 28 inference steps for precision
+                - Rich artistic compositions
+                - Best for professional content
+                - Slower but superior results
                 """)
             else:
                 st.markdown("""
-                **Sora-style (DALL-E 3) Features:**
-                - Photorealistic results
-                - Cinematic quality
-                - Natural scenes
-                - Professional photography style
+                **FLUX Schnell Features:**
+                - Fast generation (4 steps)
+                - High quality artistic results
+                - Optimized for speed
+                - Great for quick iterations
+                - Excellent quality-to-speed ratio
                 """)
             
             # Generation status
@@ -213,7 +222,7 @@ class ImageGenerationFeature:
                 if prompt.strip():
                     self.generate_images(
                         prompt=enhanced_prompt,
-                        generation_method=generation_method,
+                        model=selected_model,
                         size=image_size,
                         count=image_count,
                         topic=topic,
@@ -239,15 +248,18 @@ class ImageGenerationFeature:
             status_text.text("Initializing image generation...")
             progress_bar.progress(10)
             
-            # Determine generation function
-            if kwargs.get('generation_method') == "FLUX AI":
+            # Determine generation function based on selected model
+            model = kwargs.get('model', 'flux_dev')
+            if model == 'flux_schnell':
+                generation_func = generate_image_with_flux_schnell
+                method = "flux_schnell"
+                model_name = "FLUX Schnell"
+            else:
                 generation_func = generate_image_with_flux
                 method = "flux"
-            else:
-                generation_func = generate_image_with_sora
-                method = "sora"
+                model_name = "FLUX Dev"
             
-            status_text.text(f"Generating {kwargs.get('count', 1)} image(s) with {kwargs.get('generation_method')}...")
+            status_text.text(f"Generating {kwargs.get('count', 1)} image(s) with {model_name}...")
             progress_bar.progress(30)
             
             # Generate images
