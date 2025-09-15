@@ -24,7 +24,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       # For development: use host.docker.internal to connect to host's database
-      # All other DB settings (NAME, USER, PASSWORD, PORT) come from .env file  
+      # All other DB settings (NAME, USER, PASSWORD, PORT) come from .env file
       DB_HOST: host.docker.internal
     depends_on:
       - redis
@@ -151,6 +151,51 @@ services:
   #     - web-staging
   #   command: celery -A management_app.config beat --loglevel=info
   #   profiles: [staging]
+
+  # Streamlit for staging
+  streamlit-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: streamlit
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      # Streamlit doesn't need database connection for basic functionality
+      # But we'll keep the env vars for AI tools that might need them
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    restart: always
+    profiles: [streamlit-staging]
+
+  # Streamlit for development
+  streamlit-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: streamlit
+    volumes:
+      - .:/app
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    profiles: [streamlit-dev]
 
   # Production environment
   web-production:

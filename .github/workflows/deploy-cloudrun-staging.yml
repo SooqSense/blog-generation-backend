@@ -1,0 +1,46 @@
+name: Deploy to Cloud Run (Staging)
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: artilence
+  REGION: asia-south2
+  REPOSITORY: sooqsense-bloggenerator
+  SERVICE_NAME: sooqsense-streamlit-staging
+  IMAGE_NAME: streamlit
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/798090991303/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
+          service_account: github-actions-cloudrun@artilence.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build & Push
+        run: |
+          docker build --target streamlit -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Deploy
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --region=${{ env.REGION }}
+
+      - name: Get URL
+        run: echo "🚀 Deployed to $(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')"
