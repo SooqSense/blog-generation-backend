@@ -7,6 +7,27 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from datetime import datetime
 import re
 
+# LangSmith integration for cost tracking
+try:
+    from management_app.langsmith_integration.langsmith_integration import (
+        log_cost, trace_linkedin_generator
+    )
+    LANGSMITH_AVAILABLE = True
+    print("✅ LangSmith integration successfully imported for LinkedIn post generation")
+except ImportError as e:
+    print(f"❌ LangSmith integration import failed for LinkedIn post generation: {str(e)}")
+    # Fallback if LangSmith integration is not available
+    def log_cost(operation, model, tokens_used=None, cost_estimate=None, additional_data=None):
+        pass
+    def trace_linkedin_generator(operation, metadata=None):
+        def decorator(func):
+            return func
+        return decorator
+    LANGSMITH_AVAILABLE = False
+except Exception as e:
+    print(f"❌ Unexpected error importing LangSmith for LinkedIn post generation: {str(e)}")
+    LANGSMITH_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -111,6 +132,7 @@ Remember that consistency is key in digital marketing. Creating a content calend
             agent=self.linkedin_post_writer_agent()
         )
 
+    @trace_linkedin_generator("generate_post", metadata={"type": "content_creation", "platform": "linkedin"})
     def generate_post(self, topic: str, keywords=None):
         """Generates a LinkedIn post for a given topic and returns the content."""
         if not topic:
@@ -119,6 +141,31 @@ Remember that consistency is key in digital marketing. Creating a content calend
         # Update the instance topic
         self.topic = topic
         self.keywords = keywords if keywords else []
+
+        # Start LinkedIn post generation (LangSmith tracing handled by decorator)
+        print(f"📱 Starting LinkedIn post generation for topic: '{topic}'")
+        print(f"📊 LangSmith available: {LANGSMITH_AVAILABLE}")
+        print(f"🏷️  Keywords: {keywords or 'None'}")
+        
+        # Log initial cost estimation with token estimate
+        if LANGSMITH_AVAILABLE:
+            model_name = "gpt-3.5-turbo" if not self.use_custom_llm else "gemini-pro"
+            # LinkedIn posts are shorter, estimate around 100-300 tokens
+            estimated_tokens = 250  # Average LinkedIn post tokens
+            estimated_cost = estimated_tokens * 0.000001 if "gpt-3.5-turbo" in model_name else estimated_tokens * 0.000005
+            
+            log_cost(
+                operation="linkedin_post_generation_start",
+                model=model_name,
+                tokens_used=int(estimated_tokens),  # Include initial token estimate
+                cost_estimate=estimated_cost,
+                additional_data={
+                    "topic": topic,
+                    "keywords": keywords or [],
+                    "keywords_count": len(keywords) if keywords else 0,
+                    "estimated_tokens": int(estimated_tokens)
+                }
+            )
 
         # Create a fresh agent and task for each generation to avoid any caching issues
         writer_agent = self.linkedin_post_writer_agent()
@@ -215,6 +262,41 @@ Remember that consistency is key in digital marketing. Creating a content calend
             post_content = '\n'.join(cleaned_lines).strip()
         else:
             post_content = ""
+
+        # Log final cost information with enhanced token tracking
+        print("💰 Calculating final costs for LinkedIn post generation...")
+        if LANGSMITH_AVAILABLE and post_content:
+            actual_char_count = len(post_content)
+            actual_word_count = len(post_content.split())
+            model_name = "gpt-3.5-turbo" if not self.use_custom_llm else "gemini-pro"
+            
+            # More accurate token estimation based on actual content
+            estimated_tokens = actual_char_count // 4  # Rough GPT token estimation
+            final_cost_estimate = estimated_tokens * 0.000001 if "gpt-3.5-turbo" in model_name else estimated_tokens * 0.000005
+            
+            print(f"📊 Token estimate: {estimated_tokens} tokens, Cost: ${final_cost_estimate:.6f}")
+            
+            # Use the updated log_cost method that includes token information in console
+            log_cost(
+                operation="linkedin_post_generation_complete",
+                model=model_name,
+                tokens_used=int(estimated_tokens),
+                cost_estimate=final_cost_estimate,
+                additional_data={
+                    "topic": topic,
+                    "keywords": keywords or [],
+                    "actual_char_count": actual_char_count,
+                    "actual_word_count": actual_word_count,
+                    "post_contains_hashtags": '#' in post_content,
+                    "estimated_tokens": int(estimated_tokens),
+                    "success": True
+                }
+            )
+            print(f"✅ Final cost logging completed: ${final_cost_estimate:.6f}")
+        else:
+            print("⚠️  Skipping cost logging - LangSmith not available or no content generated")
+            
+        print(f"🎉 LinkedIn post generation fully completed for topic: '{topic}'")
 
         # Return the generated post content and None for file path since we're not saving to a file
         return post_content, None
