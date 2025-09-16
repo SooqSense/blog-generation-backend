@@ -13,6 +13,12 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Add the project root directory to Python path for tools module imports
+PROJECT_ROOT = BASE_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+    print(f"📁 Added project root to Python path: {PROJECT_ROOT}")
+
 SECRET_KEY = "django-insecure-dummy-key"  # Replace with a real secret key
 
 DEBUG = True
@@ -335,3 +341,17 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 # Celery Beat Configuration (for scheduled tasks) - Use database scheduler
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# LangSmith Configuration for AI Cost Tracking
+LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "sooqsense-blog-generation")
+LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
+
+# Set environment variables for langchain/langsmith integration
+if LANGSMITH_TRACING and LANGSMITH_API_KEY:
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = LANGSMITH_API_KEY
+    os.environ["LANGCHAIN_PROJECT"] = LANGSMITH_PROJECT
+    os.environ["LANGCHAIN_ENDPOINT"] = LANGSMITH_ENDPOINT

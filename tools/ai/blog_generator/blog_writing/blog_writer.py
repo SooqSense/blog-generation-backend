@@ -13,6 +13,27 @@ from .source_extractor.source_extractor import SourceExtractor
 from .image_prompts.image_generation_prompts import ImageGenerationPrompts
 from .images.blog_images import generate_section_specific_images, generate_section_image_prompts_only, embed_images_in_blog_content, get_section_image_urls_list
 
+# LangSmith integration for cost tracking
+try:
+    from management_app.langsmith_integration.langsmith_integration import (
+        log_cost, trace_blog_writer
+    )
+    LANGSMITH_AVAILABLE = True
+    print("✅ LangSmith integration successfully imported for blog generation")
+except ImportError as e:
+    print(f"❌ LangSmith integration import failed for blog generation: {str(e)}")
+    # Fallback if LangSmith integration is not available
+    def log_cost(operation, model, tokens_used=None, cost_estimate=None, additional_data=None):
+        pass
+    def trace_blog_writer(operation, metadata=None):
+        def decorator(func):
+            return func
+        return decorator
+    LANGSMITH_AVAILABLE = False
+except Exception as e:
+    print(f"❌ Unexpected error importing LangSmith for blog generation: {str(e)}")
+    LANGSMITH_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -188,6 +209,7 @@ class BlogWriter:
     
 
     
+    @trace_blog_writer("generate_blog", metadata={"type": "long_form_content", "platform": "blog"})
     def generate_blog(self, topic=None, keywords=None, blog_type=None, length_min=None, length_max=None, 
                       introduction=None, table_of_content=None, faq=None, cta=None, conclusion=None, 
                       target_audience=None, sample_blog_url=None, generate_image_prompts=None, generate_images=None, 
@@ -208,8 +230,45 @@ class BlogWriter:
         if generate_image_prompts is not None: self.generate_image_prompts = generate_image_prompts
         if generate_images is not None: self.generate_images = generate_images
         
+        # Calculate expected word count for tracing
+        expected_word_count = (self.length_min + self.length_max) // 2
+        
+        # Start blog generation (LangSmith tracing handled by decorator)
+        print(f"📝 Starting blog generation for topic: '{self.topic}' (type: {self.blog_type})")
+        print(f"📊 LangSmith available: {LANGSMITH_AVAILABLE}")
+        
+        # Log initial cost estimation with token estimate
+        if LANGSMITH_AVAILABLE:
+            model_name = "gpt-4o-mini" if not self.use_custom_llm else "gemini-pro"
+            estimated_tokens = int(expected_word_count * 1.5)  # Rough estimation
+            estimated_cost = estimated_tokens * 0.00001 if "gpt-4o-mini" in model_name else estimated_tokens * 0.000005
+            
+            print(f"📊 Initial estimate: {estimated_tokens} tokens, Cost: ${estimated_cost:.6f}")
+            
+            log_cost(
+                operation="blog_generation_start",
+                model=model_name,
+                tokens_used=estimated_tokens,  # Include initial token estimate
+                cost_estimate=estimated_cost,
+                additional_data={
+                    "topic": self.topic,
+                    "blog_type": self.blog_type,
+                    "target_length": f"{self.length_min}-{self.length_max}",
+                    "generate_images": self.generate_images,
+                    "image_model": image_model,
+                    "estimated_tokens": estimated_tokens
+                }
+            )
+        
+        print("🚀 Starting CrewAI blog generation process...")
         # Generate blog using the crew with research workflow
         result = self.get_crew().kickoff(inputs={"topic": self.topic})
+        print("✅ CrewAI blog generation process completed")
+        
+        # Ensure we have a valid result before proceeding
+        if not result:
+            print("❌ CrewAI returned no result")
+            raise RuntimeError("CrewAI execution failed - no result returned from crew")
         
         if not result:
             raise RuntimeError("CrewAI execution failed - no result returned from crew")
@@ -308,5 +367,46 @@ class BlogWriter:
             self.section_images = {}
             self.image_urls = []
             self.image_prompts = []
+        
+        # Log final cost information (outside the trace context to avoid conflicts)
+        print("💰 Calculating final costs for blog generation...")
+        if LANGSMITH_AVAILABLE and self.blog_content:
+            actual_word_count = len(self.blog_content.split())
+            model_name = "gpt-4o-mini" if not self.use_custom_llm else "gemini-pro"
             
+            # Estimate tokens based on actual content
+            estimated_tokens = int(actual_word_count * 1.3)  # More accurate estimation
+            final_cost_estimate = estimated_tokens * 0.00001 if "gpt-4o-mini" in model_name else estimated_tokens * 0.000005
+            
+            # Add image generation costs if applicable
+            image_cost = 0
+            if self.generate_images and len(self.image_urls) > 0:
+                image_cost = len(self.image_urls) * 0.04  # Estimated cost per FLUX image
+            
+            total_cost_estimate = final_cost_estimate + image_cost
+            
+            print(f"📊 Final estimate: {estimated_tokens} tokens, Text cost: ${final_cost_estimate:.6f}, Total: ${total_cost_estimate:.4f}")
+            
+            log_cost(
+                operation="blog_generation_complete",
+                model=model_name,
+                tokens_used=int(estimated_tokens),
+                cost_estimate=total_cost_estimate,
+                additional_data={
+                    "topic": self.topic,
+                    "blog_type": self.blog_type,
+                    "actual_word_count": actual_word_count,
+                    "images_generated": len(self.image_urls),
+                    "image_generation_cost": image_cost,
+                    "text_generation_cost": final_cost_estimate,
+                    "total_sources": len(self.research_sources),
+                    "estimated_tokens": int(estimated_tokens),
+                    "success": True
+                }
+            )
+            print(f"✅ Final cost logging completed: ${total_cost_estimate:.4f}")
+        else:
+            print("⚠️  Skipping cost logging - LangSmith not available or no content generated")
+            
+        print(f"🎉 Blog generation fully completed for topic: '{self.topic}'")
         return self.blog_content

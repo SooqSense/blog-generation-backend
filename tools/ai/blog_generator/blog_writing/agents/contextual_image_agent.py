@@ -9,8 +9,20 @@ load_dotenv()
 
 class ContextualImagePromptAgent:
     """
-    An AI agent that deeply analyzes blog section content and generates 
-    contextually appropriate image prompts based on semantic understanding
+    An AI agent that generates realistic, professional photography prompts for blog sections.
+    This agent is the PRIMARY source for ALL blog image generation prompts, ensuring consistent
+    realistic, clean, professional imagery across all blog content.
+    
+    Key Features:
+    - Generates ONLY photorealistic, professional photography prompts
+    - Analyzes blog content for contextually relevant visual concepts  
+    - Enforces realistic business/corporate photography aesthetics
+    - Removes any digital art, illustration, or stylized imagery terminology
+    - Adds essential photography terms (professional camera, natural lighting, etc.)
+    - Provides realistic fallback prompts for error cases
+    
+    Important: This agent focuses exclusively on realistic photography that looks like
+    professional business magazine photos or high-end corporate website imagery.
     """
     
     def __init__(self, use_custom_llm=False):
@@ -42,24 +54,28 @@ class ContextualImagePromptAgent:
     def create_contextual_agent(self):
         """Create the contextual image prompt generation agent"""
         return Agent(
-            role="Contextual Visual Content Strategist",
-            goal="""Analyze blog section content deeply to understand its semantic context, themes, 
-            and subject matter, then generate highly specific, contextually appropriate image prompts 
-            that perfectly match the content's meaning and tone.""",
-            backstory="""You are an expert visual content strategist with deep understanding of semantic 
-            analysis and contextual image generation. Your specialty is reading and comprehending written 
-            content to identify its core themes, emotional tone, subject matter, and contextual elements, 
-            then translating this understanding into precise image prompts.
+            role="Professional Photography Prompt Specialist",
+            goal="""Generate photorealistic image prompts that produce professional, clean, 
+            realistic photographs for blog content using FLUX AI.""",
+            backstory="""You are a professional photography prompt specialist who creates prompts 
+            for realistic, high-quality business photography. You have extensive experience in 
+            commercial photography and understand how to describe professional shots that look 
+            like real photographs taken with professional cameras.
             
-            You excel at:
-            - Semantic content analysis and theme extraction
-            - Identifying the primary subject matter (political, technical, artistic, historical, etc.)
-            - Understanding emotional tone and appropriate visual style
-            - Generating contextually accurate image descriptions
-            - Adapting visual style to match content type (photojournalistic for news, artistic for creative content, etc.)
+            Your specializations include:
+            - Professional business and corporate photography
+            - Clean, minimal compositions with proper lighting
+            - Realistic human subjects in professional settings
+            - High-end commercial photography aesthetics
+            - Natural and studio lighting techniques
+            - Professional camera equipment and techniques
             
-            You avoid generic corporate imagery and instead focus on content-specific visuals that 
-            directly support and enhance the written material's meaning.""",
+            You NEVER create prompts for digital art, illustrations, or stylized imagery. 
+            You focus exclusively on realistic photography that looks professional, clean, 
+            and authentic - like photographs from high-end business magazines or corporate websites.
+            
+            Your prompts always specify "photorealistic", "professional photograph", 
+            "shot with professional camera", and include proper photography terminology.""",
             verbose=True,
             llm=self.llm,
             allow_delegation=False
@@ -81,41 +97,30 @@ class ContextualImagePromptAgent:
         # Create the contextual agent
         agent = self.create_contextual_agent()
         
-        # Analyze the content and generate a contextual prompt
+        # Generate a realistic, professional image prompt
         analysis_prompt = f"""
-Analyze this blog section content and generate a highly specific, contextually appropriate image prompt:
+Create a photorealistic image prompt for {section_name} section about {topic}.
 
-**Blog Topic:** {topic}
-**Blog Type:** {blog_type}
-**Section:** {section_name}
-**Section Content:**
-{section_content}
+Content: {section_content[:500]}...
 
-**Task:** 
-1. First, deeply analyze the content to understand:
-   - Primary subject matter and themes
-   - Emotional tone and atmosphere
-   - Key concepts and entities mentioned
-   - Appropriate visual style for this content type
-   - Specific elements that should be visualized
+Generate a realistic photography prompt that creates:
+- Professional photorealistic photography (NOT digital art, NOT illustrations)
+- Clean, minimal composition with professional lighting
+- Real-world business/professional setting
+- High-quality camera shot with proper depth of field
+- Realistic people in professional attire if humans are needed
+- Clean backgrounds without clutter
+- Natural lighting or professional studio lighting
+- Corporate/business aesthetic matching {blog_type} content
+- Specific visual elements from the actual content
 
-2. Then generate a detailed, contextually accurate image prompt that:
-   - Directly relates to the specific content discussed
-   - Matches the appropriate visual style (photojournalistic for politics, technical for tech, artistic for creative topics, etc.)
-   - Includes specific elements mentioned in the content
-   - Captures the emotional tone and atmosphere
-   - Is suitable for FLUX AI image generation
-   - Uses 1920x1080 aspect ratio considerations
+Requirements:
+- Start with "Professional photograph of" or "Photorealistic shot of"
+- Include "shot with professional camera, clean composition, natural lighting"
+- Avoid: digital art, illustrations, cartoons, overly stylized imagery
+- Focus: realistic, professional, clean, minimal
 
-**Important Guidelines:**
-- Be highly specific to the actual content, not generic
-- Match the subject matter (political content = political imagery, tech content = tech imagery, etc.)
-- Include relevant entities, locations, or concepts mentioned
-- Consider the emotional weight and tone of the content
-- Avoid generic corporate/business imagery unless specifically appropriate
-- Make the prompt actionable for AI image generation
-
-**Output:** Provide only the final image prompt (no explanations or analysis text).
+Output only the realistic photography prompt, no explanations.
 """
 
         try:
@@ -126,9 +131,12 @@ Analyze this blog section content and generate a highly specific, contextually a
             # Clean the prompt - remove any prefixes or explanations
             cleaned_prompt = self._clean_generated_prompt(generated_prompt)
             
-            print(f"DEBUG: Generated contextual prompt for {section_name}: {cleaned_prompt[:100]}...")
+            # Enhance with photography terminology for realism
+            enhanced_prompt = self._enhance_for_realism(cleaned_prompt, topic, blog_type)
             
-            return cleaned_prompt
+            print(f"DEBUG: Generated realistic prompt for {section_name}: {enhanced_prompt[:100]}...")
+            
+            return enhanced_prompt
             
         except Exception as e:
             print(f"ERROR: Failed to generate contextual prompt for {section_name}: {str(e)}")
@@ -167,33 +175,95 @@ Analyze this blog section content and generate a highly specific, contextually a
         
         return cleaned_prompt
     
+    def _enhance_for_realism(self, prompt, topic, blog_type):
+        """
+        Enhance the prompt to ensure it generates realistic, professional photography
+        
+        Args:
+            prompt (str): The cleaned prompt
+            topic (str): Blog topic
+            blog_type (str): Blog type
+            
+        Returns:
+            str: Enhanced realistic photography prompt
+        """
+        if not prompt or len(prompt.strip()) < 10:
+            return self._generate_fallback_prompt("", "general", topic, blog_type)
+        
+        prompt = prompt.strip()
+        
+        # Remove any digital art/illustration terminology
+        unrealistic_terms = {
+            'digital art': 'professional photograph',
+            'illustration': 'professional photograph', 
+            'cartoon': 'professional photograph',
+            'anime': 'professional photograph',
+            'drawing': 'professional photograph',
+            'painting': 'professional photograph',
+            'artistic rendering': 'professional photograph',
+            'stylized': 'photorealistic',
+            'abstract': 'professional',
+            'neon': 'professional lighting',
+            'glowing': 'well-lit',
+            'futuristic': 'modern professional'
+        }
+        
+        prompt_lower = prompt.lower()
+        for unrealistic, realistic in unrealistic_terms.items():
+            if unrealistic in prompt_lower:
+                prompt = prompt.lower().replace(unrealistic, realistic)
+        
+        # Ensure it starts with photography terminology
+        photography_starters = ['professional photograph', 'photorealistic shot', 'professional photo', 'high-quality photograph']
+        if not any(starter in prompt.lower() for starter in photography_starters):
+            prompt = f"Professional photograph of {prompt}"
+        
+        # Ensure it includes essential photography terms
+        essential_terms = ['photorealistic', 'professional camera', 'natural lighting', 'clean composition']
+        missing_terms = [term for term in essential_terms if term not in prompt.lower()]
+        
+        if missing_terms:
+            prompt += f", {', '.join(missing_terms)}"
+        
+        # Add quality and style specifications
+        if 'depth of field' not in prompt.lower():
+            prompt += ", depth of field"
+        
+        if 'high quality' not in prompt.lower() and 'high-quality' not in prompt.lower():
+            prompt += ", high quality business photography"
+        
+        # Ensure realistic human descriptions if people are mentioned
+        if any(word in prompt.lower() for word in ['people', 'person', 'man', 'woman', 'team', 'group', 'professional']):
+            if 'professional attire' not in prompt.lower() and 'business attire' not in prompt.lower():
+                prompt += ", people in professional business attire"
+        
+        return prompt.strip()
+    
     def _generate_fallback_prompt(self, section_content, section_name, topic, blog_type):
-        """Generate a basic fallback prompt if the LLM analysis fails"""
-        # Extract key themes from content for fallback
+        """Generate a realistic photography fallback prompt if the LLM analysis fails"""
+        # Simple categorization for realistic photography styles
         content_lower = section_content.lower() if section_content else ""
         
-        # Identify subject matter
-        political_keywords = ['government', 'election', 'policy', 'political', 'congress', 'senate', 'president', 'minister', 'vote', 'democracy', 'israel', 'america', 'alliance', 'diplomat']
-        tech_keywords = ['technology', 'ai', 'software', 'digital', 'algorithm', 'data', 'computer', 'internet', 'cyber', 'tech']
-        business_keywords = ['business', 'company', 'market', 'economy', 'financial', 'corporate', 'industry', 'commerce']
-        health_keywords = ['health', 'medical', 'doctor', 'hospital', 'treatment', 'disease', 'medicine', 'healthcare']
-        
-        if any(keyword in content_lower for keyword in political_keywords):
-            subject_style = "photojournalistic documentary style showing political themes"
-        elif any(keyword in content_lower for keyword in tech_keywords):
-            subject_style = "modern technology and innovation focused"
-        elif any(keyword in content_lower for keyword in business_keywords):
-            subject_style = "professional business and industry focused"
-        elif any(keyword in content_lower for keyword in health_keywords):
-            subject_style = "medical and healthcare professional setting"
+        # Determine realistic photography style based on content type
+        if any(word in content_lower for word in ['government', 'policy', 'political', 'election']):
+            setting = "professional government office with clean modern architecture"
+        elif any(word in content_lower for word in ['technology', 'ai', 'digital', 'tech']):
+            setting = "modern technology office with clean minimal design and professional equipment"
+        elif any(word in content_lower for word in ['business', 'market', 'financial']):
+            setting = "sophisticated corporate boardroom with professional business atmosphere"
+        elif any(word in content_lower for word in ['health', 'medical', 'healthcare']):
+            setting = "clean modern medical facility with professional healthcare environment"
         else:
-            subject_style = "contextually appropriate professional"
+            setting = "professional modern office space with minimal clean design"
         
-        return f"Professional {subject_style} image representing {topic} with {section_name} context, photorealistic quality, 1920x1080 aspect ratio"
+        return f"Professional photograph of {setting} related to {topic}, shot with professional camera, natural lighting, clean composition, photorealistic, high quality business photography, depth of field"
     
     def generate_section_prompts(self, content_sections, topic, blog_type):
         """
         Generate contextual prompts for all blog sections
+        
+        This is the PRIMARY method for generating all blog image prompts.
+        All blog image generation should use prompts generated by this agent.
         
         Args:
             content_sections (dict): Dictionary with section names as keys and content as values
