@@ -96,11 +96,9 @@ class ImageGenerationFeature:
                 # Extract the actual model value (flux_dev or flux_schnell)
                 selected_model = model[0]
                 
-                image_size = st.selectbox(
-                    "Image Size",
-                    ["1024x1024", "1024x768", "768x1024", "1152x896", "896x1152"],
-                    help="Dimensions of the generated image"
-                )
+                # Fixed image size for all generations
+                image_size = "1920x1080"
+                st.info("🖼️ **Image Resolution**: Fixed at 1920x1080 (Full HD) for all generations")
                 
             with col_adv2:
                 image_count = st.number_input(

@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from ..prompts.prompts import BlogWriterPrompts
 from ....image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
+from ..agents.contextual_image_agent import ContextualImagePromptAgent
 
 
 def extract_blog_sections_for_images(blog_content):
@@ -69,14 +70,15 @@ def extract_blog_sections_for_images(blog_content):
     return mapped_sections
 
 
-def generate_section_image_prompts_only(topic, blog_type, blog_content):
+def generate_section_image_prompts_only(topic, blog_type, blog_content, use_custom_llm=False):
     """
-    Generate only image prompts for specific blog sections without generating actual images
+    Generate only contextual image prompts for specific blog sections without generating actual images
     
     Args:
         topic (str): The blog topic
         blog_type (str): The type of blog (News, Comparison, etc.)
         blog_content (str): The full blog content in markdown
+        use_custom_llm (bool): Whether to use Google Gemini for prompt generation
         
     Returns:
         dict: Dictionary with section names as keys and prompt data as values
@@ -86,11 +88,28 @@ def generate_section_image_prompts_only(topic, blog_type, blog_content):
             ...
         }
     """
+    print(f"DEBUG: Generating contextual image prompts for {topic} using contextual agent")
+    
     # Extract sections from blog content for context
     content_sections = extract_blog_sections_for_images(blog_content)
     
-    # Get section-specific prompts
-    section_prompts = BlogWriterPrompts.get_section_image_prompts(topic, blog_type, content_sections)
+    try:
+        # Initialize the contextual image prompt agent
+        contextual_agent = ContextualImagePromptAgent(use_custom_llm=use_custom_llm)
+        
+        # Generate contextual prompts using AI analysis
+        section_prompts = contextual_agent.generate_section_prompts(
+            content_sections=content_sections,
+            topic=topic,
+            blog_type=blog_type
+        )
+        
+        print(f"DEBUG: Successfully generated {len(section_prompts)} contextual prompts")
+        
+    except Exception as e:
+        print(f"WARNING: Contextual agent failed, falling back to generic prompts: {str(e)}")
+        # Fallback to generic prompts if contextual agent fails
+        section_prompts = BlogWriterPrompts.get_section_image_prompts(topic, blog_type, content_sections)
     
     # Section order for prompt generation
     sections = ['banner', 'main_content', 'supporting_details', 'evidence', 'conclusion']
@@ -98,22 +117,22 @@ def generate_section_image_prompts_only(topic, blog_type, blog_content):
     generated_prompts = {}
     
     for section in sections:
-        prompt = section_prompts.get(section, f"Professional image for {section} section about {topic}")
+        prompt = section_prompts.get(section, f"Professional contextual image for {section} section about {topic}")
         generated_prompts[section] = {
             'prompt': prompt,
-            'enhanced_prompt': prompt,  # Same as prompt since no AI optimization without actual generation
+            'enhanced_prompt': prompt,  # Same as prompt since no image generation
             'section': section,
             'image_url': None,  # No image generated
             'generation_method': None
         }
-        print(f"Generated prompt for {section}: {prompt[:100]}...")
+        print(f"Generated contextual prompt for {section}: {prompt[:120]}...")
     
     return generated_prompts
 
 
-def generate_section_specific_images(topic, blog_type, blog_content, generation_method="flux", output_dir="blog_images"):
+def generate_section_specific_images(topic, blog_type, blog_content, generation_method="flux", output_dir="blog_images", use_custom_llm=False):
     """
-    Generate images for specific blog sections using FLUX AI models via fal.ai and upload to S3
+    Generate contextually appropriate images for specific blog sections using FLUX AI models via fal.ai and upload to S3
     
     Args:
         topic (str): The blog topic
@@ -121,6 +140,7 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
         blog_content (str): The full blog content in markdown
         generation_method (str): Generation method to use ("flux" or "flux_schnell")
         output_dir (str): Directory prefix for S3 storage
+        use_custom_llm (bool): Whether to use Google Gemini for contextual analysis
         
     Returns:
         dict: Dictionary with section names as keys and image data as values
@@ -130,11 +150,28 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
             ...
         }
     """
+    print(f"DEBUG: Generating contextual images for {topic} using contextual agent")
+    
     # Extract sections from blog content for context
     content_sections = extract_blog_sections_for_images(blog_content)
     
-    # Get section-specific prompts
-    section_prompts = BlogWriterPrompts.get_section_image_prompts(topic, blog_type, content_sections)
+    try:
+        # Initialize the contextual image prompt agent
+        contextual_agent = ContextualImagePromptAgent(use_custom_llm=use_custom_llm)
+        
+        # Generate contextual prompts using AI analysis
+        section_prompts = contextual_agent.generate_section_prompts(
+            content_sections=content_sections,
+            topic=topic,
+            blog_type=blog_type
+        )
+        
+        print(f"DEBUG: Successfully generated {len(section_prompts)} contextual prompts for image generation")
+        
+    except Exception as e:
+        print(f"WARNING: Contextual agent failed, falling back to generic prompts: {str(e)}")
+        # Fallback to generic prompts if contextual agent fails
+        section_prompts = BlogWriterPrompts.get_section_image_prompts(topic, blog_type, content_sections)
     
     # Section order for image generation
     sections = ['banner', 'main_content', 'supporting_details', 'evidence', 'conclusion']
@@ -143,16 +180,18 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
     
     for section in sections:
         try:
-            print(f"Generating {section} image for blog topic: {topic}")
+            print(f"Generating contextual {section} image for blog topic: {topic}")
             
-            # Get the prompt for this section
-            prompt = section_prompts.get(section, f"Professional image for {section} section about {topic}")
+            # Get the contextual prompt for this section
+            prompt = section_prompts.get(section, f"Professional contextual image for {section} section about {topic}")
             
-            # Generate image using FLUX AI models via fal.ai
+            print(f"DEBUG: Using contextual prompt for {section}: {prompt[:150]}...")
+            
+            # Generate image using FLUX AI models via fal.ai with 1920x1080 resolution
             if generation_method == "flux_schnell":
                 images_data, total_generated, failed_generations = generate_image_with_flux_schnell(
                     prompt=prompt,
-                    size="1024x1024",
+                    size="1920x1080",
                     output_dir=f"{output_dir}/{section}",
                     topic=topic,
                     keywords=None,
@@ -162,7 +201,7 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
             else:  # flux (default)
                 images_data, total_generated, failed_generations = generate_image_with_flux(
                     prompt=prompt,
-                    size="1024x1024",
+                    size="1920x1080",
                     output_dir=f"{output_dir}/{section}",
                     topic=topic,
                     keywords=None,
@@ -179,7 +218,7 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
                     'generation_method': generation_method,
                     'section': section
                 }
-                print(f"Successfully generated {section} image: {images_data[0]['image_url']}")
+                print(f"Successfully generated contextual {section} image: {images_data[0]['image_url']}")
             else:
                 print(f"Failed to generate {section} image")
                 generated_images[section] = {
@@ -195,7 +234,7 @@ def generate_section_specific_images(topic, blog_type, blog_content, generation_
             print(f"Error generating {section} image: {str(e)}")
             generated_images[section] = {
                 'image_url': None,
-                'prompt': section_prompts.get(section, f"Professional image for {section} section about {topic}"),
+                'prompt': section_prompts.get(section, f"Professional contextual image for {section} section about {topic}"),
                 'enhanced_prompt': None,
                 'generation_method': generation_method,
                 'section': section,

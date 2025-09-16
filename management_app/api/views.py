@@ -707,7 +707,7 @@ def generate_image_api(request):
     
     # Set default values
     image_type = "content"  # Default to content type for professional images
-    size = "1024x1024"  # Default size
+    size = "1920x1080"  # Default size - Full HD resolution
 
     logger.info(
         f"Received image generation request for prompt: '{prompt}' with keywords: '{keywords}', count: {count}, model: {model}"

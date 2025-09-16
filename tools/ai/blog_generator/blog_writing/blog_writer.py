@@ -190,7 +190,8 @@ class BlogWriter:
     
     def generate_blog(self, topic=None, keywords=None, blog_type=None, length_min=None, length_max=None, 
                       introduction=None, table_of_content=None, faq=None, cta=None, conclusion=None, 
-                      target_audience=None, sample_blog_url=None, generate_image_prompts=None, generate_images=None):
+                      target_audience=None, sample_blog_url=None, generate_image_prompts=None, generate_images=None, 
+                      image_model=None):
         # Update parameters if provided
         if topic: self.topic = topic
         if keywords is not None: self.keywords = keywords
@@ -248,13 +249,22 @@ class BlogWriter:
             try:
                 if self.generate_images:
                     # Generate both prompts and actual images
-                    print(f"DEBUG: Generating both prompts and images")
+                    print(f"DEBUG: Generating both prompts and images using {image_model or 'flux_dev'}")
+                    
+                    # Map frontend model names to backend method names
+                    generation_method = "flux"  # Default
+                    if image_model == "flux_schnell":
+                        generation_method = "flux_schnell"
+                    elif image_model == "flux_dev":
+                        generation_method = "flux"
+                    
                     self.section_images = generate_section_specific_images(
                         topic=self.topic,
                         blog_type=self.blog_type,
                         blog_content=self.blog_content,
-                        generation_method="flux",  # Default to flux, can be made configurable
-                        output_dir="blog_images"
+                        generation_method=generation_method,
+                        output_dir="blog_images",
+                        use_custom_llm=self.use_custom_llm
                     )
                     
                     # Extract image URLs for database storage
@@ -265,12 +275,13 @@ class BlogWriter:
                     print(f"DEBUG: Embedded {len(self.image_urls)} images into blog content")
                     
                 else:
-                    # Generate only prompts without actual images
-                    print(f"DEBUG: Generating prompts only (no actual images)")
+                    # Generate only contextual prompts without actual images
+                    print(f"DEBUG: Generating contextual prompts only (no actual images)")
                     self.section_images = generate_section_image_prompts_only(
                         topic=self.topic,
                         blog_type=self.blog_type,
-                        blog_content=self.blog_content
+                        blog_content=self.blog_content,
+                        use_custom_llm=self.use_custom_llm
                     )
                     
                     # No image URLs since no images were generated

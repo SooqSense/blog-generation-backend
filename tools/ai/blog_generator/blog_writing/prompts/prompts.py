@@ -435,40 +435,149 @@ Generate exactly {max_image_prompts} prompts that directly complement the writte
 
     @staticmethod
     def get_banner_image_prompt(topic, blog_type, content_sections=None):
-        """Generate banner image prompt for the main topic"""
+        """Generate contextual banner image prompt for the main topic"""
         context = content_sections.get('introduction', '') if content_sections else ''
         
-        # Create cinematic, clean prompt optimized for FLUX AI
-        return f"""Professional cinematic wide shot of a modern corporate environment representing {topic}, featuring clean minimalist design with dramatic golden hour lighting streaming through large windows. The scene showcases a sleek, futuristic workspace with subtle technology elements that visually represent the essence of {topic}, captured with high-end cinematography and photorealistic detail. NO text overlays, NO charts, NO data visualization - pure visual storytelling focused on atmosphere and professional aesthetics with rich textures and materials."""
+        # Extract key concepts from introduction if available
+        context_keywords = ""
+        if context and len(context.strip()) > 50:
+            # Extract key concepts and themes from the introduction
+            key_phrases = []
+            sentences = context.replace('\n', ' ').split('.')[:3]
+            for sentence in sentences:
+                words = sentence.split()
+                if len(words) > 5:
+                    # Extract meaningful keywords (longer than 4 characters, not common words)
+                    meaningful_words = [w.strip('.,!?()[]{}') for w in words if len(w) > 4 and w.lower() not in ['this', 'that', 'with', 'from', 'they', 'have', 'been', 'will', 'are', 'the']]
+                    key_phrases.extend(meaningful_words[:2])
+            
+            if key_phrases:
+                context_keywords = f", incorporating visual elements of {', '.join(key_phrases[:4])}"
+        
+        # Create context-aware cinematic prompt optimized for FLUX AI
+        return f"""Professional cinematic wide shot of a modern corporate environment representing {topic}{context_keywords}, featuring clean minimalist design with dramatic golden hour lighting streaming through large windows. The scene showcases a sleek, futuristic workspace with subtle technology elements that visually represent the specific essence and context of {topic}, captured with high-end cinematography and photorealistic detail. The composition should reflect the professional and innovative nature discussed in the content. NO text overlays, NO charts, NO data visualization - pure visual storytelling focused on atmosphere and context-specific professional aesthetics with rich textures and materials."""
 
     @staticmethod
     def get_main_content_image_prompt(topic, blog_type, content_sections=None):
-        """Generate main content/current trends image prompt"""
+        """Generate contextual main content/current trends image prompt"""
         context = content_sections.get('main_content', '') if content_sections else ''
         
-        # Create cinematic, clean prompt focused on current trends visualization
-        return f"""Cinematic close-up shot of cutting-edge technology and innovation representing {topic}, featuring sleek modern devices and interfaces in a high-tech professional environment with soft studio lighting. The scene captures the essence of current trends through realistic materials, chrome surfaces, and contemporary design elements, shot with shallow depth of field and professional cinematography. NO text, NO infographics, NO charts - pure visual representation of technological advancement and modern trends in {topic}."""
+        # Extract specific trends and technologies mentioned in main content
+        trend_elements = ""
+        if context and len(context.strip()) > 100:
+            # Look for trend-related keywords and technologies
+            trend_words = []
+            tech_indicators = ['technology', 'innovation', 'development', 'advancement', 'trend', 'emerging', 'latest', 'new', 'future', 'AI', 'machine', 'digital', 'cloud', 'data', 'platform', 'solution', 'system', 'software', 'application']
+            words = context.lower().split()
+            
+            # Find sentences containing trend indicators
+            sentences = context.split('.')
+            for sentence in sentences[:3]:
+                if any(indicator in sentence.lower() for indicator in tech_indicators):
+                    # Extract meaningful terms from trend-related sentences
+                    sentence_words = sentence.split()
+                    for word in sentence_words:
+                        clean_word = word.strip('.,!?()[]{}').lower()
+                        if len(clean_word) > 4 and clean_word not in ['this', 'that', 'with', 'from', 'they', 'have', 'been', 'will']:
+                            trend_words.append(clean_word)
+            
+            if trend_words:
+                unique_trends = list(set(trend_words))[:5]
+                trend_elements = f", specifically visualizing {', '.join(unique_trends)} through modern interfaces and cutting-edge design"
+        
+        # Create context-aware cinematic prompt focused on specific trends
+        return f"""Cinematic close-up shot of cutting-edge technology and innovation representing {topic}{trend_elements}, featuring sleek modern devices and interfaces in a high-tech professional environment with soft studio lighting. The scene captures the essence of the specific trends and developments mentioned in the content through realistic materials, chrome surfaces, and contemporary design elements that directly relate to the discussed innovations, shot with shallow depth of field and professional cinematography. NO text, NO infographics, NO charts - pure visual representation of the specific technological advancements and modern trends discussed in the {topic} content."""
 
     @staticmethod
     def get_supporting_details_image_prompt(topic, blog_type, content_sections=None):
-        """Generate supporting details image prompt"""
+        """Generate contextual supporting details image prompt"""
         context = content_sections.get('supporting_details', '') if content_sections else ''
         
-        # Create cinematic, analytical visualization prompt
-        return f"""Professional medium shot of a sophisticated research and analysis environment focused on {topic}, featuring multiple professionals collaborating around modern digital displays and advanced technology interfaces. The scene showcases detailed analytical work with dramatic side lighting, clean modern office aesthetics, and high-quality materials like glass, metal, and premium fabrics. Captured with cinematic depth and professional photography techniques, emphasizing the depth of analysis and expertise. NO text elements, NO charts, NO diagrams - pure visual storytelling of professional analytical work."""
+        # Extract analytical and research elements from supporting details
+        analysis_focus = ""
+        if context and len(context.strip()) > 80:
+            # Look for analysis-related keywords and methodologies
+            analysis_indicators = ['analysis', 'research', 'study', 'data', 'findings', 'results', 'methodology', 'approach', 'framework', 'model', 'testing', 'evaluation', 'assessment', 'comparison', 'evidence', 'statistics', 'metrics', 'performance', 'implementation', 'strategy']
+            
+            context_sentences = context.split('.')[:4]
+            analytical_terms = []
+            
+            for sentence in context_sentences:
+                if any(indicator in sentence.lower() for indicator in analysis_indicators):
+                    words = sentence.split()
+                    for word in words:
+                        clean_word = word.strip('.,!?()[]{}').lower()
+                        if (len(clean_word) > 5 and 
+                            clean_word not in ['supporting', 'details', 'additional', 'furthermore', 'however', 'therefore'] and
+                            any(indicator in clean_word for indicator in analysis_indicators[:10])):
+                            analytical_terms.append(clean_word)
+            
+            if analytical_terms:
+                unique_terms = list(set(analytical_terms))[:4]
+                analysis_focus = f", specifically focused on {', '.join(unique_terms)} aspects of {topic}"
+        
+        # Create context-aware analytical visualization prompt
+        return f"""Professional medium shot of a sophisticated research and analysis environment focused on {topic}{analysis_focus}, featuring multiple professionals collaborating around modern digital displays and advanced technology interfaces that reflect the specific analytical work discussed in the content. The scene showcases detailed analytical work with dramatic side lighting, clean modern office aesthetics, and high-quality materials like glass, metal, and premium fabrics. The composition should visually represent the depth of supporting analysis mentioned in the content, captured with cinematic depth and professional photography techniques. NO text elements, NO charts, NO diagrams - pure visual storytelling of the specific professional analytical work relevant to {topic}."""
 
     @staticmethod
     def get_evidence_image_prompt(topic, blog_type, content_sections=None):
-        """Generate evidence and data sources image prompt"""
+        """Generate contextual evidence and data sources image prompt"""
         context = content_sections.get('evidence', '') if content_sections else ''
         
-        # Create cinematic research environment prompt
-        return f"""Cinematic tracking shot through a prestigious academic research facility or modern data center related to {topic}, featuring scientists and researchers working with advanced computational equipment in a clean, minimalist laboratory setting. The scene emphasizes scientific rigor through dramatic lighting, pristine white and metallic surfaces, and state-of-the-art research instruments, captured with high-end cinematography and shallow focus. NO visible data, NO charts, NO text displays - pure atmospheric representation of authoritative research and scientific credibility."""
+        # Extract research and credibility elements from evidence section
+        research_focus = ""
+        if context and len(context.strip()) > 60:
+            # Look for research institutions, studies, and credibility indicators
+            evidence_indicators = ['university', 'institute', 'research', 'study', 'report', 'publication', 'journal', 'academic', 'scientist', 'expert', 'professor', 'laboratory', 'center', 'foundation', 'organization', 'survey', 'analysis', 'data', 'findings', 'results', 'statistics', 'methodology']
+            
+            evidence_terms = []
+            sentences = context.split('.')[:3]
+            
+            for sentence in sentences:
+                if any(indicator in sentence.lower() for indicator in evidence_indicators):
+                    words = sentence.split()
+                    for word in words:
+                        clean_word = word.strip('.,!?()[]{}').lower()
+                        if (len(clean_word) > 4 and 
+                            clean_word not in ['evidence', 'sources', 'according', 'based'] and
+                            any(indicator in clean_word for indicator in evidence_indicators[:15])):
+                            evidence_terms.append(clean_word)
+            
+            if evidence_terms:
+                unique_evidence = list(set(evidence_terms))[:4]
+                research_focus = f", emphasizing {', '.join(unique_evidence)} environments and {topic}-specific research facilities"
+        
+        # Create context-aware research environment prompt
+        return f"""Cinematic tracking shot through a prestigious academic research facility or modern data center related to {topic}{research_focus}, featuring scientists and researchers working with advanced computational equipment in a clean, minimalist laboratory setting that reflects the specific research context mentioned in the content. The scene emphasizes scientific rigor through dramatic lighting, pristine white and metallic surfaces, and state-of-the-art research instruments relevant to {topic}, captured with high-end cinematography and shallow focus. The composition should visually represent the credibility and authority of the sources discussed. NO visible data, NO charts, NO text displays - pure atmospheric representation of the specific authoritative research environments relevant to {topic}."""
 
     @staticmethod
     def get_conclusion_image_prompt(topic, blog_type, content_sections=None):
-        """Generate conclusion image prompt"""
+        """Generate contextual conclusion image prompt"""
         context = content_sections.get('conclusion', '') if content_sections else ''
         
-        # Create inspirational, forward-looking cinematic prompt
-        return f"""Inspiring wide shot of a futuristic horizon or modern cityscape representing the future of {topic}, captured during golden hour with dramatic sky and architectural elements that suggest progress and innovation. The scene features clean, aspirational imagery with upward-trending visual elements, modern materials, and a sense of forward momentum, shot with cinematic grandeur and professional color grading. NO text, NO graphics, NO overlays - pure visual metaphor for future possibilities and positive outcomes in {topic}."""
+        # Extract future-oriented and outcome elements from conclusion
+        future_elements = ""
+        if context and len(context.strip()) > 50:
+            # Look for future-oriented keywords and outcomes
+            future_indicators = ['future', 'tomorrow', 'next', 'upcoming', 'potential', 'opportunity', 'growth', 'advancement', 'development', 'evolution', 'transformation', 'innovation', 'progress', 'success', 'achievement', 'outcome', 'result', 'benefit', 'impact', 'change', 'improvement']
+            
+            conclusion_terms = []
+            sentences = context.split('.')[:3]
+            
+            for sentence in sentences:
+                if any(indicator in sentence.lower() for indicator in future_indicators):
+                    words = sentence.split()
+                    for word in words:
+                        clean_word = word.strip('.,!?()[]{}').lower()
+                        if (len(clean_word) > 4 and 
+                            clean_word not in ['conclusion', 'summary', 'finally', 'therefore', 'thus', 'overall'] and
+                            (any(indicator in clean_word for indicator in future_indicators[:12]) or
+                             clean_word in ['sustainable', 'efficient', 'effective', 'revolutionary', 'transformative', 'innovative', 'groundbreaking'])):
+                            conclusion_terms.append(clean_word)
+            
+            if conclusion_terms:
+                unique_outcomes = list(set(conclusion_terms))[:4]
+                future_elements = f", specifically visualizing {', '.join(unique_outcomes)} aspects and the transformative impact of {topic}"
+        
+        # Create context-aware inspirational prompt
+        return f"""Inspiring wide shot of a futuristic horizon or modern cityscape representing the future of {topic}{future_elements}, captured during golden hour with dramatic sky and architectural elements that suggest the specific progress and innovation discussed in the conclusion. The scene features clean, aspirational imagery with upward-trending visual elements, modern materials, and a sense of forward momentum that reflects the positive outcomes and future possibilities mentioned in the content, shot with cinematic grandeur and professional color grading. The composition should visually represent the optimistic future described for {topic}. NO text, NO graphics, NO overlays - pure visual metaphor for the specific future possibilities and positive outcomes discussed in the {topic} conclusion."""
