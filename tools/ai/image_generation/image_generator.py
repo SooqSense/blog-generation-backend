@@ -149,13 +149,13 @@ def upload_image_to_s3(image_content, output_dir, filename):
         print(f"Error uploading image: {str(e)}")
         return None
 
-def generate_image_with_flux(prompt, size="1024x1024", output_dir="blog_images", topic=None, keywords=None, image_type="content", count=1):
+def generate_image_with_flux(prompt, size="1920x1080", output_dir="blog_images", topic=None, keywords=None, image_type="content", count=1):
     """
     Generate one or more images using FLUX AI via fal.ai API and upload to S3
     
     Args:
         prompt (str): The prompt for image generation
-        size (str): The size of the image (default: "1024x1024")
+        size (str): The size of the image (default: "1920x1080")
         output_dir (str): Directory to save the image (now only used as a prefix in S3)
         topic (str, optional): The blog topic for prompt optimization context
         keywords (list, optional): Keywords to focus on in the image
@@ -192,6 +192,7 @@ def generate_image_with_flux(prompt, size="1024x1024", output_dir="blog_images",
         "1024x1024": "square_hd",
         "1024x1792": "portrait_16_9", 
         "1792x1024": "landscape_16_9",
+        "1920x1080": "landscape_16_9",  # Full HD 16:9 format
         "512x512": "square",
         "768x1024": "portrait_4_3",
         "1024x768": "landscape_4_3"
@@ -274,13 +275,13 @@ def generate_image_with_flux(prompt, size="1024x1024", output_dir="blog_images",
     
     return images_data, total_generated, failed_generations
 
-def generate_image_with_flux_schnell(prompt, size="1024x1024", output_dir="blog_images", topic=None, keywords=None, image_type="content", count=1):
+def generate_image_with_flux_schnell(prompt, size="1920x1080", output_dir="blog_images", topic=None, keywords=None, image_type="content", count=1):
     """
     Generate one or more images using FLUX Schnell (faster model) via fal.ai API and upload to S3
     
     Args:
         prompt (str): The prompt for image generation
-        size (str): The size of the image (default: "1024x1024")
+        size (str): The size of the image (default: "1920x1080")
         output_dir (str): Directory to save the image (now only used as a prefix in S3)
         topic (str, optional): The blog topic for prompt optimization context
         keywords (list, optional): Keywords to focus on in the image
@@ -317,6 +318,7 @@ def generate_image_with_flux_schnell(prompt, size="1024x1024", output_dir="blog_
         "1024x1024": "square_hd",
         "1024x1792": "portrait_16_9", 
         "1792x1024": "landscape_16_9",
+        "1920x1080": "landscape_16_9",  # Full HD 16:9 format
         "512x512": "square",
         "768x1024": "portrait_4_3",
         "1024x768": "landscape_4_3"
@@ -399,13 +401,13 @@ def generate_image_with_flux_schnell(prompt, size="1024x1024", output_dir="blog_
     return images_data, total_generated, failed_generations
 
 # Main image generation function (backward compatibility wrapper)
-def generate_image(prompt, size="1024x1024", output_dir="blog_images", topic=None, image_type="content", count=1, keywords=None, generation_method="flux"):
+def generate_image(prompt, size="1920x1080", output_dir="blog_images", topic=None, image_type="content", count=1, keywords=None, generation_method="flux"):
     """
     Generate images using FLUX AI models via fal.ai (backward compatibility wrapper)
     
     Args:
         prompt (str): The prompt for image generation
-        size (str): The size of the image (default: "1024x1024")
+        size (str): The size of the image (default: "1920x1080")
         output_dir (str): Directory to save the image
         topic (str, optional): The blog topic for context
         image_type (str): Type of image to generate

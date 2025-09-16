@@ -217,14 +217,9 @@ class BlogGenerationFeature:
                 )
                 
             with col_img2:
-                max_image_prompts = st.slider(
-                    "Number of Images",
-                    min_value=1,
-                    max_value=8,
-                    value=5,
-                    disabled=not (generate_image_prompts or generate_actual_images),
-                    help="Number of section-wise images/prompts to generate"
-                )
+                # Fixed number of section-wise images (5 sections: banner, main_content, supporting_details, evidence, conclusion)
+                max_image_prompts = 5  # Fixed value, no user input needed
+                st.info("🖼️ **5 section-specific images** will be generated (Banner, Main Content, Supporting Details, Evidence, Conclusion)")
                 
                 if generate_actual_images:
                     # Model selection for image generation
@@ -467,7 +462,7 @@ class BlogGenerationFeature:
                 status_text.text("📝 Generating comprehensive blog content...")
                 progress_bar.progress(40)
                 
-                # Generate the blog using the proper BlogWriter method
+                # Generate the blog using the proper BlogWriter method which handles everything including images
                 if generate_actual_images:
                     status_text.text(f"🖼️ Generating blog with {max_image_prompts} section-wise images using FLUX AI...")
                 elif generate_image_prompts:
@@ -477,7 +472,7 @@ class BlogGenerationFeature:
                 progress_bar.progress(70)
                 
                 try:
-                    # Use the BlogWriter's generate_blog method which handles everything
+                    # Use the BlogWriter's generate_blog method which handles EVERYTHING including images
                     blog_content = self.blog_writer.generate_blog(
                         topic=kwargs.get('topic'),
                         keywords=kwargs.get('keywords', []),
@@ -492,11 +487,15 @@ class BlogGenerationFeature:
                         target_audience=kwargs.get('target_audience', []),
                         sample_blog_url=kwargs.get('sample_blog_url'),
                         generate_image_prompts=generate_image_prompts,
-                        generate_images=generate_actual_images
+                        generate_images=generate_actual_images,
+                        image_model=kwargs.get('image_model', 'flux_dev')
                     )
                     
                     if not blog_content or len(blog_content.strip()) < 100:
                         raise Exception("Blog generation returned insufficient content")
+                    
+                    status_text.text("✅ Blog generation completed with images!")
+                    progress_bar.progress(85)
                         
                 except Exception as generation_error:
                     status_text.text("❌ Blog generation failed")
@@ -505,109 +504,38 @@ class BlogGenerationFeature:
                     st.session_state.blog_generation_status = 'error'
                     return
                 
-                # Get image prompts from the blog writer (only if enabled)
-                image_prompts = []
-                if generate_image_prompts:
-                    try:
-                        # Debug: Check what attributes the blog writer has
-                        writer_attrs = [attr for attr in dir(self.blog_writer) if not attr.startswith('_')]
-                        print(f"DEBUG: BlogWriter attributes: {writer_attrs}")
-                        
-                        if hasattr(self.blog_writer, 'image_prompts') and self.blog_writer.image_prompts:
-                            image_prompts = self.blog_writer.image_prompts
-                            status_text.text(f"✅ Extracted {len(image_prompts)} section-wise image prompts!")
-                            print(f"DEBUG: Found {len(image_prompts)} image prompts: {image_prompts[:2] if len(image_prompts) > 0 else 'None'}")
-                        else:
-                            status_text.text("⚠️ No image prompts generated - checking attributes...")
-                            print(f"DEBUG: image_prompts attribute exists: {hasattr(self.blog_writer, 'image_prompts')}")
-                            if hasattr(self.blog_writer, 'image_prompts'):
-                                print(f"DEBUG: image_prompts value: {self.blog_writer.image_prompts}")
-                    except Exception as e:
-                        st.warning(f"Could not extract image prompts: {str(e)}")
-                        print(f"DEBUG: Exception extracting image prompts: {e}")
-                else:
-                    status_text.text("ℹ️ Image prompt generation disabled by user.")
-                    print("DEBUG: Image prompt generation disabled by user setting")
-                
-                # Generate section-wise images if enabled
+                # Get image data from the blog writer (images already generated by BlogWriter)
                 generated_images = []
                 section_images_data = {}
+                image_prompts = []
                 
-                if generate_actual_images:
-                    try:
-                        # Get the selected model from kwargs
-                        image_model = kwargs.get('image_model', 'flux_dev')
+                # Extract image data from BlogWriter - NO DUPLICATE GENERATION
+                try:
+                    if hasattr(self.blog_writer, 'section_images') and self.blog_writer.section_images:
+                        section_images_data = self.blog_writer.section_images
+                        status_text.text(f"✅ Retrieved {len(section_images_data)} section images from BlogWriter!")
+                        print(f"DEBUG: Retrieved section images: {list(section_images_data.keys())}")
                         
-                        # Map model to generation method for backend compatibility
-                        generation_method_param = "flux" if image_model == "flux_dev" else "flux_schnell"
-                        model_name = "FLUX Dev" if image_model == "flux_dev" else "FLUX Schnell"
-                        
-                        status_text.text(f"🖼️ Generating section-wise images using {model_name}...")
-                        progress_bar.progress(78)
-                        
-                        print(f"DEBUG: Starting section-wise image generation using {model_name} (method: {generation_method_param})")
-                        
-                        # Generate section-specific images (banner, main_content, supporting_details, evidence, conclusion)
-                        section_images_data = generate_section_specific_images(
-                            topic=kwargs.get('topic'),
-                            blog_type=kwargs.get('blog_type', 'News'),
-                            blog_content=blog_content,
-                            generation_method=generation_method_param,
-                            output_dir="blog_section_images"
-                        )
-                        
-                        # Convert section images to the expected format for UI display
+                        # Convert section images to UI display format
                         for section_name, section_data in section_images_data.items():
-                            if section_data.get('image_url'):
-                                generated_images.append({
-                                    'prompt': section_data.get('prompt'),
-                                    'image_url': section_data.get('image_url'),
-                                    'enhanced_prompt': section_data.get('enhanced_prompt'),
-                                    'section': section_name,
-                                    'generation_method': section_data.get('generation_method', generation_method_param)
-                                })
-                        
-                        # Get image URLs list for database storage
-                        section_image_urls = get_section_image_urls_list(section_images_data)
-                        
-                        status_text.text(f"✅ Generated {len(generated_images)} section-wise images successfully!")
-                        print(f"DEBUG: Section-wise image generation complete: {len(generated_images)} images for sections {list(section_images_data.keys())}")
-                        
-                    except Exception as e:
-                        print(f"DEBUG: Error in section-wise image generation: {str(e)}")
-                        st.warning(f"Could not generate section-wise images: {str(e)}")
-                        section_images_data = {}
-                        
-                elif generate_image_prompts and not generate_actual_images:
-                    try:
-                        # Generate only section-wise prompts without actual images
-                        status_text.text("🎨 Generating section-wise image prompts...")
-                        progress_bar.progress(78)
-                        
-                        section_images_data = generate_section_image_prompts_only(
-                            topic=kwargs.get('topic'),
-                            blog_type=kwargs.get('blog_type', 'News'),
-                            blog_content=blog_content
-                        )
-                        
-                        # Convert to display format (prompts only)
-                        for section_name, section_data in section_images_data.items():
-                            if section_data.get('prompt'):
-                                generated_images.append({
-                                    'prompt': section_data.get('prompt'),
-                                    'image_url': None,  # No actual image generated
-                                    'enhanced_prompt': section_data.get('enhanced_prompt'),
-                                    'section': section_name,
-                                    'generation_method': None
-                                })
-                        
-                        status_text.text(f"✅ Generated {len(generated_images)} section-wise image prompts!")
-                        print(f"DEBUG: Section-wise prompts generated for sections: {list(section_images_data.keys())}")
-                        
-                    except Exception as e:
-                        print(f"DEBUG: Error in section-wise prompt generation: {str(e)}")
-                        st.warning(f"Could not generate section-wise prompts: {str(e)}")
-                        section_images_data = {}
+                            generated_images.append({
+                                'prompt': section_data.get('prompt'),
+                                'image_url': section_data.get('image_url'),
+                                'enhanced_prompt': section_data.get('enhanced_prompt'),
+                                'section': section_name,
+                                'generation_method': section_data.get('generation_method')
+                            })
+                    
+                    # Extract image prompts from BlogWriter
+                    if hasattr(self.blog_writer, 'image_prompts') and self.blog_writer.image_prompts:
+                        image_prompts = self.blog_writer.image_prompts
+                        status_text.text(f"✅ Retrieved {len(image_prompts)} image prompts from BlogWriter!")
+                        print(f"DEBUG: Retrieved image prompts: {len(image_prompts)} prompts")
+                
+                except Exception as e:
+                    print(f"DEBUG: Error retrieving image data from BlogWriter: {str(e)}")
+                    st.warning(f"Could not retrieve image data: {str(e)}")
+                    # Continue without images rather than failing
                 
                 status_text.text("📚 Collecting research sources...")
                 progress_bar.progress(85)
@@ -952,7 +880,7 @@ class BlogGenerationFeature:
                     # Add copy button for each prompt
                     col_prompt1, col_prompt2 = st.columns([3, 1])
                     with col_prompt2:
-                        if st.button(f"📋 Copy", key=f"copy_section_prompt_{i}_{self.instance_id}", use_container_width=True):
+                        if st.button(f"📋 Copy", key=f"copy_section_prompt_{section_name}_{i}_{self.instance_id}", use_container_width=True):
                             st.code(prompt, language="text")
                             st.success("Section prompt copied!")
         elif settings.get('generate_image_prompts') == False:
@@ -1059,7 +987,7 @@ class BlogGenerationFeature:
                         use_container_width=True
                     )
                 else:
-                    st.button("🖼️ No URLs", disabled=True, use_container_width=True)
+                    st.button("🖼️ No URLs", disabled=True, use_container_width=True, key=f"no_urls_{self.instance_id}")
             elif image_prompts:
                 # Export image prompts if no images were generated
                 prompts_text = "\n\n".join([f"Section-based Prompt {i+1}:\n{prompt}" for i, prompt in enumerate(image_prompts)])
@@ -1075,7 +1003,8 @@ class BlogGenerationFeature:
                     "🎨 No Content",
                     disabled=True,
                     use_container_width=True,
-                    help="No images or prompts generated for this blog"
+                    help="No images or prompts generated for this blog",
+                    key=f"no_content_{self.instance_id}"
                 )
         
         # Additional actions
