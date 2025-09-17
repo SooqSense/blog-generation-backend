@@ -179,10 +179,6 @@ class BlogGenerationFeature:
                     help="Minimum and maximum word count"
                 )
                 
-                use_custom_llm = st.checkbox(
-                    "Use Google Gemini (Custom LLM)",
-                    help="Use Google Gemini instead of OpenAI GPT-3.5"
-                )
             
             # Blog structure options
             st.markdown("#### 🏗️ Blog Structure")
@@ -351,7 +347,6 @@ class BlogGenerationFeature:
                         conclusion=conclusion,
                         target_audience=target_audience,
                         sample_blog_url=sample_url if sample_url else None,
-                        use_custom_llm=use_custom_llm,
                         generate_image_prompts=generate_image_prompts,
                         max_image_prompts=max_image_prompts,
                         generate_actual_images=generate_actual_images,
@@ -400,7 +395,6 @@ class BlogGenerationFeature:
                 
                 # Debug: Print initialization parameters
                 init_params = {
-                    'use_custom_llm': kwargs.get('use_custom_llm', False),
                     'topic': kwargs.get('topic'),
                     'keywords': kwargs.get('keywords', []),
                     'blog_type': kwargs.get('blog_type', 'News'),
@@ -418,8 +412,15 @@ class BlogGenerationFeature:
                 }
                 print(f"DEBUG: Initializing BlogWriter with params: {init_params}")
                 
+                # CRITICAL DEBUG: Show checkbox values received from frontend
+                print(f"🔍 FRONTEND CHECKBOX DEBUG:")
+                print(f"   - FAQ checkbox value: {kwargs.get('faq', 'NOT PROVIDED')}")
+                print(f"   - CTA checkbox value: {kwargs.get('cta', 'NOT PROVIDED')}")  
+                print(f"   - Table of Content value: {kwargs.get('table_of_content', 'NOT PROVIDED')}")
+                print(f"   - Introduction value: {kwargs.get('introduction', 'NOT PROVIDED')}")
+                print(f"   - Conclusion value: {kwargs.get('conclusion', 'NOT PROVIDED')}")
+                
                 self.blog_writer = BlogWriter(
-                    use_custom_llm=kwargs.get('use_custom_llm', False),
                     topic=kwargs.get('topic'),
                     keywords=kwargs.get('keywords', []),
                     blog_type=kwargs.get('blog_type', 'News'),
@@ -584,7 +585,6 @@ class BlogGenerationFeature:
                     'user': st.session_state.get('username', 'Anonymous'),
                     'user_email': st.session_state.get('user_email', ''),
                     'generation_settings': {
-                        'use_custom_llm': kwargs.get('use_custom_llm', False),
                         'introduction': kwargs.get('introduction', True),
                         'table_of_content': kwargs.get('table_of_content', False),
                         'faq': kwargs.get('faq', False),
@@ -701,9 +701,7 @@ class BlogGenerationFeature:
             st.markdown("#### 🔧 Generation Details")
             st.info(f"**Generated:** {blog_data.get('generated_at', 'N/A')}")
             st.info(f"**User:** {blog_data.get('user', 'Anonymous')}")
-            generation_settings = blog_data.get('generation_settings', {})
-            llm_used = "Google Gemini" if generation_settings.get('use_custom_llm', False) else "OpenAI GPT"
-            st.info(f"**LLM Used:** {llm_used}")
+            st.info(f"**LLM Used:** OpenAI GPT")
         
         # Initialize variables first before using them
         generated_images = blog_data.get('generated_images', [])

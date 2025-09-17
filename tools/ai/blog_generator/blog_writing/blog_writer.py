@@ -214,6 +214,7 @@ class BlogWriter:
                       introduction=None, table_of_content=None, faq=None, cta=None, conclusion=None, 
                       target_audience=None, sample_blog_url=None, generate_image_prompts=None, generate_images=None, 
                       image_model=None):
+        
         # Update parameters if provided
         if topic: self.topic = topic
         if keywords is not None: self.keywords = keywords
