@@ -9,6 +9,7 @@ import hashlib
 import requests
 import json
 import os
+import logging
 from django.urls import reverse
 from django.conf import settings
 from django.utils import timezone
@@ -22,6 +23,9 @@ from django.db import transaction
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Load environment variables from .env file
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from .models import User
 from .serializers import (
@@ -39,6 +43,11 @@ GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', '')
 LINKEDIN_CLIENT_ID = os.environ.get('LINKEDIN_CLIENT_ID', '')
 LINKEDIN_CLIENT_SECRET = os.environ.get('LINKEDIN_CLIENT_SECRET', '')
 LINKEDIN_REDIRECT_URI = os.environ.get('LINKEDIN_REDIRECT_URI', '')
+
+# Clerk OAuth settings
+CLERK_PUBLISHABLE_KEY = os.environ.get('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '')
+CLERK_SECRET_KEY = os.environ.get('CLERK_SECRET_KEY', '')
+
 print(LINKEDIN_REDIRECT_URI)
 
 class UserListView(generics.RetrieveAPIView):
@@ -591,4 +600,243 @@ class LinkedInTokenView(APIView):
             'expires_at': user.linkedin_token_expires_at,
             'expired': False
         }, status=status.HTTP_200_OK)
+
+
+class ClerkAuthVerifyView(APIView):
+    """
+    Verify Clerk JWT token and return user information
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        """
+        Verify a Clerk token and return user data
+        Expected body: {"token": "clerk_token_or_user_id"}
+        """
+        try:
+            # Import Clerk verification functions
+            from frontend.authentication.django_auth_handler import verify_clerk_token, create_or_get_user
+            
+            token = request.data.get('token')
+            if not token:
+                return Response({
+                    'success': False,
+                    'message': 'Token is required',
+                    'error': 'No token provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verify token with Clerk
+            clerk_user_data = verify_clerk_token(token)
+            
+            if not clerk_user_data:
+                return Response({
+                    'success': False,
+                    'message': 'Invalid or expired token',
+                    'error': 'Token verification failed'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # Create or get Django user
+            django_user, created = create_or_get_user(clerk_user_data)
+            
+            if not django_user:
+                return Response({
+                    'success': False,
+                    'message': 'Failed to create/retrieve user',
+                    'error': 'User creation failed'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Generate JWT tokens for Django session
+            refresh = RefreshToken.for_user(django_user)
+            jwt_access_token = str(refresh.access_token)
+            jwt_refresh_token = str(refresh)
+            
+            # Calculate JWT token expiration
+            from rest_framework_simplejwt.settings import api_settings
+            access_token_lifetime = api_settings.ACCESS_TOKEN_LIFETIME
+            jwt_token_expires_at = timezone.now() + access_token_lifetime
+            
+            # Store Clerk user ID and JWT tokens in user model
+            if hasattr(django_user, 'save'):  # Real Django user
+                django_user.clerk_user_id = clerk_user_data.get('id')
+                django_user.simple_login_access_token = jwt_access_token
+                django_user.simple_login_refresh_token = jwt_refresh_token
+                django_user.simple_login_token_expires_at = jwt_token_expires_at
+                django_user.save(update_fields=[
+                    'clerk_user_id', 'simple_login_access_token', 
+                    'simple_login_refresh_token', 'simple_login_token_expires_at'
+                ])
+                
+                # Get fresh user data
+                django_user.refresh_from_db()
+                user_serializer_data = UserSerializer(django_user).data
+            else:
+                # Mock user for non-Django environments
+                user_serializer_data = {
+                    'id': django_user.get('id'),
+                    'username': django_user.get('username'),
+                    'email': django_user.get('email'),
+                    'first_name': django_user.get('first_name'),
+                    'last_name': django_user.get('last_name')
+                }
+            
+            return Response({
+                'success': True,
+                'message': 'Clerk authentication successful',
+                'user_created': created,
+                'user': user_serializer_data,
+                'clerk_data': clerk_user_data,
+                'access': jwt_access_token,
+                'refresh': jwt_refresh_token,
+                'expires_at': jwt_token_expires_at.isoformat() if hasattr(jwt_token_expires_at, 'isoformat') else str(jwt_token_expires_at)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Clerk authentication error: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Clerk authentication failed',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClerkSessionCreateView(APIView):
+    """
+    Create a Django session from Clerk user data
+    """
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        """
+        Create a Django session for a Clerk-authenticated user
+        Expected body: {"clerk_user_id": "user_123", "clerk_data": {...}}
+        """
+        try:
+            from frontend.authentication.django_auth_handler import (
+                verify_clerk_token, create_or_get_user, handle_user_session
+            )
+            
+            clerk_user_id = request.data.get('clerk_user_id')
+            clerk_data = request.data.get('clerk_data', {})
+            
+            if not clerk_user_id:
+                return Response({
+                    'success': False,
+                    'message': 'Clerk user ID is required',
+                    'error': 'No clerk_user_id provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # If we have the full clerk_data, use it; otherwise fetch it
+            if not clerk_data:
+                clerk_data = verify_clerk_token(clerk_user_id)
+                
+                if not clerk_data:
+                    return Response({
+                        'success': False,
+                        'message': 'Failed to retrieve Clerk user data',
+                        'error': 'Invalid clerk_user_id'
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # Handle user session creation
+            session_created = handle_user_session(request, clerk_data)
+            
+            if not session_created:
+                return Response({
+                    'success': False,
+                    'message': 'Failed to create user session',
+                    'error': 'Session creation failed'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Get the user from the session
+            user = request.user if request.user.is_authenticated else None
+            
+            return Response({
+                'success': True,
+                'message': 'Django session created successfully',
+                'session_id': request.session.session_key,
+                'user': UserSerializer(user).data if user else None,
+                'clerk_user_id': clerk_user_id
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Session creation error: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Session creation failed',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClerkSessionStatusView(APIView):
+    """
+    Check Django session status for Clerk users
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    
+    def get(self, request):
+        """Get current session status"""
+        try:
+            from frontend.authentication.django_auth_handler import validate_user_session
+            
+            # Validate the current session
+            user_data = validate_user_session(request)
+            
+            if not user_data:
+                return Response({
+                    'success': False,
+                    'message': 'No valid session found',
+                    'authenticated': False
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            return Response({
+                'success': True,
+                'message': 'Session is valid',
+                'authenticated': True,
+                'user': user_data,
+                'session_id': request.session.session_key,
+                'session_data': {
+                    'clerk_user_id': request.session.get('clerk_user_id'),
+                    'auth_method': request.session.get('auth_method'),
+                    'login_timestamp': request.session.get('login_timestamp')
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Session status check error: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Session status check failed',
+                'error': str(e),
+                'authenticated': False
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClerkSessionLogoutView(APIView):
+    """
+    Logout and clear Django session for Clerk users
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    
+    def post(self, request):
+        """Clear user session"""
+        try:
+            from frontend.authentication.django_auth_handler import clear_user_session
+            
+            # Clear the session
+            session_cleared = clear_user_session(request)
+            
+            return Response({
+                'success': True,
+                'message': 'Session cleared successfully',
+                'session_cleared': session_cleared
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Session logout error: {str(e)}")
+            return Response({
+                'success': False,
+                'message': 'Session logout failed',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
