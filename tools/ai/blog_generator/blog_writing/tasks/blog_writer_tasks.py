@@ -35,7 +35,7 @@ class BlogWriterTasks:
     def planning_task(self, agents):
         description = BlogWriterPrompts.get_planning_prompt(
             self.topic, self.blog_type, self.length_min, self.length_max,
-            self.introduction, self.faq, self.cta, self.conclusion
+            self.introduction, self.table_of_content, self.faq, self.cta, self.conclusion
         )
                 
         # Add specifications based on parameters
@@ -69,6 +69,7 @@ class BlogWriterTasks:
         )
     
     def writing_task(self, agents):
+        
         description = BlogWriterPrompts.get_writing_prompt(
             self.topic, self.blog_type, self.length_min, self.length_max,
             self.introduction, self.table_of_content, self.faq, self.cta, self.conclusion

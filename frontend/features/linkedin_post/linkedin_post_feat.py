@@ -92,10 +92,6 @@ class LinkedInPostFeature:
                     help="Style and tone of the LinkedIn post"
                 )
                 
-                use_custom_llm = st.checkbox(
-                    "Use Google Gemini (Custom LLM)",
-                    help="Use Google Gemini instead of OpenAI GPT-3.5"
-                )
                 
             with col_style2:
                 engagement_focus = st.selectbox(
@@ -256,8 +252,7 @@ class LinkedInPostFeature:
                         industry=industry,
                         hashtag_count=hashtag_count,
                         emoji_style=emoji_style,
-                        include_cta=include_cta,
-                        use_custom_llm=use_custom_llm
+                        include_cta=include_cta
                     )
                 else:
                     st.error("Please enter a post topic")
@@ -280,7 +275,6 @@ class LinkedInPostFeature:
             
             # Initialize post generator
             self.post_generator = LinkedInPostGenerator(
-                use_custom_llm=kwargs.get('use_custom_llm', False),
                 topic=kwargs.get('topic'),
                 keywords=kwargs.get('keywords', [])
             )
@@ -329,8 +323,7 @@ class LinkedInPostFeature:
                     'industry': kwargs.get('industry'),
                     'hashtag_count': kwargs.get('hashtag_count'),
                     'emoji_style': kwargs.get('emoji_style'),
-                    'include_cta': kwargs.get('include_cta'),
-                    'use_custom_llm': kwargs.get('use_custom_llm')
+                    'include_cta': kwargs.get('include_cta')
                 },
                 'character_count': len(post_content) if post_content else 0,
                 'generated_by': st.session_state.get('username', 'Anonymous'),

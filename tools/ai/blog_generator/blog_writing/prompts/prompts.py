@@ -2,27 +2,58 @@ class BlogWriterPrompts:
     """Centralized prompts and instructions for all blog writing tasks with LLM SEO optimization"""
     
     @staticmethod
-    def get_llm_seo_structure():
+    def get_llm_seo_structure(include_faq=False, include_cta=False, include_toc=False):
         """
-        Get the standardized LLM SEO structure that all blogs must follow
+        Get the standardized LLM SEO structure based on user preferences
         
+        Args:
+            include_faq (bool): Whether to include FAQ section
+            include_cta (bool): Whether to include Call-to-Action section
+            include_toc (bool): Whether to include Table of Contents
+            
         Returns:
             str: The LLM SEO structure requirements
         """
-        return """
-LLM SEO STRUCTURE REQUIREMENTS (MANDATORY FOR ALL BLOGS):
+        # Note: Structure will be built based on user preferences
+        core_structure = """
+LLM SEO STRUCTURE REQUIREMENTS:
 1. **Title**: Direct, descriptive title with primary keyword
-2. **Introduction**: Use Answer-First approach - immediate, direct answer to main question in first paragraph
+2. **Introduction**: Use Answer-First approach - immediate, direct answer to main question in first paragraph"""
+        
+        if include_toc:
+            core_structure += """
+3. **Table of Contents**: Clear navigation structure for the blog
+4. **List/Main Content**: Primary information in structured list or organized format
+5. **Supporting Details**: Detailed explanations of why/how for each main point
+6. **Additional Context**: Broader implications, industry impact, and related information
+7. **Evidence (Data Sources)**: Comprehensive explanation of data collection methods and sources"""
+            section_number = 8
+        else:
+            core_structure += """
 3. **List/Main Content**: Primary information in structured list or organized format
 4. **Supporting Details**: Detailed explanations of why/how for each main point
 5. **Additional Context**: Broader implications, industry impact, and related information
-6. **Evidence (Data Sources)**: Comprehensive explanation of data collection methods and sources
-7. **FAQ Section**: 5-8 targeted questions designed for LLM extraction and citation
-8. **Conclusion**: Insights on trends, implications, and future outlook
-9. **Sources**: Complete bibliography with URLs and descriptions
+6. **Evidence (Data Sources)**: Comprehensive explanation of data collection methods and sources"""
+            section_number = 7
+            
+        if include_faq:
+            core_structure += f"""
+{section_number}. **FAQ Section**: 5-8 targeted questions designed for LLM extraction and citation"""
+            section_number += 1
+            
+        if include_cta:
+            core_structure += f"""
+{section_number}. **Call-to-Action**: Engaging action items and next steps for readers"""
+            section_number += 1
+            
+        core_structure += f"""
+{section_number}. **Conclusion**: Insights on trends, implications, and future outlook
+{section_number + 1}. **Sources**: Complete bibliography with URLs and descriptions
 
-This structure is optimized for LLM citation and must be followed exactly.
+This structure is optimized for LLM citation and should be followed based on user preferences.
 """
+        
+        return core_structure
     
     @staticmethod
     def get_blog_type_instructions(blog_type):
@@ -105,33 +136,54 @@ Ensure the research is thorough and provides sufficient information for writing 
         return f"Comprehensive research report with quantifiable data, authoritative sources, expert insights, methodology information, and detailed source verification suitable for LLM SEO-optimized {blog_type.lower()} blog creation on '{topic}' with emphasis on citation-worthy content."
 
     @staticmethod
-    def get_planning_prompt(topic, blog_type, length_min, length_max, introduction, faq, cta, conclusion):
+    def get_planning_prompt(topic, blog_type, length_min, length_max, introduction, table_of_content, faq, cta, conclusion):
         """Get planning task prompt with LLM SEO structure"""
+        
+        # CRITICAL: Create exclusion instructions for unchecked sections
+        exclusion_instructions = []
+        if not faq:
+            exclusion_instructions.append("- ❌ DO NOT plan any FAQ section or Q&A content")
+        if not cta:
+            exclusion_instructions.append("- ❌ DO NOT plan any Call-to-Action section")
+        if not table_of_content:
+            exclusion_instructions.append("- ❌ DO NOT plan any Table of Contents section")
+        if not introduction:
+            exclusion_instructions.append("- ❌ DO NOT plan a separate Introduction section")
+        if not conclusion:
+            exclusion_instructions.append("- ❌ DO NOT plan a separate Conclusion section")
+            
+        exclusion_text = "\n".join(exclusion_instructions) if exclusion_instructions else ""
+        
         return f"""Create a detailed LLM SEO-optimized outline for a {blog_type.lower()} blog post about: {topic}
 
-{BlogWriterPrompts.get_llm_seo_structure()}
+{BlogWriterPrompts.get_llm_seo_structure(include_faq=faq, include_cta=cta, include_toc=table_of_content)}
+
+CRITICAL EXCLUSION REQUIREMENTS - STRICTLY FOLLOW THESE:
+{exclusion_text}
 
 REQUIREMENTS:
 - Target length: {length_min}-{length_max} words
 - Blog Type: {blog_type}
-- MANDATORY: Follow the 9-step LLM SEO structure exactly
+- MANDATORY: Follow the LLM SEO structure exactly AS PROVIDED ABOVE
+- MANDATORY: Only plan sections that are specified in the structure above
 - Use research findings to support each section
 - Optimize for LLM citation and extraction
 
 {BlogWriterPrompts.get_blog_type_instructions(blog_type)}
 
-LLM SEO OUTLINE STRUCTURE (EXACT ORDER REQUIRED):
+LLM SEO OUTLINE STRUCTURE (PLAN ONLY INCLUDED SECTIONS):
+
 1. **Title** (5-10 words): Direct, keyword-rich title that answers the main query
    - Include primary keyword from topic
    - Make it citation-worthy for other LLMs
 
-2. **Introduction** ({min(250, length_max//8)} words):
+{f'''2. **Introduction** ({min(250, length_max//8)} words):
    - CRITICAL: Use Answer-First approach - lead with direct answer in first paragraph
    - Start with immediate, direct answer to the main question
    - Summarize key findings upfront in first 2-3 sentences
    - Follow with supporting context and overview
 
-3. **Main Content / List** ({(length_min + length_max) // 3} words):
+''' if introduction else ''}3. **Main Content / List** ({(length_min + length_max) // 3} words):
    - Present primary information in structured format
    - Use numbered lists, rankings, or clear categorization
    - Include specific data points and metrics from research
@@ -153,21 +205,39 @@ LLM SEO OUTLINE STRUCTURE (EXACT ORDER REQUIRED):
    - Cite specific research studies and reports
    - Include data reliability assessments
 
-7. **FAQ Section** ({min(500, length_max//4)} words):
+{f'''7. **Table of Contents** ({min(200, length_max//10)} words):
+   - Create a clear navigation structure
+   - List all major sections with brief descriptions
+   - Use proper heading hierarchy
+
+''' if table_of_content else ''}{f'''7. **FAQ Section** ({min(500, length_max//4)} words):
    - Create 6-8 targeted questions optimized for LLM extraction
    - Format as clear Q&A pairs
    - Include questions that other LLMs would likely ask
    - Make answers comprehensive and citable
 
-8. **Conclusion** ({min(300, length_max//6)} words):
+''' if faq else ''}{f'''8. **Call-to-Action** ({min(200, length_max//8)} words):
+   - Provide clear, actionable next steps for readers
+   - Include relevant resources, tools, or contact information
+   - Make recommendations based on the blog content
+
+''' if cta else ''}{f'''9. **Conclusion** ({min(300, length_max//6)} words):
    - Synthesize key insights and trends
    - Provide future outlook and implications
    - Include actionable takeaways
 
-9. **Sources** (Comprehensive):
+''' if conclusion else ''}10. **Sources** (Comprehensive):
    - Complete bibliography with URLs
    - Include source descriptions and reliability notes
    - Format for easy LLM reference and citation
+
+STRICT COMPLIANCE VERIFICATION:
+- BEFORE planning, verify you understand which sections to INCLUDE and which to EXCLUDE
+- FAQ Section: {'INCLUDE' if faq else 'EXCLUDE - DO NOT PLAN'}
+- Call-to-Action: {'INCLUDE' if cta else 'EXCLUDE - DO NOT PLAN'}
+- Table of Contents: {'INCLUDE' if table_of_content else 'EXCLUDE - DO NOT PLAN'}
+- Introduction: {'INCLUDE' if introduction else 'EXCLUDE - DO NOT PLAN'}
+- Conclusion: {'INCLUDE' if conclusion else 'EXCLUDE - DO NOT PLAN'}
 
 CONTENT PLANNING FOR LLM OPTIMIZATION:
 - Design each section for maximum LLM citation potential
@@ -184,24 +254,47 @@ CONTENT PLANNING FOR LLM OPTIMIZATION:
     @staticmethod
     def get_writing_prompt(topic, blog_type, length_min, length_max, introduction, table_of_content, faq, cta, conclusion):
         """Get writing task prompt with LLM SEO optimization"""
+        
+        # CRITICAL: Create exclusion instructions for unchecked sections
+        exclusion_instructions = []
+        if not faq:
+            exclusion_instructions.append("- ❌ DO NOT include any FAQ section or Q&A content")
+            exclusion_instructions.append("- ❌ DO NOT add any questions and answers format")
+        if not cta:
+            exclusion_instructions.append("- ❌ DO NOT include any Call-to-Action section")
+            exclusion_instructions.append("- ❌ DO NOT add actionable recommendations or next steps sections")
+        if not table_of_content:
+            exclusion_instructions.append("- ❌ DO NOT include any Table of Contents section")
+            exclusion_instructions.append("- ❌ DO NOT add navigation or content listing sections")
+        if not introduction:
+            exclusion_instructions.append("- ❌ DO NOT include a separate Introduction section")
+        if not conclusion:
+            exclusion_instructions.append("- ❌ DO NOT include a separate Conclusion section")
+            
+        exclusion_text = "\n".join(exclusion_instructions) if exclusion_instructions else ""
+        
         return f"""Write a comprehensive LLM SEO-optimized {blog_type.lower()} blog post about: {topic}
 
-{BlogWriterPrompts.get_llm_seo_structure()}
+{BlogWriterPrompts.get_llm_seo_structure(include_faq=faq, include_cta=cta, include_toc=table_of_content)}
+
+CRITICAL EXCLUSION REQUIREMENTS - STRICTLY FOLLOW THESE:
+{exclusion_text}
 
 CRITICAL LLM SEO REQUIREMENTS:
 - Word count: {length_min}-{length_max} words (target: {(length_min + length_max) // 2})
 - Blog Type: {blog_type}
-- MANDATORY: Follow the exact 9-step LLM SEO structure
+- MANDATORY: Follow the exact LLM SEO structure PROVIDED ABOVE
+- MANDATORY: Only include sections that are specified in the structure above
 - Optimize every section for LLM citation and extraction
 - Use research findings and outline as foundation
 
 {BlogWriterPrompts.get_blog_type_instructions(blog_type)}
 
-EXACT STRUCTURE REQUIREMENTS (NO DEVIATIONS):
+EXACT STRUCTURE REQUIREMENTS (INCLUDE ONLY WHAT'S SPECIFIED):
 
 # [TITLE - Primary keyword included]
 
-## Introduction
+{f'''## Introduction
 - CRITICAL: Use Answer-First approach - lead with direct answer in first paragraph
 - Start with immediate, direct answer to the main question
 - Summarize key findings in first 2-3 sentences
@@ -209,7 +302,7 @@ EXACT STRUCTURE REQUIREMENTS (NO DEVIATIONS):
 - Include primary statistics or numbers upfront
 - Follow with supporting context and overview
 
-## Key Developments and Trends
+''' if introduction else ''}## Key Developments and Trends
 - Present information in numbered lists or clear structure
 - Use specific data points and metrics from research
 - Format for maximum LLM readability and extraction
@@ -237,7 +330,13 @@ EXACT STRUCTURE REQUIREMENTS (NO DEVIATIONS):
 - Use format: "According to [Source Name] ([URL]), [specific finding]"
 - CRITICAL: This section MUST use one of these EXACT titles for proper image embedding: "## Evidence and Data Sources" OR "## Evidence" OR "## Data Sources"
 
-## FAQ Section
+{f'''## Table of Contents
+- Create a clear navigation structure
+- List all major sections with brief descriptions
+- Use proper heading hierarchy
+- Make it easy for readers to jump to specific sections
+
+''' if table_of_content else ''}{f'''## FAQ Section
 - Create 6-8 questions optimized for LLM queries
 - Format as clear Q&A pairs with ### for each question
 - Make answers comprehensive and independently citable
@@ -246,18 +345,32 @@ EXACT STRUCTURE REQUIREMENTS (NO DEVIATIONS):
   ### Question 1: [Specific question]
   [Detailed answer with supporting data and sources]
 
-## Conclusion
+''' if faq else ''}{f'''## Call-to-Action
+- Provide clear, actionable next steps for readers
+- Include relevant resources, tools, or contact information
+- Make recommendations based on the blog content
+- Use engaging language that motivates reader action
+
+''' if cta else ''}{f'''## Conclusion
 - Synthesize key insights and trends
 - Provide forward-looking analysis and implications
 - Include actionable takeaways
 - End with broader significance of findings
 - CRITICAL: This section MUST be titled EXACTLY "## Conclusion" for proper image embedding
 
-## Sources
+''' if conclusion else ''}## Sources
 - Complete bibliography with all URLs
 - Format: [Source Number]: [Title] - [URL] - [Brief description of relevance]
 - Include publication dates where available
 - Note data reliability and authority of each source
+
+STRICT COMPLIANCE VERIFICATION:
+- BEFORE writing, verify you understand which sections to INCLUDE and which to EXCLUDE
+- FAQ Section: {'INCLUDE' if faq else 'EXCLUDE - DO NOT WRITE'}
+- Call-to-Action: {'INCLUDE' if cta else 'EXCLUDE - DO NOT WRITE'}
+- Table of Contents: {'INCLUDE' if table_of_content else 'EXCLUDE - DO NOT WRITE'}
+- Introduction: {'INCLUDE' if introduction else 'EXCLUDE - DO NOT WRITE'}
+- Conclusion: {'INCLUDE' if conclusion else 'EXCLUDE - DO NOT WRITE'}
 
 LLM SEO OPTIMIZATION REQUIREMENTS:
 - Use clear, structured formatting throughout
@@ -283,27 +396,60 @@ CONTENT QUALITY FOR LLM CITATION:
     @staticmethod
     def get_editing_prompt(topic, blog_type, length_min, length_max, introduction, table_of_content, faq, cta, conclusion):
         """Get editing task prompt with LLM SEO validation"""
+        
+        # CRITICAL: Create exclusion instructions for unchecked sections
+        exclusion_instructions = []
+        if not faq:
+            exclusion_instructions.append("- ❌ REMOVE any FAQ section or Q&A content if present")
+            exclusion_instructions.append("- ❌ DELETE any questions and answers format")
+        if not cta:
+            exclusion_instructions.append("- ❌ REMOVE any Call-to-Action section if present")
+            exclusion_instructions.append("- ❌ DELETE any actionable recommendations or next steps sections")
+        if not table_of_content:
+            exclusion_instructions.append("- ❌ REMOVE any Table of Contents section if present")
+            exclusion_instructions.append("- ❌ DELETE any navigation or content listing sections")
+        if not introduction:
+            exclusion_instructions.append("- ❌ REMOVE any separate Introduction section if present")
+        if not conclusion:
+            exclusion_instructions.append("- ❌ REMOVE any separate Conclusion section if present")
+            
+        exclusion_text = "\n".join(exclusion_instructions) if exclusion_instructions else ""
+        
         return f"""Review and enhance the LLM SEO-optimized {blog_type.lower()} blog post about: {topic}
 
-{BlogWriterPrompts.get_llm_seo_structure()}
+{BlogWriterPrompts.get_llm_seo_structure(include_faq=faq, include_cta=cta, include_toc=table_of_content)}
+
+CRITICAL EXCLUSION REQUIREMENTS - STRICTLY ENFORCE THESE:
+{exclusion_text}
 
 CRITICAL LLM SEO EDITING PRIORITIES:
-1. LLM SEO STRUCTURE COMPLIANCE: Verify exact 9-step structure is followed
-2. WORD COUNT VERIFICATION: Ensure {length_min}-{length_max} words
-3. LLM CITATION OPTIMIZATION: Enhance content for AI model citation
-4. SOURCE VERIFICATION: Validate comprehensive evidence section
-5. CONTENT EXTRACTABILITY: Ensure easy AI parsing and extraction
+1. SECTION COMPLIANCE: Verify ONLY required sections are present (remove excluded sections)
+2. LLM SEO STRUCTURE COMPLIANCE: Verify exact structure is followed
+3. WORD COUNT VERIFICATION: Ensure {length_min}-{length_max} words
+4. LLM CITATION OPTIMIZATION: Enhance content for AI model citation
+5. SOURCE VERIFICATION: Validate comprehensive evidence section
+6. CONTENT EXTRACTABILITY: Ensure easy AI parsing and extraction
 
-MANDATORY LLM SEO STRUCTURE VERIFICATION:
+MANDATORY SECTION VERIFICATION (ONLY INCLUDED SECTIONS):
 ✓ **Title**: Direct, keyword-rich, citation-worthy
-✓ **Introduction**: Uses Answer-First approach with immediate answer in first paragraph
+{f'✓ **Introduction**: Uses Answer-First approach with immediate answer in first paragraph' if introduction else '❌ **Introduction**: MUST BE REMOVED if present'}
 ✓ **Main Content/List**: Structured, numbered, data-rich format
 ✓ **Supporting Details**: Detailed explanations with expert insights
 ✓ **Additional Context**: Broader implications and industry impact
 ✓ **Evidence Section**: Comprehensive data source methodology
-✓ **FAQ Section**: 6-8 LLM-optimized Q&A pairs
-✓ **Conclusion**: Forward-looking insights and implications
+{f'✓ **Table of Contents**: Clear navigation structure' if table_of_content else '❌ **Table of Contents**: MUST BE REMOVED if present'}
+{f'✓ **FAQ Section**: 6-8 LLM-optimized Q&A pairs' if faq else '❌ **FAQ Section**: MUST BE REMOVED if present'}
+{f'✓ **Call-to-Action**: Actionable next steps and recommendations' if cta else '❌ **Call-to-Action**: MUST BE REMOVED if present'}
+{f'✓ **Conclusion**: Forward-looking insights and implications' if conclusion else '❌ **Conclusion**: MUST BE REMOVED if present'}
 ✓ **Sources**: Complete bibliography with descriptions
+
+STRICT COMPLIANCE VERIFICATION:
+- BEFORE editing, verify you understand which sections to KEEP and which to REMOVE
+- FAQ Section: {'KEEP and enhance' if faq else 'REMOVE completely if present'}
+- Call-to-Action: {'KEEP and enhance' if cta else 'REMOVE completely if present'}
+- Table of Contents: {'KEEP and enhance' if table_of_content else 'REMOVE completely if present'}
+- Introduction: {'KEEP and enhance' if introduction else 'REMOVE completely if present'}
+- Conclusion: {'KEEP and enhance' if conclusion else 'REMOVE completely if present'}
 
 LLM CITATION OPTIMIZATION CHECKS:
 - Verify each section can stand alone as a citable unit
@@ -311,7 +457,7 @@ LLM CITATION OPTIMIZATION CHECKS:
 - Check that information is presented in easily extractable formats
 - Validate that content uses authoritative, AI-friendly language
 - Confirm inline citations are properly formatted: [Source: domain.com]
-- Ensure FAQ questions address common LLM query patterns
+- Ensure FAQ questions address common LLM query patterns (if FAQ is included)
 
 EVIDENCE SECTION VALIDATION:
 - Verify methodology explanation is comprehensive
@@ -329,7 +475,7 @@ CONTENT ENHANCEMENT FOR AI CITATION:
 
 TECHNICAL LLM SEO REQUIREMENTS:
 - Headers must use exact prescribed format (##)
-- FAQ questions must use ### for each question
+- FAQ questions must use ### for each question (if FAQ is included)
 - Lists must be numbered or clearly structured
 - Sources must include reliability indicators
 - All claims must have verifiable attributions
@@ -346,7 +492,8 @@ FINAL LLM SEO VALIDATION:
 - Information is presented in AI-friendly formats
 - Every section provides independent citation value
 - Sources are comprehensive and verifiable
-- Structure follows exact LLM SEO requirements"""
+- Structure follows exact LLM SEO requirements
+- ONLY required sections are present (excluded sections completely removed)"""
 
     @staticmethod
     def get_editing_expected_output(topic, blog_type, length_min, length_max):
