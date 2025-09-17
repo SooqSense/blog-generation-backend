@@ -48,6 +48,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     linkedin_token_expires_at = models.DateTimeField(blank=True, null=True, help_text="When LinkedIn token expires")
     linkedin_scopes = models.TextField(blank=True, null=True, help_text="LinkedIn OAuth granted scopes (space-separated)")
 
+    # Clerk integration fields
+    clerk_user_id = models.CharField(max_length=100, blank=True, null=True, help_text="Clerk user ID")
+
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 

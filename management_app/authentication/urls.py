@@ -4,7 +4,10 @@ from .views import (
     CustomTokenRefreshView, GoogleLoginRedirectView,
     GoogleLoginCallbackView, 
     LinkedInLoginRedirectView, LinkedInLoginCallbackView,
-    LinkedInTokenView
+    LinkedInTokenView,
+    # Clerk authentication views
+    ClerkAuthVerifyView, ClerkSessionCreateView,
+    ClerkSessionStatusView, ClerkSessionLogoutView
 )
 
 urlpatterns = [
@@ -22,4 +25,10 @@ urlpatterns = [
     path('linkedin/login/', LinkedInLoginRedirectView.as_view(), name='linkedin_login'),
     path('linkedin/callback', LinkedInLoginCallbackView.as_view(), name='linkedin_callback'),
     path('linkedin/token/', LinkedInTokenView.as_view(), name='linkedin_token'),
+    
+    # Clerk auth endpoints
+    path('clerk/verify/', ClerkAuthVerifyView.as_view(), name='clerk_verify'),
+    path('clerk/session/create/', ClerkSessionCreateView.as_view(), name='clerk_session_create'),
+    path('clerk/session/status/', ClerkSessionStatusView.as_view(), name='clerk_session_status'),
+    path('clerk/session/logout/', ClerkSessionLogoutView.as_view(), name='clerk_session_logout'),
 ] 

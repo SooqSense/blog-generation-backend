@@ -2,10 +2,42 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add the project root to the path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load environment variables from .env file
+env_path = project_root / '.env'
+load_dotenv(env_path)
+print(f"🔧 Streamlit base loading environment from: {env_path}")
+
+# Import Simple Clerk authentication
+try:
+    from frontend.authentication.auth import get_auth, is_authenticated, require_auth, get_user, logout
+    AUTH_AVAILABLE = True
+    print("✅ Simple Clerk authentication imported successfully")
+except Exception as e:
+    AUTH_AVAILABLE = False
+    print(f"⚠️ Authentication not available: {str(e)}")
+    
+    # Create dummy functions for graceful degradation
+    def get_auth():
+        return None
+    
+    def is_authenticated():
+        return False
+    
+    def require_auth(feature_name="this feature"):
+        st.error(f"Authentication service not available for {feature_name}")
+        st.stop()
+    
+    def get_user():
+        return {}
+    
+    def logout():
+        pass
 
 # AI Tools Import State - No Django setup required for frontend
 AI_TOOLS_CACHE = {}
@@ -166,15 +198,24 @@ class StreamlitApp:
     """Main Streamlit application class for AI Blog Generator"""
     
     def __init__(self):
+        # Initialize simple authentication
+        self.auth = get_auth() if AUTH_AVAILABLE else None
+        self.auth_available = AUTH_AVAILABLE
+        
         self.initialize_session_state()
-        # Import AI tools for frontend use - no authentication required
+        # Import AI tools for frontend use
         self.ai_tools = import_ai_tools()
         self.ai_tools_success = len(self.ai_tools) > 0
         
     def initialize_session_state(self):
-        """Initialize session state variables - no authentication required"""
-        # All features are now accessible without authentication
-        pass
+        """Initialize session state variables and handle authentication"""
+        # Handle authentication callback if present
+        if self.auth_available and self.auth:
+            self.auth.handle_auth_callback()
+        
+        # Initialize other session state variables if needed
+        if 'app_initialized' not in st.session_state:
+            st.session_state.app_initialized = True
             
     def render_header(self):
         """Render the main application header"""
@@ -204,6 +245,15 @@ class StreamlitApp:
     def render_sidebar(self):
         """Render the sidebar navigation"""
         with st.sidebar:
+            # Authentication section
+            if self.auth_available and self.auth:
+                self.auth.render_auth_status()
+                st.markdown("---")
+            else:
+                st.markdown("### ⚠️ Authentication")
+                st.caption("Service Unavailable")
+                st.markdown("---")
+            
             st.markdown("### 🚀 Navigation")
             
             # Feature selection
@@ -219,6 +269,13 @@ class StreamlitApp:
             # System information
             st.markdown("### ℹ️ System Info")
             st.caption("Version: 1.0.0")
+            
+            # Show authentication status
+            if self.auth_available:
+                auth_status = "✅ Logged In" if is_authenticated() else "🔐 Login Required"
+                st.caption(f"Auth: {auth_status}")
+            else:
+                st.caption("⚠️ Auth: Disabled")
             
             # Show backend status
             if self.ai_tools_success:
@@ -298,25 +355,38 @@ class StreamlitApp:
         # Get selected feature from sidebar
         feature = self.render_sidebar()
         
-        # Render selected feature - all features are now accessible without authentication
+        # Render selected feature with authentication check
         if feature == "🏠 Home":
             self.render_home()
         elif feature == "📝 Blog Generation":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("Blog Generation")
             BlogFeatureClass = get_feature_class("BlogGenerationFeature")
             blog_feature = BlogFeatureClass()
             blog_feature.render()
         elif feature == "🎨 Image Generation":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("Image Generation")
             ImageFeatureClass = get_feature_class("ImageGenerationFeature")
             image_feature = ImageFeatureClass()
             image_feature.render()
         elif feature == "💼 LinkedIn Posts":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("LinkedIn Posts")
             LinkedInFeatureClass = get_feature_class("LinkedInPostFeature")
             linkedin_feature = LinkedInFeatureClass()
             linkedin_feature.render()
         elif feature == "📰 AI News":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("AI News")
             NewsFeatureClass = get_feature_class("NewsFeature")
             news_feature = NewsFeatureClass()
             news_feature.render()
+    
 
 # Custom CSS for better styling
 def load_custom_css():
