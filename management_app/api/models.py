@@ -178,4 +178,84 @@ class ImageEditing(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        db_table = 'image_editing' 
+        db_table = 'image_editing'
+
+
+class PDFDocument(models.Model):
+    FILE_TYPE_CHOICES = [
+        ('pdf', 'PDF'),
+        ('docx', 'Word Document'),
+        ('md', 'Markdown'),
+        ('txt', 'Text File'),
+    ]
+    
+    PROCESSING_STATUS_CHOICES = [
+        ('uploaded', 'Uploaded'),
+        ('extracting', 'Extracting Content'),
+        ('indexing', 'Indexing to Pinecone'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
+    file_name = models.CharField(max_length=255)
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
+    content = models.TextField()  # Extracted text content
+    uploaded_url = models.URLField(max_length=500)  # S3 bucket URL
+    processing_status = models.CharField(max_length=20, choices=PROCESSING_STATUS_CHOICES, default='uploaded')
+    pinecone_indexed = models.BooleanField(default=False)  # Track if indexed in Pinecone
+    pinecone_index_id = models.CharField(max_length=100, blank=True, null=True)  # Pinecone vector ID
+    file_size = models.IntegerField(default=0)  # File size in bytes
+    word_count = models.IntegerField(default=0)  # Number of words in content
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'pdf_documents'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.file_name} ({self.file_type})"
+
+
+class ChatSession(models.Model):
+    session_id = models.CharField(max_length=100, unique=True)
+    user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
+    is_active = models.BooleanField(default=True)
+    total_messages = models.IntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'chat_sessions'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Session {self.session_id} - {self.username}"
+
+
+class ChatMessage(models.Model):
+    MESSAGE_TYPE_CHOICES = [
+        ('user', 'User Message'),
+        ('assistant', 'Assistant Response'),
+    ]
+    
+    session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name='messages')
+    message_type = models.CharField(max_length=10, choices=MESSAGE_TYPE_CHOICES)
+    content = models.TextField()
+    relevant_documents = models.JSONField(default=list, blank=True)  # Store relevant PDF documents found
+    sources_used = models.JSONField(default=list, blank=True)  # Store document sources used in response
+    processing_time = models.FloatField(default=0.0)  # Time taken to process in seconds
+    tokens_used = models.IntegerField(default=0)  # Tokens used for this message
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'chat_messages'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.message_type}: {self.content[:50]}..." 

@@ -13,31 +13,54 @@ env_path = project_root / '.env'
 load_dotenv(env_path)
 print(f"🔧 Streamlit base loading environment from: {env_path}")
 
-# Import Simple Clerk authentication
-try:
-    from frontend.authentication.auth import get_auth, is_authenticated, require_auth, get_user, logout
-    AUTH_AVAILABLE = True
-    print("✅ Simple Clerk authentication imported successfully")
-except Exception as e:
-    AUTH_AVAILABLE = False
-    print(f"⚠️ Authentication not available: {str(e)}")
-    
-    # Create dummy functions for graceful degradation
-    def get_auth():
-        return None
-    
-    def is_authenticated():
-        return False
-    
-    def require_auth(feature_name="this feature"):
-        st.error(f"Authentication service not available for {feature_name}")
-        st.stop()
-    
-    def get_user():
-        return {}
-    
-    def logout():
-        pass
+# Import Simple Clerk authentication with fallback strategies
+AUTH_AVAILABLE = False
+get_auth = None
+is_authenticated = None  
+require_auth = None
+get_user = None
+logout = None
+
+# Try multiple import strategies for authentication
+auth_import_strategies = [
+    # Strategy 1: From project root
+    lambda: __import__('streamlit.authentication.auth', fromlist=['get_auth', 'is_authenticated', 'require_auth', 'get_user', 'logout']),
+    # Strategy 2: Relative import from streamlit directory
+    lambda: __import__('authentication.auth', fromlist=['get_auth', 'is_authenticated', 'require_auth', 'get_user', 'logout']),
+]
+
+for i, strategy in enumerate(auth_import_strategies, 1):
+    try:
+        auth_module = strategy()
+        get_auth = getattr(auth_module, 'get_auth')
+        is_authenticated = getattr(auth_module, 'is_authenticated') 
+        require_auth = getattr(auth_module, 'require_auth')
+        get_user = getattr(auth_module, 'get_user')
+        logout = getattr(auth_module, 'logout')
+        AUTH_AVAILABLE = True
+        print("✅ Simple Clerk authentication imported successfully")
+        break
+    except Exception as e:
+        if i == len(auth_import_strategies):  # Last strategy failed
+            AUTH_AVAILABLE = False
+            print(f"⚠️ Authentication not available: {str(e)}")
+            
+            # Create dummy functions for graceful degradation
+            def get_auth():
+                return None
+            
+            def is_authenticated():
+                return False
+            
+            def require_auth(feature_name="this feature"):
+                st.error(f"Authentication service not available for {feature_name}")
+                st.stop()
+            
+            def get_user():
+                return {}
+            
+            def logout():
+                pass
 
 # AI Tools Import State - No Django setup required for frontend
 AI_TOOLS_CACHE = {}
@@ -163,21 +186,46 @@ def get_ai_tool(tool_name):
 def get_feature_class(feature_name):
     """Import feature classes directly without Django setup"""
     try:
-        # Import features directly - no Django setup needed
-        if feature_name == "BlogGenerationFeature":
-            from frontend.features.blog_generation.blog_generation_feat import BlogGenerationFeature
-            return BlogGenerationFeature
-        elif feature_name == "ImageGenerationFeature":
-            from frontend.features.image_generation.image_generation_feat import ImageGenerationFeature
-            return ImageGenerationFeature
-        elif feature_name == "LinkedInPostFeature":
-            from frontend.features.linkedin_post.linkedin_post_feat import LinkedInPostFeature
-            return LinkedInPostFeature
-        elif feature_name == "NewsFeature":
-            from frontend.features.news.news_feat import NewsFeature
-            return NewsFeature
-        else:
+        # Define import strategies for each feature
+        feature_imports = {
+            "BlogGenerationFeature": [
+                lambda: __import__('streamlit.features.blog_generation.blog_generation_feat', fromlist=['BlogGenerationFeature']).BlogGenerationFeature,
+                lambda: __import__('features.blog_generation.blog_generation_feat', fromlist=['BlogGenerationFeature']).BlogGenerationFeature,
+            ],
+            "ImageGenerationFeature": [
+                lambda: __import__('streamlit.features.image_generation.image_generation_feat', fromlist=['ImageGenerationFeature']).ImageGenerationFeature,
+                lambda: __import__('features.image_generation.image_generation_feat', fromlist=['ImageGenerationFeature']).ImageGenerationFeature,
+            ],
+            "LinkedInPostFeature": [
+                lambda: __import__('streamlit.features.linkedin_post.linkedin_post_feat', fromlist=['LinkedInPostFeature']).LinkedInPostFeature,
+                lambda: __import__('features.linkedin_post.linkedin_post_feat', fromlist=['LinkedInPostFeature']).LinkedInPostFeature,
+            ],
+            "NewsFeature": [
+                lambda: __import__('streamlit.features.news.news_feat', fromlist=['NewsFeature']).NewsFeature,
+                lambda: __import__('features.news.news_feat', fromlist=['NewsFeature']).NewsFeature,
+            ],
+            "KnowledgeBaseFeature": [
+                lambda: __import__('streamlit.features.knowledge_base.knowledge_base', fromlist=['KnowledgeBaseFeature']).KnowledgeBaseFeature,
+                lambda: __import__('features.knowledge_base.knowledge_base', fromlist=['KnowledgeBaseFeature']).KnowledgeBaseFeature,
+            ],
+            "ChatbotFeature": [
+                lambda: __import__('streamlit.features.chatbot.chatbot', fromlist=['ChatbotFeature']).ChatbotFeature,
+                lambda: __import__('features.chatbot.chatbot', fromlist=['ChatbotFeature']).ChatbotFeature,
+            ]
+        }
+        
+        if feature_name not in feature_imports:
             raise ValueError(f"Unknown feature: {feature_name}")
+        
+        # Try each import strategy
+        for strategy in feature_imports[feature_name]:
+            try:
+                return strategy()
+            except ImportError:
+                continue
+        
+        # If all strategies fail
+        raise ImportError(f"Could not import {feature_name} using any strategy")
             
     except Exception as e:
         # Return a dummy feature class if import fails
@@ -260,7 +308,7 @@ class StreamlitApp:
             feature = st.selectbox(
                 "Select Feature:",
                 ["🏠 Home", "📝 Blog Generation", "🎨 Image Generation", 
-                 "💼 LinkedIn Posts", "📰 AI News"],
+                 "💼 LinkedIn Posts", "📰 AI News", "📚 Knowledge Base", "🤖 AI Chat"],
                 key="feature_selector"
             )
             
@@ -333,6 +381,24 @@ class StreamlitApp:
             - Source verification
             """)
             
+            st.markdown("""
+            ### 📚 Knowledge Base
+            Upload and manage your project documents and portfolio files.
+            - PDF, Word, Markdown, and text file support
+            - Automatic content extraction and indexing
+            - S3 cloud storage integration
+            - Vector database for AI-powered search
+            """)
+            
+            st.markdown("""
+            ### 🤖 AI Portfolio Chat
+            Chat with your uploaded documents using AI.
+            - Ask questions about your projects
+            - Get intelligent responses from document content
+            - Context-aware conversations
+            - Source attribution and references
+            """)
+            
         # Statistics section
         st.markdown("---")
         st.markdown("## 📊 Platform Statistics")
@@ -347,6 +413,18 @@ class StreamlitApp:
             st.metric("LinkedIn Posts", "890", "↗️ 15%")
         with col4:
             st.metric("News Articles", "456", "↗️ 5%")
+        
+        # Second row for new features
+        col5, col6, col7, col8 = st.columns(4)
+        
+        with col5:
+            st.metric("Documents Uploaded", "2,345", "↗️ 18%")
+        with col6:
+            st.metric("Chat Sessions", "1,567", "↗️ 22%")
+        with col7:
+            st.metric("AI Responses", "4,234", "↗️ 25%")
+        with col8:
+            st.metric("Active Users", "321", "↗️ 10%")
             
     def run(self):
         """Main application runner"""
@@ -386,6 +464,20 @@ class StreamlitApp:
             NewsFeatureClass = get_feature_class("NewsFeature")
             news_feature = NewsFeatureClass()
             news_feature.render()
+        elif feature == "📚 Knowledge Base":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("Knowledge Base")
+            KnowledgeBaseFeatureClass = get_feature_class("KnowledgeBaseFeature")
+            knowledge_base_feature = KnowledgeBaseFeatureClass()
+            knowledge_base_feature.render()
+        elif feature == "🤖 AI Chat":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("AI Chat")
+            ChatbotFeatureClass = get_feature_class("ChatbotFeature")
+            chatbot_feature = ChatbotFeatureClass()
+            chatbot_feature.render()
     
 
 # Custom CSS for better styling

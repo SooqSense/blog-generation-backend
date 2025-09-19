@@ -355,10 +355,22 @@ def trace_news_analyzer(operation: str, metadata: Dict[str, Any] = None):
     return langsmith_integration.trace_agent_operation("NewsAnalyzer", operation, metadata=metadata)
 
 
+def trace_chatbot(operation: str, metadata: Dict[str, Any] = None):
+    """Decorator for Chatbot operations."""
+    return langsmith_integration.trace_agent_operation("Chatbot", operation, metadata=metadata)
+
+
 # Convenience functions for backward compatibility
+@contextmanager
 def trace_context(run_name: str, inputs: Dict[str, Any] = None, metadata: Dict[str, Any] = None):
     """Context manager for manual tracing"""
-    return langsmith_integration.trace_context(run_name, inputs, metadata)
+    try:
+        with langsmith_integration.trace_context(run_name, inputs, metadata):
+            yield
+    except Exception as e:
+        # Fallback gracefully if LangSmith tracing fails
+        logger.warning(f"⚠️ LangSmith tracing failed for {run_name}: {str(e)}")
+        yield
 
 
 def log_cost(operation: str, model: str, tokens_used: int = None, cost_estimate: float = None, additional_data: Dict[str, Any] = None):
@@ -381,6 +393,7 @@ __all__ = [
     "trace_linkedin_generator", 
     "trace_image_generator",
     "trace_news_analyzer",
+    "trace_chatbot",
     "trace_context",
     "log_cost",
     "trace_llm_call"  # Deprecated

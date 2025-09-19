@@ -27,13 +27,13 @@ def setup_python_paths():
     current_file = Path(__file__).resolve()
     
     # Get directories
-    frontend_dir = current_file.parent  # /frontend/
-    project_root = frontend_dir.parent  # /blog-generation-backend/
+    streamlit_dir = current_file.parent  # /streamlit/
+    project_root = streamlit_dir.parent  # /blog-generation-backend/
     
     # Add paths to sys.path if not already present
     paths_to_add = [
         str(project_root),      # For importing management_app, tools, etc.
-        str(frontend_dir),      # For importing frontend modules directly
+        str(streamlit_dir),     # For importing streamlit modules directly
     ]
     
     for path in paths_to_add:
@@ -46,7 +46,7 @@ def setup_python_paths():
     
     # Debug information
     print(f"🔧 Python Path Setup:")
-    print(f"   Frontend Dir: {frontend_dir}")
+    print(f"   Streamlit Dir: {streamlit_dir}")
     print(f"   Project Root: {project_root}")
     print(f"   Current Dir: {os.getcwd()}")
 
@@ -57,11 +57,13 @@ setup_python_paths()
 def import_streamlit_components():
     """Import Streamlit components with fallback strategies"""
     import_strategies = [
-        # Strategy 1: Standard import from project root
-        lambda: __import__('frontend.base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
-        # Strategy 2: Direct import from frontend directory
+        # Strategy 1: Direct import from streamlit directory (when running from project root)
+        lambda: __import__('streamlit.base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
+        # Strategy 2: Relative import (when running from streamlit directory)  
         lambda: __import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
-        # Strategy 3: Absolute path import
+        # Strategy 3: Try importing as if we're in the streamlit directory
+        lambda: (lambda m=__import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']): m)(),
+        # Strategy 4: Absolute path import fallback
         lambda: __import__(f'{Path(__file__).parent.name}.base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
     ]
     
