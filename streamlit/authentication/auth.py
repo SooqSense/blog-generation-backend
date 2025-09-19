@@ -245,7 +245,7 @@ class SimpleClerkAuth:
             if clerk_user_id:
                 st.sidebar.code(f"ID: {clerk_user_id[-8:]}", language="text")
             
-            if st.sidebar.button("🚪 Logout", use_container_width=True):
+            if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
                 self.logout()
         else:
             st.sidebar.markdown("### 🔐 Authentication")

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 import re
+import os
 from urllib.parse import urlparse
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.openapi import AutoSchema
@@ -797,4 +798,164 @@ class ImageEditingResponseSerializer(serializers.Serializer):
     database_record_id = serializers.IntegerField(help_text="Database record ID for the editing session")
     edit_status = serializers.CharField(help_text="Status of the editing process")
     processing_time = serializers.FloatField(required=False, help_text="Time taken to process the editing in seconds")
-    created_at = serializers.DateTimeField(help_text="When the editing was performed") 
+    created_at = serializers.DateTimeField(help_text="When the editing was performed")
+
+
+# Serializers for PDF Upload API
+class PDFUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(
+        help_text="Document file to upload. Supported formats: PDF, DOCX, MD, TXT. Maximum size: 50MB.",
+        allow_empty_file=False
+    )
+    
+    def validate_file(self, file):
+        """Validate uploaded file."""
+        # Check file size (50MB limit)
+        max_size = 50 * 1024 * 1024  # 50MB in bytes
+        if file.size > max_size:
+            raise serializers.ValidationError(
+                f"File size ({file.size / (1024*1024):.2f} MB) exceeds maximum limit (50 MB)."
+            )
+        
+        # Check file type by extension
+        allowed_extensions = ['.pdf', '.docx', '.doc', '.md', '.txt']
+        file_extension = os.path.splitext(file.name.lower())[1]
+        
+        if file_extension not in allowed_extensions:
+            raise serializers.ValidationError(
+                f"Unsupported file type '{file_extension}'. Allowed types: {', '.join(allowed_extensions)}"
+            )
+        
+        return file
+
+    class Meta:
+        swagger_schema_fields = {
+            'type': 'object',
+            'properties': {
+                'file': {
+                    'type': 'string',
+                    'format': 'binary',
+                    'description': 'Document file to upload. Supported formats: PDF, DOCX, MD, TXT. Maximum size: 50MB.'
+                }
+            },
+            'required': ['file']
+        }
+
+
+class PDFUploadResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    document_id = serializers.CharField(help_text="Unique document identifier")
+    file_name = serializers.CharField(help_text="Original filename")
+    file_type = serializers.CharField(help_text="Detected file type (pdf, docx, md, txt)")
+    file_size = serializers.IntegerField(help_text="File size in bytes")
+    word_count = serializers.IntegerField(help_text="Number of words extracted from the document")
+    uploaded_url = serializers.URLField(help_text="S3 bucket URL where the file is stored")
+    
+    # Processing status information
+    content_extraction_completed = serializers.BooleanField(help_text="Whether content extraction was successful")
+    pinecone_indexing_completed = serializers.BooleanField(help_text="Whether Pinecone indexing was successful")
+    chunks_indexed = serializers.IntegerField(help_text="Number of chunks indexed in Pinecone")
+    processing_status = serializers.CharField(help_text="Overall processing status")
+    
+    # Additional metadata
+    extraction_method = serializers.CharField(required=False, help_text="Method used for content extraction")
+    database_record_id = serializers.IntegerField(help_text="Database record ID for the uploaded document")
+    created_at = serializers.DateTimeField(help_text="When the document was uploaded and processed")
+
+
+# Serializers for Chat API
+class ChatRequestSerializer(serializers.Serializer):
+    query = serializers.CharField(
+        max_length=2000,
+        help_text="User's question or query about their project portfolio documents."
+    )
+    session_id = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+        help_text="Chat session ID. If not provided, a new session will be created."
+    )
+    
+    def validate_query(self, query):
+        """Validate the query field."""
+        if not query or not query.strip():
+            raise serializers.ValidationError("Query cannot be empty.")
+        
+        if len(query.strip()) < 3:
+            raise serializers.ValidationError("Query must be at least 3 characters long.")
+        
+        return query.strip()
+
+
+class DocumentSourceSerializer(serializers.Serializer):
+    file_name = serializers.CharField()
+    file_type = serializers.CharField()
+    file_url = serializers.URLField()
+    relevance_score = serializers.FloatField()
+
+
+class ChatResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    session_id = serializers.CharField(help_text="Chat session ID")
+    is_new_session = serializers.BooleanField(help_text="Whether this is a new chat session")
+    
+    # Response content
+    response = serializers.CharField(help_text="AI-generated response to the user's query")
+    
+    # Processing information
+    processing_time = serializers.FloatField(help_text="Time taken to process the query in seconds")
+    tokens_used = serializers.IntegerField(help_text="Number of tokens used for this response")
+    model_used = serializers.CharField(help_text="AI model used to generate the response")
+    
+    # Conversation context
+    total_messages = serializers.IntegerField(help_text="Total number of messages in this session")
+    relevant_documents_found = serializers.IntegerField(help_text="Number of relevant documents found for this query")
+
+
+# Serializers for Chat Session Management
+class ChatSessionSerializer(serializers.Serializer):
+    session_id = serializers.CharField()
+    is_active = serializers.BooleanField()
+    total_messages = serializers.IntegerField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class ChatMessageSerializer(serializers.Serializer):
+    message_type = serializers.CharField()
+    content = serializers.CharField()
+    sources_used = serializers.JSONField(required=False)
+    processing_time = serializers.FloatField(required=False)
+    tokens_used = serializers.IntegerField(required=False)
+    created_at = serializers.DateTimeField()
+
+
+class ChatHistorySerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    session = ChatSessionSerializer()
+    messages = serializers.ListField(child=ChatMessageSerializer())
+    total_messages = serializers.IntegerField()
+
+
+# Serializer for PDF Document List
+class PDFDocumentListSerializer(serializers.Serializer):
+    document_id = serializers.CharField()
+    file_name = serializers.CharField()
+    file_type = serializers.CharField()
+    file_size = serializers.IntegerField()
+    word_count = serializers.IntegerField()
+    uploaded_url = serializers.URLField()
+    processing_status = serializers.CharField()
+    pinecone_indexed = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class PDFDocumentListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    message = serializers.CharField()
+    total_documents = serializers.IntegerField()
+    documents = serializers.ListField(child=PDFDocumentListSerializer()) 

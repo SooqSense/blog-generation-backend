@@ -412,7 +412,7 @@ class BlogGenerationFeature:
                 }
                 print(f"DEBUG: Initializing BlogWriter with params: {init_params}")
                 
-                # CRITICAL DEBUG: Show checkbox values received from frontend
+                # CRITICAL DEBUG: Show checkbox values received from streamlit UI
                 print(f"🔍 FRONTEND CHECKBOX DEBUG:")
                 print(f"   - FAQ checkbox value: {kwargs.get('faq', 'NOT PROVIDED')}")
                 print(f"   - CTA checkbox value: {kwargs.get('cta', 'NOT PROVIDED')}")  

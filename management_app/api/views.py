@@ -4872,6 +4872,334 @@ def cancel_scheduled_post_api(request, schedule_id):
         )
 
 
+# PDF Upload and Chat API imports
+from .models import PDFDocument, ChatSession, ChatMessage
+from .serializers import (
+    PDFUploadSerializer, PDFUploadResponseSerializer,
+    ChatRequestSerializer, ChatResponseSerializer
+)
+
+# Import services
+try:
+    from tools.ai.pdf_uploader.pdf_uploader import pdf_uploader_service
+    from tools.ai.chatbot.agent.agent import project_chatbot
+    from management_app.pinecone_integration.service.service import pinecone_service
+    PDF_CHAT_SERVICES_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ PDF/Chat services not available: {e}")
+    PDF_CHAT_SERVICES_AVAILABLE = False
 
 
+@extend_schema(
+    request={
+        'multipart/form-data': {
+            'type': 'object',
+            'properties': {
+                'file': {
+                    'type': 'string',
+                    'format': 'binary',
+                    'description': 'Document file to upload. Supported formats: PDF, DOCX, MD, TXT. Maximum size: 50MB.'
+                }
+            },
+            'required': ['file']
+        }
+    },
+    responses={
+        200: OpenApiResponse(
+            response=PDFUploadResponseSerializer,
+            description="Document uploaded and processed successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid file or processing error."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Internal Server Error / Processing Failed.",
+        ),
+    },
+    description="Upload a document (PDF, DOCX, MD, TXT), extract its content, index it in Pinecone for searchability, and store it in S3. The document will be available for querying through the chat API.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def upload_pdf_api(request):
+    """Upload and process document files (PDF, DOCX, MD, TXT)."""
+    try:
+        if not PDF_CHAT_SERVICES_AVAILABLE:
+            return Response({
+                "error": "PDF/Chat services not available. Please check service configuration."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        serializer = PDFUploadSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "error": "Invalid file upload",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        uploaded_file = serializer.validated_data['file']
+        user = request.user
+        
+        print(f"📄 Processing file upload: {uploaded_file.name} for user {user.username}")
+        
+        # Read file content
+        file_content = uploaded_file.read()
+        
+        # Process document using PDF uploader service
+        processing_result = pdf_uploader_service.process_document(
+            file_content=file_content,
+            filename=uploaded_file.name,
+            user_id=user.id,
+            username=user.username,
+            email=user.email
+        )
+        
+        if not processing_result['success']:
+            return Response({
+                "status": "error",
+                "message": f"Document processing failed: {processing_result['error']}",
+                "stage": processing_result.get('stage', 'unknown')
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create database record
+        pdf_document = PDFDocument.objects.create(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            file_name=processing_result['file_name'],
+            file_type=processing_result['file_type'],
+            content=processing_result['content'],
+            uploaded_url=processing_result['uploaded_url'],
+            processing_status='extracting',
+            file_size=processing_result['file_size'],
+            word_count=processing_result['word_count']
+        )
+        
+        print(f"💾 Created database record with ID: {pdf_document.id}")
+        
+        # Update status to indexing
+        pdf_document.processing_status = 'indexing'
+        pdf_document.save()
+        
+        # Index in Pinecone
+        indexing_result = pinecone_service.index_document(
+            document_id=processing_result['document_id'],
+            file_name=processing_result['file_name'],
+            file_type=processing_result['file_type'],
+            content=processing_result['content'],
+            user_id=user.id,
+            username=user.username,
+            file_url=processing_result['uploaded_url']
+        )
+        
+        # Update database record with indexing results
+        if indexing_result['success']:
+            pdf_document.processing_status = 'completed'
+            pdf_document.pinecone_indexed = True
+            pdf_document.pinecone_index_id = processing_result['document_id']
+            chunks_indexed = indexing_result['chunks_indexed']
+            print(f"✅ Successfully indexed {chunks_indexed} chunks in Pinecone")
+        else:
+            pdf_document.processing_status = 'failed'
+            pdf_document.pinecone_indexed = False
+            chunks_indexed = 0
+            print(f"❌ Pinecone indexing failed: {indexing_result['error']}")
+        
+        pdf_document.save()
+        
+        # Prepare response
+        response_data = {
+            "status": "success",
+            "message": "Document uploaded and processed successfully",
+            "document_id": processing_result['document_id'],
+            "file_name": processing_result['file_name'],
+            "file_type": processing_result['file_type'],
+            "file_size": processing_result['file_size'],
+            "word_count": processing_result['word_count'],
+            "uploaded_url": processing_result['uploaded_url'],
+            "content_extraction_completed": True,
+            "pinecone_indexing_completed": indexing_result['success'],
+            "chunks_indexed": chunks_indexed,
+            "processing_status": pdf_document.processing_status,
+            "extraction_method": processing_result.get('extraction_method', 'unknown'),
+            "database_record_id": pdf_document.id,
+            "created_at": pdf_document.created_at
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"❌ Unexpected error in upload_pdf_api: {str(e)}")
+        return Response({
+            "status": "error",
+            "message": f"An unexpected error occurred: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    request=ChatRequestSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=ChatResponseSerializer,
+            description="Chat response generated successfully.",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid query or session."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Chat with AI about uploaded documents. Provide a query and optionally a session_id. If no session_id is provided, a new chat session will be created. The AI will search through your uploaded documents and provide relevant answers with source citations.",
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def chat_api(request):
+    """Chat with AI about uploaded documents."""
+    try:
+        if not PDF_CHAT_SERVICES_AVAILABLE:
+            return Response({
+                "error": "Chat service not available. Please check service configuration."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        serializer = ChatRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "error": "Invalid request",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        query = serializer.validated_data['query']
+        session_id = serializer.validated_data.get('session_id', '')
+        user = request.user
+        
+        print(f"💬 Processing chat query from user {user.username}: {query[:50]}...")
+        
+        # Validate query
+        query_validation = project_chatbot.validate_query(query)
+        if not query_validation['valid']:
+            return Response({
+                "status": "error",
+                "message": f"Invalid query: {query_validation['error']}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Handle session
+        is_new_session = False
+        
+        if session_id:
+            try:
+                chat_session = ChatSession.objects.get(
+                    session_id=session_id,
+                    user_id=user.id,
+                    is_active=True
+                )
+                print(f"📝 Using existing session: {session_id}")
+            except ChatSession.DoesNotExist:
+                return Response({
+                    "status": "error",
+                    "message": f"Chat session {session_id} not found or inactive"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            session_id = project_chatbot.generate_session_id(user.id)
+            
+            chat_session = ChatSession.objects.create(
+                session_id=session_id,
+                user_id=user.id,
+                username=user.username,
+                email=user.email,
+                is_active=True,
+                total_messages=0
+            )
+            
+            is_new_session = True
+            print(f"🆕 Created new session: {session_id}")
+        
+        # Store user message
+        user_message = ChatMessage.objects.create(
+            session=chat_session,
+            message_type='user',
+            content=query
+        )
+        
+        # Search comprehensively across all document chunks in Pinecone
+        search_result = pinecone_service.search_documents(
+            query=query,
+            user_id=user.id,
+            top_k=10  # Increased to get more comprehensive results from all chunks
+        )
+        
+        relevant_documents = []
+        if search_result['success']:
+            relevant_documents = search_result['results']
+            print(f"🔍 Found {len(relevant_documents)} relevant document chunks from comprehensive search")
+        else:
+            print(f"⚠️ Document chunk search failed: {search_result['error']}")
+        
+        # Get conversation history for context
+        conversation_history = []
+        recent_messages = ChatMessage.objects.filter(
+            session=chat_session
+        ).order_by('-created_at')[:10]
+        
+        for msg in reversed(recent_messages):
+            conversation_history.append({
+                "role": "user" if msg.message_type == "user" else "assistant",
+                "content": msg.content
+            })
+        
+        # Generate AI response
+        response_result = project_chatbot.generate_response(
+            query=query,
+            relevant_documents=relevant_documents,
+            conversation_history=conversation_history[:-1]
+        )
+        
+        if not response_result['success']:
+            return Response({
+                "status": "error", 
+                "message": f"Failed to generate response: {response_result['error']}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        ai_response = response_result['response']
+        sources_used = response_result['sources_used']
+        processing_time = response_result['processing_time']
+        tokens_used = response_result['tokens_used']
+        
+        # Store AI response
+        assistant_message = ChatMessage.objects.create(
+            session=chat_session,
+            message_type='assistant',
+            content=ai_response,
+            relevant_documents=relevant_documents,
+            sources_used=sources_used,
+            processing_time=processing_time,
+            tokens_used=tokens_used
+        )
+        
+        # Update session
+        chat_session.total_messages = ChatMessage.objects.filter(session=chat_session).count()
+        chat_session.save()
+        
+        response_data = {
+            "status": "success",
+            "message": "Chat response generated successfully",
+            "session_id": session_id,
+            "is_new_session": is_new_session,
+            "response": ai_response,
+            "processing_time": processing_time,
+            "tokens_used": tokens_used,
+            "model_used": response_result['model_used'],
+            "total_messages": chat_session.total_messages,
+            "relevant_documents_found": len(relevant_documents)
+        }
+        
+        print(f"✅ Chat response generated successfully for session {session_id}")
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        print(f"❌ Unexpected error in chat_api: {str(e)}")
+        return Response({
+            "status": "error",
+            "message": f"An unexpected error occurred: {str(e)}"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

@@ -60,4 +60,16 @@ urlpatterns = [
         name="cancel_scheduled_post_api",
     ),
     # Removed view endpoints as requested
+    
+    # PDF Upload and Chat API endpoints
+    path(
+        "upload-pdf/",
+        views.upload_pdf_api,
+        name="upload_pdf_api",
+    ),
+    path(
+        "chat/",
+        views.chat_api,
+        name="chat_api",
+    ),
 ]
