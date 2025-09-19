@@ -76,6 +76,27 @@ RUN mkdir -p /app/logs /app/.streamlit
 # Create minimal Streamlit config (port will be set via command line)
 RUN echo '[server]\naddress = "0.0.0.0"\nheadless = true\n[browser]\ngatherUsageStats = false\n[client]\ntoolbarMode = "minimal"\n' > /app/.streamlit/config.toml
 
+# Create a startup script to debug and handle PORT properly
+RUN echo '#!/bin/bash\n\
+echo "=== Container Startup Debug ==="\n\
+echo "PORT environment variable: ${PORT}"\n\
+echo "All environment variables:"\n\
+env | grep -E "(PORT|STREAMLIT)" || true\n\
+echo "=============================="\n\
+\n\
+# Use PORT from environment, fallback to 8080 (Cloud Run default)\n\
+ACTUAL_PORT=${PORT:-8080}\n\
+echo "Starting Streamlit on port: $ACTUAL_PORT"\n\
+\n\
+exec streamlit run app.py \\\n\
+    --server.port=$ACTUAL_PORT \\\n\
+    --server.address=0.0.0.0 \\\n\
+    --server.headless=true \\\n\
+    --browser.gatherUsageStats=false\n' > /app/start-streamlit.sh
+
+# Make script executable and set permissions
+RUN chmod +x /app/start-streamlit.sh && chown streamlit:streamlit /app/start-streamlit.sh
+
 # Set up directory permissions
 RUN chown -R streamlit:streamlit /app /home/streamlit
 
@@ -85,13 +106,12 @@ USER streamlit
 # Set working directory for Streamlit app
 WORKDIR /app/frontend
 
-# Health check for Streamlit (use PORT env var with fallback)
-HEALTHCHECK --interval=30s --timeout=30s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health || exit 1
+# Health check for Streamlit (use PORT env var with Cloud Run default fallback)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/_stcore/health || exit 1
 
-# Don't expose a specific port - Cloud Run will set PORT dynamically
-# Use exec form with sh -c to properly handle environment variable expansion
-CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"]
+# Use the startup script
+CMD ["/app/start-streamlit.sh"]
 
 # Production stage
 FROM base AS production
