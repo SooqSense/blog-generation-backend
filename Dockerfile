@@ -59,8 +59,6 @@ CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:app
 # Streamlit stage for Cloud Run deployment
 FROM base AS streamlit
 ENV DEBUG=False
-ENV PORT=8501
-ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ENV STREAMLIT_SERVER_HEADLESS=true
 ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -75,8 +73,8 @@ RUN groupadd -r streamlit && useradd -r -g streamlit -m -d /home/streamlit strea
 # Create necessary directories
 RUN mkdir -p /app/logs /app/.streamlit
 
-# Create Streamlit config
-RUN echo '[server]\nport = 8501\naddress = "0.0.0.0"\nheadless = true\n[browser]\ngatherUsageStats = false\n[client]\ntoolbarMode = "minimal"\n' > /app/.streamlit/config.toml
+# Create minimal Streamlit config (port will be set via command line)
+RUN echo '[server]\naddress = "0.0.0.0"\nheadless = true\n[browser]\ngatherUsageStats = false\n[client]\ntoolbarMode = "minimal"\n' > /app/.streamlit/config.toml
 
 # Set up directory permissions
 RUN chown -R streamlit:streamlit /app /home/streamlit
@@ -87,12 +85,13 @@ USER streamlit
 # Set working directory for Streamlit app
 WORKDIR /app/frontend
 
-# Health check for Streamlit
-HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+# Health check for Streamlit (use PORT env var with fallback)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health || exit 1
 
-EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
+# Don't expose a specific port - Cloud Run will set PORT dynamically
+# Use exec form with sh -c to properly handle environment variable expansion
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"]
 
 # Production stage
 FROM base AS production
