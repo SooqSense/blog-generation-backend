@@ -12,6 +12,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),  # Include your app's API URLs
     path("auth/", include("authentication.urls")),  # Include authentication URLs
+    path("upwork/", include("upwork_proposal_generator.urls")),  # Include Upwork proposal generator URLs
     # drf-spectacular URLs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # Optional UI:
