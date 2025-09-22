@@ -73,29 +73,8 @@ RUN groupadd -r streamlit && useradd -r -g streamlit -m -d /home/streamlit strea
 # Create necessary directories
 RUN mkdir -p /app/logs /app/.streamlit
 
-# Create minimal Streamlit config (port will be set via command line)
+# Create Streamlit config (no hardcoded port - will be set via command line)
 RUN echo '[server]\naddress = "0.0.0.0"\nheadless = true\n[browser]\ngatherUsageStats = false\n[client]\ntoolbarMode = "minimal"\n' > /app/.streamlit/config.toml
-
-# Create a startup script to debug and handle PORT properly
-RUN echo '#!/bin/bash\n\
-echo "=== Container Startup Debug ==="\n\
-echo "PORT environment variable: ${PORT}"\n\
-echo "All environment variables:"\n\
-env | grep -E "(PORT|STREAMLIT)" || true\n\
-echo "=============================="\n\
-\n\
-# Use PORT from environment, fallback to 8080 (Cloud Run default)\n\
-ACTUAL_PORT=${PORT:-8080}\n\
-echo "Starting Streamlit on port: $ACTUAL_PORT"\n\
-\n\
-exec streamlit run app.py \\\n\
-    --server.port=$ACTUAL_PORT \\\n\
-    --server.address=0.0.0.0 \\\n\
-    --server.headless=true \\\n\
-    --browser.gatherUsageStats=false\n' > /app/start-streamlit.sh
-
-# Make script executable and set permissions
-RUN chmod +x /app/start-streamlit.sh && chown streamlit:streamlit /app/start-streamlit.sh
 
 # Set up directory permissions
 RUN chown -R streamlit:streamlit /app /home/streamlit
@@ -103,15 +82,15 @@ RUN chown -R streamlit:streamlit /app /home/streamlit
 # Switch to non-root user
 USER streamlit
 
-# Set working directory for Streamlit app
-WORKDIR /app/frontend
+# Set working directory for Streamlit app (correct path)
+WORKDIR /app/streamlit
 
-# Health check for Streamlit (use PORT env var with Cloud Run default fallback)
-HEALTHCHECK --interval=30s --timeout=30s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/_stcore/health || exit 1
+# Health check for Streamlit (use dynamic PORT with fallback)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8501}/_stcore/health || exit 1
 
-# Use the startup script
-CMD ["/app/start-streamlit.sh"]
+# Use shell form to handle PORT environment variable dynamically
+CMD sh -c 'streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false'
 
 # Production stage
 FROM base AS production
