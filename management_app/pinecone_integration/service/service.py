@@ -13,7 +13,12 @@ from pinecone import Pinecone, ServerlessSpec
 from openai import OpenAI
 from django.conf import settings
 
-from ..config.config import config
+try:
+    from management_app.pinecone_integration.config.config import config
+except ImportError as e:
+    logger.error(f"❌ Failed to import Pinecone config: {str(e)}")
+    # Fallback config
+    config = None
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +35,11 @@ class PineconeService:
     def _initialize_clients(self):
         """Initialize Pinecone and OpenAI clients."""
         try:
+            # Check if config is available
+            if not self.config:
+                logger.error("❌ Pinecone config not available")
+                return
+                
             # Initialize Pinecone
             if self.config.pinecone_api_key:
                 self.pc = Pinecone(api_key=self.config.pinecone_api_key)
