@@ -99,9 +99,9 @@ class ChatbotFeature:
             return f"chat_{user_id}_{timestamp}_{unique_id}"
         
     def render(self):
-        """Render the chatbot interface"""
-        st.markdown("# 🤖 AI Portfolio Chat")
-        st.markdown("Chat with your project documents and portfolio. Ask questions about your uploaded files and get intelligent responses.")
+        """Render the enhanced chatbot interface"""
+        st.markdown("# 🤖 Enhanced AI Portfolio Chat")
+        st.markdown("Chat with your project documents using advanced contextual AI. I can intelligently understand vague queries, remember conversation context, and provide comprehensive responses from your knowledge base.")
         
         # Check if AI tools are available
         if not self.ai_tools_available:
@@ -143,13 +143,13 @@ class ChatbotFeature:
         
         with col_status1:
             if self.chatbot and self.chatbot.is_available():
-                st.success("🤖 AI Ready", icon="✅")
+                st.success("🤖 Contextual AI Ready", icon="✅")
             else:
                 st.error("🤖 AI Unavailable", icon="❌")
                 
         with col_status2:
             if self.pinecone_service and hasattr(self.pinecone_service, 'is_available') and self.pinecone_service.is_available():
-                st.success("🔍 Search Ready", icon="✅")
+                st.success("🔍 Enhanced Search Ready", icon="✅")
             else:
                 st.error("🔍 Search Unavailable", icon="❌")
                 
@@ -240,10 +240,10 @@ class ChatbotFeature:
                 with col_input1:
                     user_query = st.text_input(
                         "Message",
-                        placeholder="💬 Ask about your documents, projects, or portfolio...",
+                        placeholder="💬 Ask me anything! I understand context and can enhance vague queries...",
                         label_visibility="collapsed",
                         key="chat_input_form",
-                        help="Type your message and press Enter or click Send"
+                        help="Type your message - I'll intelligently understand and enhance your query for better results"
                     )
                     
                 with col_input2:
@@ -328,14 +328,18 @@ class ChatbotFeature:
                                     text-align: center; max-width: 80%; 
                                     box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
                                     border: 3px solid rgba(255, 255, 255, 0.2);">
-                            <h3 style="margin: 0 0 15px 0; font-size: 24px;">👋 Welcome to AI Portfolio Chat!</h3>
+                            <h3 style="margin: 0 0 15px 0; font-size: 24px;">👋 Welcome to Enhanced AI Portfolio Chat!</h3>
                             <p style="margin: 10px 0; font-size: 16px; opacity: 0.95; line-height: 1.5;">
-                                I'm your AI assistant. Ask me anything about your uploaded documents and projects.
+                                I'm your contextually-aware AI assistant with advanced query understanding. 
+                                I can intelligently analyze your questions and provide comprehensive answers about your documents.
                             </p>
                             <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 15px; 
                                         margin-top: 20px; backdrop-filter: blur(10px);">
                                 <p style="margin: 0; font-style: italic; font-size: 14px; opacity: 0.9;">
-                                    💡 Try asking: "What projects do I have?" or "Tell me about my portfolio"
+                                    🧠 <strong>New Features:</strong> Contextual query enhancement, conversation memory, and intelligent response generation
+                                </p>
+                                <p style="margin: 8px 0 0 0; font-style: italic; font-size: 13px; opacity: 0.85;">
+                                    💡 Try: "How many projects do I have?" or "Tell me about this project" or "What technologies were used?"
                                 </p>
                             </div>
                         </div>
@@ -403,6 +407,33 @@ class ChatbotFeature:
                         unsafe_allow_html=True
                     )
                 
+                # Show enhanced processing info for assistant messages
+                processing_info = message.get('processing_info', {})
+                if processing_info and message_type == 'assistant':
+                    with st.expander("🧠 AI Processing Details", expanded=False):
+                        col_proc1, col_proc2 = st.columns(2)
+                        
+                        with col_proc1:
+                            st.markdown("**Performance Metrics:**")
+                            st.caption(f"⏱️ Processing Time: {processing_info.get('processing_time', 0):.2f}s")
+                            st.caption(f"🔤 Tokens Used: {processing_info.get('tokens_used', 0)}")
+                            st.caption(f"🤖 Model: {processing_info.get('model_used', 'Unknown')}")
+                            st.caption(f"📄 Documents Found: {processing_info.get('documents_found', 0)}")
+                            st.caption(f"🔍 Search Strategy: {processing_info.get('search_strategy', 'Standard')}")
+                            
+                        with col_proc2:
+                            query_enhanced = processing_info.get('query_enhanced', False)
+                            if query_enhanced:
+                                st.markdown("**🔄 Query Enhancement:**")
+                                st.success("✅ Query was enhanced for better search")
+                                if processing_info.get('original_query'):
+                                    st.caption(f"📝 Original: {processing_info.get('original_query', '')}")
+                                if processing_info.get('enhanced_query'):
+                                    st.caption(f"✨ Enhanced: {processing_info.get('enhanced_query', '')}")
+                            else:
+                                st.markdown("**🔄 Query Enhancement:**")
+                                st.info("Query used as-is")
+                
                 # Show sources if available
                 sources = message.get('sources', [])
                 if sources:
@@ -468,31 +499,14 @@ class ChatbotFeature:
                 unsafe_allow_html=True
             )
             
-            # Search for relevant documents
-            search_result = None
-            relevant_documents = []
-            
-            if self.pinecone_service:
-                try:
-                    user_id = st.session_state.get('user_id', 1)
-                    search_result = self.pinecone_service.search_documents(
-                        query=query,
-                        user_id=user_id,
-                        top_k=10
-                    )
-                    
-                    if search_result and search_result.get('success'):
-                        relevant_documents = search_result.get('results', [])
-                        
-                except Exception as e:
-                    print(f"Vector search error: {str(e)}")
-            
-            # Generate AI response
+            # Use enhanced contextual RAG system - let the chatbot handle search internally
             if self.chatbot:
                 response_result = self.chatbot.generate_response(
                     query=query,
-                    relevant_documents=relevant_documents,
-                    conversation_history=st.session_state.conversation_context
+                    relevant_documents=None,  # Let the enhanced RAG system handle search
+                    conversation_history=st.session_state.conversation_context,
+                    top_k=30,  # Use more documents for better context
+                    user_id=st.session_state.get('user_id', 1)
                 )
                 
                 if response_result.get('success'):
@@ -502,7 +516,13 @@ class ChatbotFeature:
                     tokens_used = response_result.get('tokens_used', 0)
                     model_used = response_result.get('model_used', 'Unknown')
                     
-                    # Add assistant message
+                    # Extract enhanced contextual information
+                    search_strategy = response_result.get('search_strategy', 'standard')
+                    query_enhanced = response_result.get('query_enhanced', False)
+                    original_query = response_result.get('original_query', query)
+                    enhanced_query = response_result.get('enhanced_query', None)
+                    
+                    # Add assistant message with enhanced metadata
                     assistant_message = {
                         'type': 'assistant',
                         'content': ai_response,
@@ -512,7 +532,11 @@ class ChatbotFeature:
                             'processing_time': processing_time,
                             'tokens_used': tokens_used,
                             'model_used': model_used,
-                            'documents_found': len(relevant_documents)
+                            'documents_found': len(sources_used),  # Use sources from enhanced system
+                            'search_strategy': search_strategy,
+                            'query_enhanced': query_enhanced,
+                            'original_query': original_query if query_enhanced else None,
+                            'enhanced_query': enhanced_query
                         }
                     }
                     st.session_state.chat_messages.append(assistant_message)
@@ -656,7 +680,7 @@ class ChatbotFeature:
         st.markdown("### ⚙️ Chat Settings")
         
         # AI Model settings
-        st.markdown("#### 🤖 AI Model Configuration")
+        st.markdown("#### 🤖 Enhanced AI Model Configuration")
         
         col_ai1, col_ai2 = st.columns(2)
         
@@ -678,6 +702,12 @@ class ChatbotFeature:
                 help="Maximum length of AI responses"
             )
             
+            enable_query_enhancement = st.checkbox(
+                "Enable Query Enhancement",
+                value=True,
+                help="Use AI to enhance vague queries for better search results"
+            )
+            
         with col_ai2:
             include_sources = st.checkbox(
                 "Always Show Sources",
@@ -688,30 +718,42 @@ class ChatbotFeature:
             show_processing_info = st.checkbox(
                 "Show Processing Info",
                 value=True,
-                help="Display token usage and processing time"
+                help="Display token usage, processing time, and query enhancement details"
+            )
+            
+            contextual_responses = st.checkbox(
+                "Contextual Responses",
+                value=True,
+                help="Generate human-like responses that understand context and intent"
             )
         
         # Search settings
-        st.markdown("#### 🔍 Document Search Settings")
+        st.markdown("#### 🔍 Enhanced Document Search Settings")
         
         col_search1, col_search2 = st.columns(2)
         
         with col_search1:
             search_top_k = st.slider(
                 "Documents to Search",
-                min_value=3,
-                max_value=20,
-                value=10,
-                help="Number of documents to search for each query"
+                min_value=5,
+                max_value=50,
+                value=15,
+                help="Number of documents to search for each query (increased for better context)"
             )
             
             relevance_threshold = st.slider(
                 "Relevance Threshold",
                 min_value=0.0,
                 max_value=1.0,
-                value=0.6,
+                value=0.2,
                 step=0.1,
-                help="Minimum relevance score for including documents"
+                help="Minimum relevance score for including documents (lowered for better retrieval)"
+            )
+            
+            use_comprehensive_search = st.checkbox(
+                "Comprehensive Search",
+                value=True,
+                help="Use enhanced multi-stage search for more complete results"
             )
             
         with col_search2:
@@ -725,6 +767,12 @@ class ChatbotFeature:
                 "Search All Documents",
                 value=False,
                 help="Search documents from all users (admin only)"
+            )
+            
+            enable_intent_analysis = st.checkbox(
+                "Intent Analysis",
+                value=True,
+                help="Analyze query intent for count/list/specific queries"
             )
         
         # Conversation settings
@@ -781,12 +829,16 @@ class ChatbotFeature:
             settings = {
                 'model_temperature': model_temperature,
                 'max_tokens': max_tokens,
+                'enable_query_enhancement': enable_query_enhancement,
                 'include_sources': include_sources,
                 'show_processing_info': show_processing_info,
+                'contextual_responses': contextual_responses,
                 'search_top_k': search_top_k,
                 'relevance_threshold': relevance_threshold,
+                'use_comprehensive_search': use_comprehensive_search,
                 'enable_semantic_search': enable_semantic_search,
                 'search_all_users': search_all_users,
+                'enable_intent_analysis': enable_intent_analysis,
                 'context_length': context_length,
                 'auto_save': auto_save,
                 'show_timestamps': show_timestamps,

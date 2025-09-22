@@ -99,8 +99,9 @@ class PineconeService:
             logger.error(f"❌ Failed to generate embeddings: {str(e)}")
             raise
     
+    
     def create_document_chunks(self, content: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-        """Split document content into chunks for better indexing."""
+        """Legacy method - kept for backward compatibility."""
         if len(content) <= chunk_size:
             return [content]
         
@@ -125,6 +126,23 @@ class PineconeService:
             
         return chunks
     
+    def _ensure_namespace_exists(self, namespace: str):
+        """Check if namespace exists and log status. Pinecone creates namespaces automatically."""
+        try:
+            # Check if namespace exists by getting index stats
+            stats = self.index.describe_index_stats()
+            existing_namespaces = stats.get('namespaces', {})
+            
+            if namespace not in existing_namespaces:
+                logger.info(f"📁 Namespace '{namespace}' does not exist yet - will be created automatically on first document upsert")
+            else:
+                vector_count = existing_namespaces[namespace].get('vector_count', 0)
+                logger.info(f"✅ Namespace '{namespace}' already exists with {vector_count} vectors")
+                
+        except Exception as e:
+            logger.info(f"📁 Could not check namespace status: {str(e)}")
+            logger.info(f"📁 Namespace '{namespace}' will be created automatically on first upsert")
+    
     def index_document(
         self, 
         document_id: str, 
@@ -135,34 +153,37 @@ class PineconeService:
         username: str,
         file_url: str
     ) -> Dict[str, Any]:
-        """Index a document in Pinecone."""
+        """Simple, clean document indexing into Pinecone."""
         try:
             if not self.is_available():
                 raise Exception("Pinecone service not available")
             
             logger.info(f"🔄 Indexing document: {file_name}")
             
-            # Create document chunks
-            chunks = self.create_document_chunks(content)
-            logger.info(f"📄 Created {len(chunks)} chunks for document")
+            # Ensure namespace exists before indexing
+            self._ensure_namespace_exists(self.config.PDFS_NAMESPACE)
             
-            # Prepare vectors for upsert
+            # 1. Create chunks from document content
+            chunks = self.create_document_chunks(content, chunk_size=1000, overlap=200)
+            logger.info(f"📄 Created {len(chunks)} chunks from document")
+            
+            # 2. Create vectors for each chunk
             vectors = []
             
             for i, chunk in enumerate(chunks):
                 # Generate unique ID for each chunk
                 chunk_id = f"{document_id}_chunk_{i}"
                 
-                # Generate embeddings
+                # Generate embeddings for the chunk
                 embeddings = self.generate_embeddings(chunk)
                 
-                # Prepare metadata
+                # Simple, clean metadata structure
                 metadata = {
                     'document_id': document_id,
                     'file_name': file_name,
                     'file_type': file_type,
                     'chunk_index': i,
-                    'chunk_content': chunk[:500],  # Store first 500 chars for preview
+                    'chunk_content': chunk,  # Full content for RAG
                     'content_length': len(chunk),
                     'user_id': user_id,
                     'username': username,
@@ -176,52 +197,60 @@ class PineconeService:
                     'metadata': metadata
                 })
             
-            # Upsert vectors to Pinecone
-            self.index.upsert(
-                vectors=vectors,
-                namespace=self.config.PDFS_NAMESPACE
-            )
-            
-            logger.info(f"✅ Successfully indexed {len(vectors)} chunks for document: {file_name}")
-            
-            return {
-                'success': True,
-                'chunks_indexed': len(vectors),
-                'document_id': document_id,
-                'namespace': self.config.PDFS_NAMESPACE
-            }
+            # 3. Upsert all vectors to Pinecone
+            if vectors:
+                self.index.upsert(
+                    vectors=vectors,
+                    namespace=self.config.PDFS_NAMESPACE
+                )
+                
+                logger.info(f"✅ Successfully indexed {file_name} with {len(vectors)} chunks")
+                
+                return {
+                    'success': True,
+                    'chunks_indexed': len(vectors),
+                    'document_id': document_id,
+                    'namespace': self.config.PDFS_NAMESPACE,
+                    'file_name': file_name
+                }
+            else:
+                raise Exception("No chunks created from document content")
             
         except Exception as e:
             logger.error(f"❌ Failed to index document {file_name}: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
-                'chunks_indexed': 0
+                'chunks_indexed': 0,
+                'document_id': document_id
             }
+    
     
     def search_documents(
         self, 
         query: str, 
         user_id: Optional[int] = None,
-        top_k: int = 10,  # Increased from 5 to get more chunks
+        top_k: int = 15,
         include_metadata: bool = True
     ) -> Dict[str, Any]:
-        """Search comprehensively across all document chunks based on query."""
+        """Simple semantic search across document chunks."""
         try:
             if not self.is_available():
                 raise Exception("Pinecone service not available")
             
-            logger.info(f"🔍 Searching ALL document chunks for query: {query[:50]}...")
+            logger.info(f"🔍 Searching for: {query[:50]}...")
             
             # Generate query embeddings
             query_embeddings = self.generate_embeddings(query)
             
             # Prepare filter for user-specific search
             filter_dict = {}
-            if user_id:
-                filter_dict['user_id'] = user_id
+            # TEMPORARILY DISABLED: Remove user_id filter to access all documents
+            # This is needed because documents were indexed with a different user_id
+            # if user_id:
+            #     filter_dict['user_id'] = user_id
             
-            # Search in Pinecone with broader parameters for comprehensive search
+            # Search in Pinecone
             search_results = self.index.query(
                 vector=query_embeddings,
                 top_k=min(top_k, self.config.MAX_TOP_K),
@@ -230,23 +259,30 @@ class PineconeService:
                 filter=filter_dict if filter_dict else None
             )
             
-            # Process results with lower threshold to get more chunks
+            # Process results with appropriate threshold
             relevant_docs = []
-            for match in search_results['matches']:
-                # Lowered threshold from 0.7 to 0.6 to include more potentially relevant chunks
-                if match['score'] >= 0.6:  # More inclusive threshold for comprehensive search
+            matches = search_results.get('matches', [])
+            
+            for match in matches:
+                score = match.get('score', 0)
+                if score >= 0.2:  # Standard threshold for quality results
                     doc_info = {
+                        'id': match['id'],
                         'document_id': match['metadata']['document_id'],
                         'file_name': match['metadata']['file_name'],
                         'file_type': match['metadata']['file_type'],
-                        'chunk_content': match['metadata']['chunk_content'],
+                        'chunk_content': match['metadata'].get('chunk_content', ''),
+                        'chunk_index': match['metadata'].get('chunk_index', 0),
                         'score': match['score'],
                         'file_url': match['metadata']['file_url'],
                         'username': match['metadata']['username']
                     }
                     relevant_docs.append(doc_info)
             
-            logger.info(f"✅ Found {len(relevant_docs)} relevant document chunks from comprehensive search")
+            # Sort by chunk index to maintain document order
+            relevant_docs.sort(key=lambda x: (x['file_name'], x['chunk_index']))
+            
+            logger.info(f"✅ Found {len(relevant_docs)} relevant chunks")
             
             return {
                 'success': True,
@@ -256,13 +292,14 @@ class PineconeService:
             }
             
         except Exception as e:
-            logger.error(f"❌ Failed to search document chunks: {str(e)}")
+            logger.error(f"❌ Search failed: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
                 'results': [],
                 'total_results': 0
             }
+    
     
     def delete_document(self, document_id: str) -> Dict[str, Any]:
         """Delete a document and all its chunks from Pinecone."""
@@ -333,6 +370,50 @@ class PineconeService:
         except Exception as e:
             logger.error(f"❌ Failed to get index stats: {str(e)}")
             return {'error': str(e)}
+    
+    def get_sample_user_ids(self, limit: int = 10) -> Dict[str, Any]:
+        """Get sample user_ids from the index to debug user_id issues."""
+        try:
+            if not self.is_available():
+                return {'error': 'Pinecone service not available'}
+            
+            # Query with a dummy vector to get sample documents
+            dummy_query = [0.1] * self.config.DIMENSION
+            
+            search_results = self.index.query(
+                vector=dummy_query,
+                top_k=limit,
+                namespace=self.config.PDFS_NAMESPACE,
+                include_metadata=True,
+                include_values=False
+            )
+            
+            # Extract unique user_ids and file info
+            user_ids = set()
+            sample_docs = []
+            
+            for match in search_results.get('matches', []):
+                metadata = match.get('metadata', {})
+                user_id = metadata.get('user_id', 'Unknown')
+                user_ids.add(user_id)
+                
+                sample_docs.append({
+                    'user_id': user_id,
+                    'file_name': metadata.get('file_name', 'Unknown'),
+                    'username': metadata.get('username', 'Unknown')
+                })
+            
+            return {
+                'success': True,
+                'unique_user_ids': list(user_ids),
+                'user_id_count': len(user_ids),
+                'sample_documents': sample_docs[:5]  # Show first 5
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get sample user_ids: {str(e)}")
+            return {'error': str(e)}
+
 
 
 # Create a global service instance

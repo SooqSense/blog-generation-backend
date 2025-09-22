@@ -211,6 +211,10 @@ def get_feature_class(feature_name):
             "ChatbotFeature": [
                 lambda: __import__('streamlit.features.chatbot.chatbot', fromlist=['ChatbotFeature']).ChatbotFeature,
                 lambda: __import__('features.chatbot.chatbot', fromlist=['ChatbotFeature']).ChatbotFeature,
+            ],
+            "UpworkProposalGeneratorFeature": [
+                lambda: __import__('streamlit.features.upwork_proposal_generator.upwork_proposal_generator', fromlist=['UpworkProposalGeneratorFeature']).UpworkProposalGeneratorFeature,
+                lambda: __import__('features.upwork_proposal_generator.upwork_proposal_generator', fromlist=['UpworkProposalGeneratorFeature']).UpworkProposalGeneratorFeature,
             ]
         }
         
@@ -308,7 +312,7 @@ class StreamlitApp:
             feature = st.selectbox(
                 "Select Feature:",
                 ["🏠 Home", "📝 Blog Generation", "🎨 Image Generation", 
-                 "💼 LinkedIn Posts", "📰 AI News", "📚 Knowledge Base", "🤖 AI Chat"],
+                 "💼 LinkedIn Posts", "🎯 Upwork Proposals", "📰 AI News", "📚 Knowledge Base", "🤖 AI Chat"],
                 key="feature_selector"
             )
             
@@ -373,6 +377,15 @@ class StreamlitApp:
             """)
             
             st.markdown("""
+            ### 🎯 Upwork Proposals
+            Generate winning Upwork proposals using GPT-4 and your portfolio.
+            - Tailored proposals based on job requirements
+            - Uses your knowledge base for relevant project examples
+            - Follows proven proposal writing strategies
+            - Professional formatting and call-to-action
+            """)
+            
+            st.markdown("""
             ### 📰 AI News
             Stay updated with the latest AI news and trends.
             - Daily AI news compilation
@@ -412,17 +425,17 @@ class StreamlitApp:
         with col3:
             st.metric("LinkedIn Posts", "890", "↗️ 15%")
         with col4:
-            st.metric("News Articles", "456", "↗️ 5%")
+            st.metric("Upwork Proposals", "234", "↗️ 28%")
         
         # Second row for new features
         col5, col6, col7, col8 = st.columns(4)
         
         with col5:
-            st.metric("Documents Uploaded", "2,345", "↗️ 18%")
+            st.metric("News Articles", "456", "↗️ 5%")
         with col6:
-            st.metric("Chat Sessions", "1,567", "↗️ 22%")
+            st.metric("Documents Uploaded", "2,345", "↗️ 18%")
         with col7:
-            st.metric("AI Responses", "4,234", "↗️ 25%")
+            st.metric("Chat Sessions", "1,567", "↗️ 22%")
         with col8:
             st.metric("Active Users", "321", "↗️ 10%")
             
@@ -457,6 +470,13 @@ class StreamlitApp:
             LinkedInFeatureClass = get_feature_class("LinkedInPostFeature")
             linkedin_feature = LinkedInFeatureClass()
             linkedin_feature.render()
+        elif feature == "🎯 Upwork Proposals":
+            # Require authentication for this feature
+            if self.auth_available and not is_authenticated():
+                require_auth("Upwork Proposals")
+            UpworkFeatureClass = get_feature_class("UpworkProposalGeneratorFeature")
+            upwork_feature = UpworkFeatureClass()
+            upwork_feature.run()  # Note: uses run() method instead of render()
         elif feature == "📰 AI News":
             # Require authentication for this feature
             if self.auth_available and not is_authenticated():

@@ -5121,20 +5121,6 @@ def chat_api(request):
             content=query
         )
         
-        # Search comprehensively across all document chunks in Pinecone
-        search_result = pinecone_service.search_documents(
-            query=query,
-            user_id=user.id,
-            top_k=10  # Increased to get more comprehensive results from all chunks
-        )
-        
-        relevant_documents = []
-        if search_result['success']:
-            relevant_documents = search_result['results']
-            print(f"🔍 Found {len(relevant_documents)} relevant document chunks from comprehensive search")
-        else:
-            print(f"⚠️ Document chunk search failed: {search_result['error']}")
-        
         # Get conversation history for context
         conversation_history = []
         recent_messages = ChatMessage.objects.filter(
@@ -5147,11 +5133,13 @@ def chat_api(request):
                 "content": msg.content
             })
         
-        # Generate AI response
-        response_result = project_chatbot.generate_response(
+        # Use Enhanced RAG system with project-specific capabilities
+        print(f"🚀 Using Enhanced RAG system with project-specific search capabilities")
+        response_result = project_chatbot.rag_query(
             query=query,
-            relevant_documents=relevant_documents,
-            conversation_history=conversation_history[:-1]
+            use_comprehensive_search=True,
+            top_k=30,  # Comprehensive results with project focus
+            user_id=user.id  # Pass user context for project-specific search
         )
         
         if not response_result['success']:
@@ -5161,9 +5149,10 @@ def chat_api(request):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         ai_response = response_result['response']
-        sources_used = response_result['sources_used']
+        sources_used = response_result.get('sources_used', [])
         processing_time = response_result['processing_time']
-        tokens_used = response_result['tokens_used']
+        tokens_used = response_result.get('tokens_used', 0)
+        relevant_documents = response_result.get('documents', [])
         
         # Store AI response
         assistant_message = ChatMessage.objects.create(
@@ -5188,9 +5177,11 @@ def chat_api(request):
             "response": ai_response,
             "processing_time": processing_time,
             "tokens_used": tokens_used,
-            "model_used": response_result['model_used'],
+            "model_used": response_result.get('model_used', 'ENHANCED_RAG_RETRIEVAL'),
             "total_messages": chat_session.total_messages,
-            "relevant_documents_found": len(relevant_documents)
+            "relevant_documents_found": len(relevant_documents),
+            "project_detected": response_result.get('project_name'),
+            "search_strategy": response_result.get('search_strategy', 'comprehensive')
         }
         
         print(f"✅ Chat response generated successfully for session {session_id}")

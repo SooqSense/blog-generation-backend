@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "authentication",  # Authentication app
+    "upwork_proposal_generator",  # Upwork proposal generator app
     "rest_framework_simplejwt",  # JWT token authentication
     "social_django",  # Social auth
     "corsheaders",  # CORS headers
@@ -341,6 +342,13 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 # Celery Beat Configuration (for scheduled tasks) - Use database scheduler
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# OpenAI Configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Pinecone Configuration  
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "artilence-development")
 
 # LangSmith Configuration for AI Cost Tracking
 LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
