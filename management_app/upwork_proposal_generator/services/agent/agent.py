@@ -6,7 +6,6 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
-from django.conf import settings
 
 from management_app.pinecone_integration.service.service import pinecone_service
 from ..prompts.prompts import UPWORK_PROPOSAL_SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
@@ -24,11 +23,25 @@ class UpworkProposalAgent:
     def _initialize_openai(self) -> Optional[OpenAI]:
         """Initialize OpenAI client with API key."""
         try:
-            api_key = getattr(settings, 'OPENAI_API_KEY', None)
+            # Try Django settings first, fallback to environment variable
+            api_key = None
+            
+            try:
+                from django.conf import settings
+                api_key = getattr(settings, 'OPENAI_API_KEY', None)
+            except Exception:
+                # Django settings not available, use environment variable
+                pass
+            
+            # Fallback to environment variable
+            if not api_key:
+                import os
+                api_key = os.getenv('OPENAI_API_KEY')
+            
             if api_key:
                 return OpenAI(api_key=api_key)
             else:
-                logger.error("❌ OpenAI API key not found in settings")
+                logger.error("❌ OpenAI API key not found in Django settings or environment variables")
                 return None
         except Exception as e:
             logger.error(f"❌ Failed to initialize OpenAI client: {str(e)}")
