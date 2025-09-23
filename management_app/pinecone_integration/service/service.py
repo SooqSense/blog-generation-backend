@@ -11,7 +11,8 @@ import logging
 
 from pinecone import Pinecone, ServerlessSpec
 from openai import OpenAI
-from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 try:
     from management_app.pinecone_integration.config.config import config
@@ -19,8 +20,6 @@ except ImportError as e:
     logger.error(f"❌ Failed to import Pinecone config: {str(e)}")
     # Fallback config
     config = None
-
-logger = logging.getLogger(__name__)
 
 class PineconeService:
     """Service for handling Pinecone operations for PDF documents."""

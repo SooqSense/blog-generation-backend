@@ -4,7 +4,23 @@ Configuration settings for Pinecone indexing.
 
 import os
 
-from django.conf import settings
+# Import Django settings only when needed to avoid import-time errors
+def _get_django_settings():
+    """Get Django settings with proper error handling."""
+    try:
+        # Check if Django is available and configured
+        from django import apps
+        if not apps.ready:
+            # Django is not fully configured
+            return None
+        
+        from django.conf import settings
+        if not settings.configured:
+            return None
+            
+        return settings
+    except Exception:
+        return None
 
 
 class PineconeConfig:
@@ -14,14 +30,26 @@ class PineconeConfig:
     @property
     def index_name(self) -> str:
         """Get unified index name based on environment."""
-        env_name = getattr(settings, "PINECONE_INDEX_NAME", os.getenv("PINECONE_INDEX_NAME"))
+        settings = _get_django_settings()
+        
+        # Try to get from Django settings first
+        if settings:
+            env_name = getattr(settings, "PINECONE_INDEX_NAME", None)
+            if env_name:
+                return env_name
+            
+            # Fallback based on Django environment
+            django_env = getattr(settings, "DJANGO_ENVIRONMENT", None)
+            if django_env:
+                return f"artilence-{django_env.lower()}"
+        
+        # Fallback to environment variables
+        env_name = os.getenv("PINECONE_INDEX_NAME")
         if env_name:
             return env_name
-
-        # Fallback based on Django environment
-        django_env = getattr(
-            settings, "DJANGO_ENVIRONMENT", os.getenv("DJANGO_ENVIRONMENT", "development")
-        )
+            
+        # Final fallback based on environment variable
+        django_env = os.getenv("DJANGO_ENVIRONMENT", "development")
         return f"artilence-{django_env.lower()}"
 
     # Unified index configuration (standardized dimensions)
@@ -61,12 +89,22 @@ class PineconeConfig:
     @property
     def pinecone_api_key(self) -> str:
         """Get Pinecone API key from settings or environment."""
-        return getattr(settings, "PINECONE_API_KEY", os.getenv("PINECONE_API_KEY", ""))
+        settings = _get_django_settings()
+        if settings:
+            api_key = getattr(settings, "PINECONE_API_KEY", None)
+            if api_key:
+                return api_key
+        return os.getenv("PINECONE_API_KEY", "")
 
     @property
     def openai_api_key(self) -> str:
         """Get OpenAI API key from settings or environment."""
-        return getattr(settings, "OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+        settings = _get_django_settings()
+        if settings:
+            api_key = getattr(settings, "OPENAI_API_KEY", None)
+            if api_key:
+                return api_key
+        return os.getenv("OPENAI_API_KEY", "")
 
     # Metadata limits
     MAX_DESCRIPTION_LENGTH = 500

@@ -274,13 +274,6 @@ AUTHENTICATION_BACKENDS = (
     "django.contrib.auth.backends.ModelBackend",
 )
 
-# Social Auth Keys - These should be set in environment variables
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get("GOOGLE_OAUTH2_KEY", "")
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get("GOOGLE_OAUTH2_SECRET", "")
-
-SOCIAL_AUTH_LINKEDIN_OAUTH2_KEY = os.environ.get("LINKEDIN_OAUTH2_KEY", "")
-SOCIAL_AUTH_LINKEDIN_OAUTH2_SECRET = os.environ.get("LINKEDIN_OAUTH2_SECRET", "")
-
 # Define which fields to get from the user's profile after authentication
 SOCIAL_AUTH_PIPELINE = (
     "social_core.pipeline.social_auth.social_details",
@@ -343,12 +336,47 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 # Celery Beat Configuration (for scheduled tasks) - Use database scheduler
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
+# Environment Configuration (needed for other configs below)
+DJANGO_ENVIRONMENT = os.getenv("DJANGO_ENVIRONMENT", "development")
+
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Pinecone Configuration  
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "artilence-development")
+# Set Pinecone index name based on environment, with explicit override capability
+_default_index = "artilence-staging" if DJANGO_ENVIRONMENT == "staging" else "artilence-development"
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", _default_index)
+
+# Serper API Configuration (for web search)
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
+# FAL AI Configuration (for FLUX AI image generation)
+FAL_KEY = os.getenv("FAL_KEY")
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+
+# LinkedIn OAuth Configuration
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
+LINKEDIN_REDIRECT_URI = os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
+
+# AWS S3 Configuration
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+
+# Clerk Authentication Configuration
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
+CLERK_BACKEND_AVAILABLE = os.getenv("CLERK_BACKEND_AVAILABLE", "https://api.clerk.com")
+
+# Streamlit App Configuration
+STREAMLIT_APP_URL = os.getenv("STREAMLIT_APP_URL", "http://localhost:8501")
 
 # LangSmith Configuration for AI Cost Tracking
 LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
@@ -363,3 +391,10 @@ if LANGSMITH_TRACING and LANGSMITH_API_KEY:
     os.environ["LANGCHAIN_API_KEY"] = LANGSMITH_API_KEY
     os.environ["LANGCHAIN_PROJECT"] = LANGSMITH_PROJECT
     os.environ["LANGCHAIN_ENDPOINT"] = LANGSMITH_ENDPOINT
+
+# Social Auth Keys - Use consistent variable names with credentials defined above
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = GOOGLE_CLIENT_ID
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = GOOGLE_CLIENT_SECRET
+
+SOCIAL_AUTH_LINKEDIN_OAUTH2_KEY = LINKEDIN_CLIENT_ID
+SOCIAL_AUTH_LINKEDIN_OAUTH2_SECRET = LINKEDIN_CLIENT_SECRET
