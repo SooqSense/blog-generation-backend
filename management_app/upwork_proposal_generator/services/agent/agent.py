@@ -172,6 +172,73 @@ class UpworkProposalAgent:
         context = re.sub(r'\s+', ' ', context)  # Remove extra whitespace
         return context
 
+    def _format_contact_information(self, contact_info: str) -> str:
+        """Format contact information for proper display in proposal signature with explicit line breaks."""
+        if not contact_info or not contact_info.strip():
+            return "Email: [Your Email]\nPhone: [Your Phone]"
+        
+        # Clean up the contact information
+        contact_info = contact_info.strip()
+        
+        # If it already has proper line breaks, format them consistently
+        if '\n' in contact_info:
+            lines = []
+            for line in contact_info.split('\n'):
+                line = line.strip()
+                if line:
+                    # Ensure each line has proper format (Email:, Phone:, etc.)
+                    if ':' not in line:
+                        # If no colon, try to detect what kind of contact info this is
+                        if '@' in line:
+                            line = f"Email: {line}"
+                        elif any(char.isdigit() for char in line):
+                            line = f"Phone: {line}"
+                        else:
+                            line = f"Contact: {line}"
+                    lines.append(line)
+            return '\n'.join(lines)
+        
+        # If it's a single line, try to parse and format it properly
+        formatted_lines = []
+        
+        # Look for email patterns
+        import re
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        phone_pattern = r'\+?[\d\s\-\(\)]{10,}'
+        
+        emails = re.findall(email_pattern, contact_info)
+        phones = re.findall(phone_pattern, contact_info)
+        
+        # Add emails
+        for email in emails:
+            formatted_lines.append(f"Email: {email}")
+        
+        # Add phones
+        for phone in phones:
+            formatted_lines.append(f"Phone: {phone}")
+        
+        # Look for other patterns like LinkedIn, Website, etc.
+        if 'linkedin.com' in contact_info.lower():
+            linkedin_match = re.search(r'linkedin\.com/in/[\w\-]+', contact_info, re.IGNORECASE)
+            if linkedin_match:
+                formatted_lines.append(f"LinkedIn: {linkedin_match.group()}")
+        
+        # If no patterns found, try to split by common separators
+        if not formatted_lines:
+            # Try splitting by common patterns
+            parts = re.split(r'\s*(?:Email:|Phone:|LinkedIn:|Contact:)\s*', contact_info, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                # Found structured data
+                labels = re.findall(r'(Email:|Phone:|LinkedIn:|Contact:)', contact_info, re.IGNORECASE)
+                for i, (label, part) in enumerate(zip(labels, parts[1:])):
+                    if part.strip():
+                        formatted_lines.append(f"{label.capitalize()} {part.strip()}")
+            else:
+                # Fallback: just use the original contact info with a generic label
+                formatted_lines.append(f"Contact: {contact_info}")
+        
+        return '\n'.join(formatted_lines) if formatted_lines else contact_info
+
     def _format_projects_for_prompt(self, projects: List[Dict[str, Any]]) -> str:
         """Format retrieved projects for inclusion in the GPT prompt."""
         if not projects:
@@ -254,7 +321,8 @@ class UpworkProposalAgent:
         company_websites: List[str] = None,
         your_name: str = None,
         upwork_profile_link: str = None,
-        contact_information: str = None
+        contact_information: str = None,
+        use_knowledge_base: bool = True
     ) -> Dict[str, Any]:
         """
         Generate a tailored Upwork proposal using GPT-4 and relevant project experience.
@@ -268,6 +336,7 @@ class UpworkProposalAgent:
             your_name: Your full name for proposal signature
             upwork_profile_link: Your Upwork profile URL
             contact_information: Your contact details
+            use_knowledge_base: Whether to search knowledge base for relevant projects (default: True)
         
         Returns:
             Dict with success status, generated proposal, and metadata
@@ -280,26 +349,36 @@ class UpworkProposalAgent:
                     'proposal': None
                 }
             
-            logger.info(f"🚀 Generating proposal for {company_name} - {title[:50]}...")
+            # Handle optional client and company names
+            client_display = client_name if client_name else "Potential Client"
+            company_display = company_name if company_name else "Target Company"
             
-            # Search for relevant projects
-            relevant_projects = self._search_relevant_projects(requirements, top_k=15)
-            formatted_projects = self._format_projects_for_prompt(relevant_projects)
+            logger.info(f"🚀 Generating proposal for {company_display} - {title[:50]}...")
+            
+            # Conditionally search for relevant projects based on user preference
+            if use_knowledge_base:
+                logger.info("🔍 Searching knowledge base for relevant projects...")
+                relevant_projects = self._search_relevant_projects(requirements, top_k=15)
+                formatted_projects = self._format_projects_for_prompt(relevant_projects)
+            else:
+                logger.info("⚪ Skipping knowledge base search (disabled by user)")
+                relevant_projects = []
+                formatted_projects = "Knowledge base search disabled - generating proposal without specific project examples."
             
             # Format company websites
             websites_str = ", ".join(company_websites) if company_websites else "Not provided"
             
-            # Format personal information
+            # Format personal information with proper formatting
             personal_info = {
                 'your_name': your_name or "[Your Name]",
-                'upwork_profile_link': upwork_profile_link or "[Your Upwork Profile Link]",
-                'contact_information': contact_information or "[Your Contact Information]"
+                'upwork_profile_link': upwork_profile_link or "[Your Upwork Profile Link]", 
+                'contact_information': self._format_contact_information(contact_information)
             }
             
-            # Create the user prompt with all context
+            # Create the user prompt with all context (handle optional fields)
             user_prompt = USER_PROMPT_TEMPLATE.format(
-                client_name=client_name,
-                company_name=company_name,
+                client_name=client_name or "Not specified",
+                company_name=company_name or "Not specified",
                 company_websites=websites_str,
                 title=title,
                 requirements=requirements,

@@ -401,9 +401,84 @@ Enhanced search query:"""
             logger.error(f"❌ Failed to enhance query: {str(e)}")
             return query  # Fallback to original query
     
+    def _is_conversational_query(self, query: str) -> bool:
+        """Check if the query is a conversational/general query rather than document-specific."""
+        query_lower = query.lower().strip()
+        
+        # Greetings and basic conversation
+        conversational_patterns = [
+            # Greetings
+            'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
+            # How are you variations
+            'how are you', 'how do you do', 'how\'s it going', 'what\'s up',
+            # Thank you
+            'thank you', 'thanks', 'appreciate it',
+            # Goodbyes
+            'bye', 'goodbye', 'see you', 'talk to you later',
+            # About the bot
+            'who are you', 'what are you', 'what can you do', 'help me',
+            'what is this', 'introduce yourself',
+            # General pleasantries
+            'nice to meet you', 'pleasure to meet you'
+        ]
+        
+        # Check for exact matches or if query starts with these patterns
+        for pattern in conversational_patterns:
+            if (query_lower == pattern or 
+                query_lower.startswith(pattern + ' ') or
+                query_lower.startswith(pattern + ',') or
+                query_lower.startswith(pattern + '!')):
+                return True
+        
+        # Check for very short queries that are likely conversational
+        if len(query_lower) <= 15 and not any(word in query_lower for word in 
+                                              ['project', 'document', 'file', 'pdf', 'about', 'tell me']):
+            return True
+            
+        # Check for capability questions
+        if any(phrase in query_lower for phrase in ['what can you do', 'what do you do', 'help me', 'can you help']):
+            return True
+            
+        return False
+    
+    def _generate_conversational_response(self, query: str, conversation_history: List[Dict[str, str]] = None) -> str:
+        """Generate appropriate conversational response for general queries."""
+        query_lower = query.lower().strip()
+        
+        # Greetings
+        if any(greeting in query_lower for greeting in ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening']):
+            return "Hello! I'm your AI assistant for exploring project portfolios and documents. I can help you find information about projects, analyze documents, and answer questions based on your indexed content. How can I assist you today?"
+        
+        # How are you
+        if any(phrase in query_lower for phrase in ['how are you', 'how do you do', 'how\'s it going', 'what\'s up']):
+            return "I'm doing well, thank you for asking! I'm ready to help you explore your project portfolio and documentation. What would you like to know about?"
+        
+        # Thank you
+        if any(thanks in query_lower for thanks in ['thank you', 'thanks', 'appreciate it']):
+            return "You're very welcome! I'm here to help whenever you need information about your projects or documents. Is there anything else I can assist you with?"
+        
+        # Goodbyes
+        if any(bye in query_lower for bye in ['bye', 'goodbye', 'see you', 'talk to you later']):
+            return "Goodbye! Feel free to come back anytime you need help exploring your project documentation or have questions about your portfolio. Have a great day!"
+        
+        # About the bot
+        if any(about in query_lower for about in ['who are you', 'what are you', 'what can you do', 'introduce yourself']):
+            return "I'm your AI-powered project portfolio assistant! I can help you:\n\n• Search through your project documentation\n• Answer questions about specific projects\n• Find technical details and requirements\n• Explore your knowledge base of PDFs and documents\n• Provide insights based on your indexed content\n\nJust ask me anything about your projects or documents, and I'll search through your knowledge base to find the relevant information!"
+        
+        # Help requests
+        if 'help' in query_lower and len(query_lower) < 20:
+            return "I'm here to help! I can search through your project portfolio and documentation to answer questions like:\n\n• \"Tell me about the 2456.ai project\"\n• \"What technologies were used in my projects?\"\n• \"Show me project requirements and challenges\"\n• \"How many projects do I have?\"\n• \"Find information about [specific topic]\"\n\nWhat would you like to explore in your project documentation?"
+        
+        # Default conversational response
+        return "I understand you're looking to chat! While I'm primarily designed to help you explore your project portfolio and documentation, I'm happy to assist. Is there anything specific about your projects or documents you'd like to know about?"
+    
     def _analyze_query_intent(self, query: str) -> Dict[str, Any]:
         """Analyze the user query to determine intent and required information."""
         query_lower = query.lower()
+        
+        # First check if it's conversational
+        if self._is_conversational_query(query):
+            return {'type': 'conversational', 'target': 'general'}
         
         # Count queries
         if any(word in query_lower for word in ['how many', 'count', 'number of']):
@@ -568,14 +643,34 @@ Respond naturally and conversationally:"""
             
             logger.info(f"🔍 RAG Query: {query[:100]}...")
             
-            # Step 1: Generate contextual search query for better retrieval
-            enhanced_query = self._generate_contextual_search_query(query, conversation_history)
-            
-            # Step 2: Analyze original query intent (not enhanced query)
+            # Step 1: Analyze query intent first to detect conversational queries
             intent = self._analyze_query_intent(query)
             logger.info(f"🎯 Query intent: {intent['type']} - {intent['target']}")
             
-            # Step 3: Use enhanced query for search but keep original for intent
+            # Step 2: Handle conversational queries immediately without document search
+            if intent['type'] == 'conversational':
+                logger.info("💬 Detected conversational query, providing direct response")
+                conversational_response = self._generate_conversational_response(query, conversation_history)
+                processing_time = time.time() - start_time
+                
+                return {
+                    'success': True,
+                    'response': conversational_response,
+                    'documents': [],
+                    'sources_used': [],
+                    'processing_time': processing_time,
+                    'tokens_used': 0,  # No AI tokens used for pre-defined responses
+                    'model_used': 'CONVERSATIONAL_RESPONSE',
+                    'strategy_used': 'conversational',
+                    'query_enhanced': False,
+                    'original_query': query,
+                    'enhanced_query': None
+                }
+            
+            # Step 3: For document queries, generate contextual search query for better retrieval
+            enhanced_query = self._generate_contextual_search_query(query, conversation_history)
+            
+            # Step 4: Use enhanced query for search but keep original for intent
             search_query = enhanced_query if enhanced_query != query else query
             
             # Use search strategy for information retrieval with enhanced query
