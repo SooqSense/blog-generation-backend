@@ -12,6 +12,16 @@ from io import BytesIO
 
 from .pdf_extractor.pdf_extractor import document_extractor
 
+# Import Pinecone service for document indexing
+try:
+    from management_app.pinecone_integration.service.service import pinecone_service
+    PINECONE_AVAILABLE = True
+    print("✅ Pinecone service imported successfully in PDF uploader")
+except Exception as e:
+    PINECONE_AVAILABLE = False
+    pinecone_service = None
+    print(f"⚠️ Pinecone service not available: {str(e)}")
+
 logger = logging.getLogger(__name__)
 
 class PDFUploaderService:
@@ -158,6 +168,37 @@ class PDFUploaderService:
             # Generate document ID
             document_id = str(uuid.uuid4())
             
+            # Index document in Pinecone for vector search
+            pinecone_success = False
+            pinecone_error = None
+            
+            if PINECONE_AVAILABLE and pinecone_service and pinecone_service.is_available():
+                try:
+                    logger.info(f"🔍 Indexing document in Pinecone: {filename}")
+                    indexing_result = pinecone_service.index_document(
+                        document_id=document_id,
+                        file_name=filename,
+                        file_type=file_type,
+                        content=content,
+                        user_id=user_id,
+                        username=username,
+                        file_url=uploaded_url
+                    )
+                    
+                    if indexing_result.get('success'):
+                        pinecone_success = True
+                        logger.info(f"✅ Document successfully indexed in Pinecone: {filename}")
+                    else:
+                        pinecone_error = indexing_result.get('error', 'Unknown indexing error')
+                        logger.warning(f"⚠️ Pinecone indexing failed for {filename}: {pinecone_error}")
+                        
+                except Exception as e:
+                    pinecone_error = str(e)
+                    logger.error(f"❌ Pinecone indexing error for {filename}: {str(e)}")
+            else:
+                pinecone_error = "Pinecone service not available"
+                logger.warning(f"⚠️ Pinecone service not available for indexing: {filename}")
+            
             logger.info(f"✅ Successfully processed document: {filename}")
             
             return {
@@ -169,7 +210,9 @@ class PDFUploaderService:
                 'uploaded_url': uploaded_url,
                 'file_size': file_size,
                 'word_count': word_count,
-                'extraction_method': extraction_result.get('method', 'unknown')
+                'extraction_method': extraction_result.get('method', 'unknown'),
+                'pinecone_indexed': pinecone_success,
+                'pinecone_error': pinecone_error
             }
             
         except Exception as e:

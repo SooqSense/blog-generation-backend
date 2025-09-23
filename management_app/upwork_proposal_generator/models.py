@@ -8,8 +8,8 @@ class UpworkProposal(models.Model):
     """Model to store Upwork proposal generation requests and results."""
     
     # Input parameters
-    client_name = models.CharField(max_length=255)
-    company_name = models.CharField(max_length=255)
+    client_name = models.CharField(max_length=255, blank=True, null=True, help_text="Name of the client contact person (optional)")
+    company_name = models.CharField(max_length=255, blank=True, null=True, help_text="Name of the client's company (optional)")
     title = models.CharField(max_length=500)
     requirements = models.TextField()
     company_website_links = models.JSONField(default=list)  # List of website URLs
@@ -42,7 +42,8 @@ class UpworkProposal(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.company_name} - {self.title[:50]}..."
+        company_part = self.company_name if self.company_name else "Unknown Company"
+        return f"{company_part} - {self.title[:50]}..."
     
     def set_website_links(self, links):
         """Helper method to set website links from a list."""

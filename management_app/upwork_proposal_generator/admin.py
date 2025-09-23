@@ -37,7 +37,8 @@ class UpworkProposalAdmin(admin.ModelAdmin):
     
     fieldsets = [
         ('Client Information', {
-            'fields': ['client_name', 'company_name', 'company_website_links']
+            'fields': ['client_name', 'company_name', 'company_website_links'],
+            'description': 'Client name and company name are optional fields'
         }),
         ('Project Details', {
             'fields': ['title', 'requirements']

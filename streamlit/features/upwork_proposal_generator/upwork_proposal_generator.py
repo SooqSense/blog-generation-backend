@@ -77,16 +77,16 @@ class UpworkProposalGeneratorFeature:
             
             with col1:
                 client_name = st.text_input(
-                    "Client Name *", 
+                    "Client Name (Optional)", 
                     placeholder="e.g., Roberto Martinez",
-                    help="Name of the client contact person"
+                    help="Name of the client contact person (optional)"
                 )
             
             with col2:
                 company_name = st.text_input(
-                    "Company Name *",
+                    "Company Name (Optional)",
                     placeholder="e.g., Advanced AI Solutions",
-                    help="Client's company name"
+                    help="Client's company name (optional)"
                 )
             
             # Company websites
@@ -118,7 +118,7 @@ class UpworkProposalGeneratorFeature:
                 contact_information = st.text_area(
                     "Your Contact Information (Optional)",
                     placeholder="Email: sarah@example.com\nPhone: +1 (555) 987-6543\nLinkedIn: linkedin.com/in/sarahjohnson",
-                    help="Your contact details for the proposal",
+                    help="Your contact details for the proposal signature. Put each contact method on a new line for best formatting. The system will automatically format it properly in the signature.",
                     height=80
                 )
             
@@ -146,7 +146,7 @@ class UpworkProposalGeneratorFeature:
                 use_knowledge_base = st.checkbox(
                     "Use Knowledge Base", 
                     value=True,
-                    help="Include relevant projects from your portfolio"
+                    help="Include relevant projects from your portfolio. Uncheck to generate proposals without specific project examples."
                 )
             
             with col2:
@@ -181,11 +181,7 @@ class UpworkProposalGeneratorFeature:
         """Validate the form input data."""
         errors = []
         
-        if not form_data['client_name'].strip():
-            errors.append("Client name is required")
-        
-        if not form_data['company_name'].strip():
-            errors.append("Company name is required")
+        # Client name and company name are now optional - no validation needed
         
         if not form_data['title'].strip():
             errors.append("Project title is required")
@@ -235,7 +231,8 @@ class UpworkProposalGeneratorFeature:
                 company_websites=company_websites,
                 your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
                 upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
-                contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None
+                contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                use_knowledge_base=form_data.get('use_knowledge_base', False)
             )
             
             return result
@@ -292,6 +289,13 @@ class UpworkProposalGeneratorFeature:
                     st.metric("AI Model", model_used)
                 
                 with col3:
+                    knowledge_base_used = form_data.get('use_knowledge_base', False)
+                    st.metric("Knowledge Base", "✅ Used" if knowledge_base_used else "⚪ Disabled")
+                
+                # Second row for additional metrics
+                col4, col5, col6 = st.columns(3)
+                
+                with col4:
                     token_usage = result.get('token_usage', {})
                     total_tokens = token_usage.get('total_tokens', 0)
                     st.metric("Tokens Used", total_tokens)
@@ -318,15 +322,20 @@ class UpworkProposalGeneratorFeature:
         """Display example inputs to help users."""
         with st.expander("💡 Example Input", expanded=False):
             st.markdown("""
-            **Example Client Information:**
-            - Client Name: `Sarah Johnson`
-            - Company: `Digital Health Solutions`
-            - Website: `https://digitalhealthsolutions.com`
+            **Example Client Information (Optional):**
+            - Client Name: `Sarah Johnson` *(optional)*
+            - Company: `Digital Health Solutions` *(optional)*
+            - Website: `https://digitalhealthsolutions.com` *(optional)*
             
             **Example Your Information:**
             - Your Name: `Alex Rodriguez`
             - Upwork Profile: `https://www.upwork.com/freelancers/~alexrodriguez`
-            - Contact: `Email: alex@freelance.com | Phone: +1 (555) 123-4567`
+            - Contact Information (each on new line):
+            ```
+            Email: alex@freelance.com
+            Phone: +1 (555) 123-4567
+            LinkedIn: linkedin.com/in/alexrodriguez
+            ```
             
             **Example Project Title:**
             `Healthcare Mobile App Development - React Native & FHIR Integration`
@@ -394,15 +403,18 @@ class UpworkProposalGeneratorFeature:
             """)
             
             # Knowledge Base info
+            st.markdown("### 📚 Knowledge Base")
             if pinecone_service.is_available():
-                st.markdown("### 📚 Knowledge Base")
                 stats = pinecone_service.get_index_stats()
                 if 'total_vectors' in stats:
                     st.info(f"✅ {stats['total_vectors']} documents available for project matching")
+                    st.caption("💡 Uncheck 'Use Knowledge Base' to generate proposals without project examples")
                 else:
                     st.info("✅ Knowledge base connected")
+                    st.caption("💡 You can disable knowledge base usage in Generation Options")
             else:
-                st.warning("⚠️ Knowledge base not available - proposals will be generated without project examples")
+                st.warning("⚠️ Knowledge base not available")
+                st.caption("Proposals will be generated without project examples until knowledge base is configured")
 
 
 def main():

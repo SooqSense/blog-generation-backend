@@ -3,7 +3,8 @@ FROM python:3.12.8-slim AS base
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=config.settings
+ENV DJANGO_SETTINGS_MODULE=management_app.config.settings
+ENV PYTHONPATH=/app
 
 # Set work directory
 WORKDIR /app
@@ -85,14 +86,14 @@ RUN chown -R streamlit:streamlit /app /home/streamlit
 USER streamlit
 
 # Set working directory for Streamlit app
-WORKDIR /app/frontend
+WORKDIR /app
 
 # Health check for Streamlit
 HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
 EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
+CMD ["streamlit", "run", "streamlit/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
 
 # Production stage
 FROM base AS production

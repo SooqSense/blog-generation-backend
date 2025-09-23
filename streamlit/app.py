@@ -57,19 +57,33 @@ setup_python_paths()
 def import_streamlit_components():
     """Import Streamlit components with fallback strategies"""
     import_strategies = [
-        # Strategy 1: Direct import from streamlit directory (when running from project root)
-        lambda: __import__('streamlit.base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
-        # Strategy 2: Relative import (when running from streamlit directory)  
+        # Strategy 1: Relative import (when running from streamlit directory)  
         lambda: __import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
-        # Strategy 3: Try importing as if we're in the streamlit directory
-        lambda: (lambda m=__import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']): m)(),
-        # Strategy 4: Absolute path import fallback
-        lambda: __import__(f'{Path(__file__).parent.name}.base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
+        # Strategy 2: Direct import using importlib to avoid naming conflicts
+        lambda: __import__('importlib', fromlist=['import_module']).import_module('base.streamlit_base'),
+        # Strategy 3: Import by ensuring streamlit directory is in path
+        lambda: (lambda streamlit_dir=str(Path(__file__).parent): 
+                 streamlit_dir not in sys.path and sys.path.insert(0, streamlit_dir) or 
+                 __import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']))(),
+        # Strategy 4: Fallback using importlib with spec
+        lambda: (lambda: (
+            __import__('importlib.util', fromlist=['spec_from_file_location', 'module_from_spec']) and
+            (spec := __import__('importlib.util').spec_from_file_location(
+                'streamlit_base_fallback', 
+                str(Path(__file__).parent / 'base' / 'streamlit_base.py')
+            )) and
+            (module := __import__('importlib.util').module_from_spec(spec)) and
+            spec.loader.exec_module(module) and
+            module
+        ) or None)()
     ]
     
     for i, strategy in enumerate(import_strategies, 1):
         try:
             module = strategy()
+            if module is None:
+                print(f"❌ Import Strategy {i} failed: returned None")
+                continue
             StreamlitApp = getattr(module, 'StreamlitApp')
             load_custom_css = getattr(module, 'load_custom_css')
             print(f"✅ Import Strategy {i} successful")

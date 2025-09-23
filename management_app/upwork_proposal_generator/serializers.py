@@ -11,12 +11,16 @@ class UpworkProposalCreateSerializer(serializers.ModelSerializer):
     
     client_name = serializers.CharField(
         max_length=255,
-        help_text="Name of the client contact person",
+        required=False,
+        allow_blank=True,
+        help_text="Name of the client contact person (optional)",
         style={'placeholder': 'Sarah Johnson'}
     )
     company_name = serializers.CharField(
         max_length=255,
-        help_text="Name of the client's company",
+        required=False,
+        allow_blank=True,
+        help_text="Name of the client's company (optional)",
         style={'placeholder': 'Digital Solutions LLC'}
     )
     title = serializers.CharField(
@@ -169,12 +173,16 @@ class GenerateProposalDirectSerializer(serializers.Serializer):
     
     client_name = serializers.CharField(
         max_length=255,
-        help_text="Name of the client contact person",
+        required=False,
+        allow_blank=True,
+        help_text="Name of the client contact person (optional)",
         style={'placeholder': 'John Smith'}
     )
     company_name = serializers.CharField(
         max_length=255,
-        help_text="Name of the client's company",
+        required=False,
+        allow_blank=True,
+        help_text="Name of the client's company (optional)",
         style={'placeholder': 'TechCorp Inc.'}
     )
     title = serializers.CharField(

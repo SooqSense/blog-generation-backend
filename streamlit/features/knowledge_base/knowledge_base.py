@@ -267,12 +267,17 @@ class KnowledgeBaseFeature:
                             email=email
                         )
                         
+                        # Enhanced result tracking with Pinecone indexing status
+                        upload_status = 'success' if result.get('success') else 'failed'
+                        
                         upload_results.append({
                             'filename': file_name,
-                            'status': 'success' if result.get('success') else 'failed',
+                            'status': upload_status,
                             'result': result,
                             'size_mb': len(file_content) / (1024 * 1024),
-                            'processed_at': datetime.now()
+                            'processed_at': datetime.now(),
+                            'pinecone_indexed': result.get('pinecone_indexed', False),
+                            'pinecone_error': result.get('pinecone_error')
                         })
                         
                         if result.get('success'):
@@ -331,15 +336,18 @@ class KnowledgeBaseFeature:
         total_files = len(upload_results)
         successful = sum(1 for r in upload_results if r['status'] == 'success')
         failed = total_files - successful
+        indexed = sum(1 for r in upload_results if r.get('pinecone_indexed', False))
         
-        col_summary1, col_summary2, col_summary3 = st.columns(3)
+        col_summary1, col_summary2, col_summary3, col_summary4 = st.columns(4)
         
         with col_summary1:
             st.metric("Total Files", total_files)
         with col_summary2:
-            st.metric("Successful", successful, delta=f"{(successful/total_files)*100:.1f}%")
+            st.metric("Successful", successful, delta=f"{(successful/total_files)*100:.1f}%" if total_files > 0 else "0%")
         with col_summary3:
             st.metric("Failed", failed, delta=f"-{(failed/total_files)*100:.1f}%" if failed > 0 else "0%")
+        with col_summary4:
+            st.metric("Vector Indexed", indexed, delta=f"🔍 {(indexed/total_files)*100:.1f}%" if total_files > 0 else "0%")
         
         # Detailed results
         st.markdown("### 📄 File Details")
@@ -359,9 +367,19 @@ class KnowledgeBaseFeature:
                     if result['status'] == 'success' and 'result' in result:
                         upload_result = result['result']
                         st.write(f"**Word Count:** {upload_result.get('word_count', 'N/A')}")
-                        if upload_result.get('s3_url'):
-                            st.markdown(f"**S3 URL:** [View File]({upload_result.get('s3_url')})")
-                        st.write(f"**Indexed:** {'✅ Yes' if upload_result.get('pinecone_ready') else '❌ No'}")
+                        if upload_result.get('uploaded_url'):
+                            st.markdown(f"**S3 URL:** [View File]({upload_result.get('uploaded_url')})")
+                        
+                        # Display Pinecone indexing status
+                        pinecone_indexed = result.get('pinecone_indexed', False)
+                        if pinecone_indexed:
+                            st.write("**Vector Search:** ✅ Indexed")
+                        else:
+                            st.write("**Vector Search:** ❌ Not Indexed")
+                            pinecone_error = result.get('pinecone_error')
+                            if pinecone_error:
+                                st.caption(f"⚠️ Indexing Error: {pinecone_error}")
+                                
                     elif result['status'] == 'error':
                         st.error(f"**Error:** {result.get('error', 'Unknown error')}")
                 
