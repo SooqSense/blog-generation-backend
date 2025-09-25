@@ -35,7 +35,18 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "api",  # Our API app
+    
+    # Modular apps
+    "blog_generator",
+    "ai_news",
+    "image_generator",
+    "linkedin_post_generator",
+    "schedule_linkedin_post",
+    "ai_trends",
+    "knowledge_base",
+    "chatbot",
+    
+    # Third-party apps
     "rest_framework",
     "drf_spectacular",
     "authentication",  # Authentication app

@@ -10,10 +10,10 @@ from PIL import Image
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
-    from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
-    from tools.ai.image_generation.edit_images import edit_image_with_flux, convert_image_to_base64
+    from management_app.image_generator.service.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
+    from management_app.image_generator.service.edit_images import edit_image_with_flux, convert_image_to_base64
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None

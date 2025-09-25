@@ -12,10 +12,10 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
-    from tools.ai.chatbot.agent.agent import ProjectChatbot, project_chatbot
-    from management_app.pinecone_integration.service.service import PineconeService
+    from management_app.chatbot.service.agent.agent import ProjectChatbot, project_chatbot
+    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None

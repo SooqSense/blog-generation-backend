@@ -13,6 +13,16 @@ env_path = project_root / '.env'
 load_dotenv(env_path)
 print(f"🔧 Streamlit base loading environment from: {env_path}")
 
+# ✅ Import DB connection
+try:
+    from database.db_connection import get_connection
+    DB_CONNECTION_AVAILABLE = True
+    print("✅ Database connection module imported successfully")
+except ImportError as e:
+    print(f"⚠️ Database connection not available: {str(e)}")
+    DB_CONNECTION_AVAILABLE = False
+    get_connection = None
+
 # Import Simple Clerk authentication with fallback strategies
 AUTH_AVAILABLE = False
 get_auth = None
@@ -67,22 +77,22 @@ AI_TOOLS_CACHE = {}
 AI_IMPORT_ERRORS = []
 
 def import_ai_tools():
-    """Import AI tools directly without Django setup conflicts"""
+    """Import AI tools from Django management app structure"""
     global AI_TOOLS_CACHE, AI_IMPORT_ERRORS
     
     # Return cached tools if already imported
     if AI_TOOLS_CACHE:
         return AI_TOOLS_CACHE
     
-    print("🔧 Importing AI tools directly...")
+    print("🔧 Importing AI tools from Django management app...")
     tools = {}
     errors = []
     
     # Blog Generation Tools
     try:
-        from tools.ai.blog_generator.blog_writing.blog_writer import BlogWriter
-        from tools.ai.blog_generator.blog_writing.blog_analyzer.blog_analyzer import analyze_sample_blog
-        from tools.ai.blog_generator.blog_writing.images.blog_images import (
+        from management_app.blog_generator.service.blog_writing.blog_writer import BlogWriter
+        from management_app.blog_generator.service.blog_writing.blog_analyzer.blog_analyzer import analyze_sample_blog
+        from management_app.blog_generator.service.blog_writing.images.blog_images import (
             generate_section_specific_images,
             generate_section_image_prompts_only,
             get_section_image_urls_list
@@ -104,8 +114,8 @@ def import_ai_tools():
     
     # Image Generation Tools
     try:
-        from tools.ai.image_generation.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
-        from tools.ai.image_generation.edit_images import edit_image_with_flux, convert_image_to_base64
+        from management_app.image_generator.service.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
+        from management_app.image_generator.service.edit_images import edit_image_with_flux, convert_image_to_base64
         
         tools.update({
             'generate_image_with_flux': generate_image_with_flux,
@@ -122,7 +132,7 @@ def import_ai_tools():
     
     # LinkedIn Post Generation Tools
     try:
-        from tools.ai.linkedin_post_generator.linkedin_post_generator import LinkedInPostGenerator
+        from management_app.linkedin_post_generator.service.linkedin_post_generator import LinkedInPostGenerator
         tools['LinkedInPostGenerator'] = LinkedInPostGenerator
         print("✅ LinkedIn post generation tools imported")
         
@@ -133,7 +143,7 @@ def import_ai_tools():
     
     # News Generation Tools
     try:
-        from tools.ai.daily_news.ai_daily_news import AIDailyNewsService
+        from management_app.ai_news.service.ai_daily_news import AIDailyNewsService
         tools['AIDailyNewsService'] = AIDailyNewsService
         print("✅ News generation tools imported")
         
@@ -144,7 +154,7 @@ def import_ai_tools():
     
     # Trending Queries Tools
     try:
-        from tools.ai.trends_ai.trending_queries import fetch_trending_queries
+        from management_app.ai_trends.service.trending_queries import fetch_trending_queries
         tools['fetch_trending_queries'] = fetch_trending_queries
         print("✅ Trending queries tools imported")
         
@@ -258,7 +268,46 @@ class StreamlitApp:
         # Import AI tools for frontend use
         self.ai_tools = import_ai_tools()
         self.ai_tools_success = len(self.ai_tools) > 0
+
+        # ✅ Initialize DB connection
+        self.db_connection = None
+        self._init_db()
+
+    def _init_db(self):
+        """Try to connect to Postgres using .env credentials"""
+        if DB_CONNECTION_AVAILABLE and get_connection:
+            try:
+                self.db_connection = get_connection()
+                print("✅ Database connection established successfully")
+            except Exception as e:
+                print(f"❌ Database connection failed: {e}")
+                self.db_connection = None
+        else:
+            print("⚠️ Database connection module not available")
+            self.db_connection = None
+
+    def execute_db_query(self, query, params=None, fetch_one=False, fetch_all=False):
+        """Execute a database query safely"""
+        if not self.db_connection:
+            raise Exception("Database connection not available")
         
+        try:
+            cur = self.db_connection.cursor()
+            cur.execute(query, params)
+            
+            if fetch_one:
+                result = cur.fetchone()
+            elif fetch_all:
+                result = cur.fetchall()
+            else:
+                result = None
+            
+            cur.close()
+            return result
+        except Exception as e:
+            print(f"❌ Database query error: {e}")
+            raise e
+
     def initialize_session_state(self):
         """Initialize session state variables and handle authentication"""
         # Handle authentication callback if present
@@ -322,6 +371,12 @@ class StreamlitApp:
             st.markdown("### ℹ️ System Info")
             st.caption("Version: 1.0.0")
             
+            # ✅ Show DB status
+            if self.db_connection:
+                st.caption("✅ Database: Connected")
+            else:
+                st.caption("⚠️ Database: Not Connected")
+
             # Show authentication status
             if self.auth_available:
                 auth_status = "✅ Logged In" if is_authenticated() else "🔐 Login Required"
@@ -343,6 +398,16 @@ class StreamlitApp:
     def render_home(self):
         """Render the home page"""
         st.markdown("## 🏠 Welcome to AI Blog Generator")
+        
+        # ✅ Example DB usage on Home page
+        if self.db_connection:
+            try:
+                result = self.execute_db_query("SELECT NOW();", fetch_one=True)
+                st.success(f"✅ Connected to Database! Current DB time: {result[0]}")
+            except Exception as e:
+                st.error(f"❌ Database query failed: {e}")
+        else:
+            st.warning("⚠️ Database connection not available")
         
         # Feature cards
         col1, col2 = st.columns(2)
