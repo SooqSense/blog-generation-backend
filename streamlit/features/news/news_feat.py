@@ -8,9 +8,9 @@ from datetime import datetime, date
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
-    from tools.ai.daily_news.ai_daily_news import AIDailyNewsService
+    from management_app.ai_news.service.ai_daily_news import AIDailyNewsService
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None

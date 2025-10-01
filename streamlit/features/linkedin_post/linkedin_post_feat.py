@@ -7,10 +7,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
-    from tools.ai.linkedin_post_generator.linkedin_post_generator import LinkedInPostGenerator
-    from tools.ai.trends_ai.trending_queries import fetch_trending_queries
+    from management_app.linkedin_post_generator.service.linkedin_post_generator import LinkedInPostGenerator
+    from management_app.ai_trends.service.trending_queries import fetch_trending_queries
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None

@@ -10,10 +10,10 @@ import io
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
-    from tools.ai.pdf_uploader.pdf_uploader import PDFUploaderService
-    from tools.ai.pdf_uploader.pdf_extractor.pdf_extractor import DocumentExtractor
+    from management_app.knowledge_base.service.pdf_extractor.pdf_extractor import document_extractor
+    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None
@@ -25,14 +25,6 @@ except Exception as e:
     print(f"⚠️ Knowledge Base feature: AI tools import failed - {str(e)}")
     
     # Create dummy classes for graceful degradation
-    class PDFUploaderService:
-        def __init__(self):
-            pass
-        def process_document(self, *args, **kwargs):
-            raise Exception(f"PDF upload service not available: {AI_TOOLS_ERROR}")
-        def is_s3_available(self):
-            return False
-    
     class DocumentExtractor:
         def __init__(self):
             pass
@@ -40,6 +32,18 @@ except Exception as e:
             raise Exception(f"Document extraction not available: {AI_TOOLS_ERROR}")
         def get_supported_types(self):
             return ['pdf', 'docx', 'md', 'txt']
+        def validate_file(self, *args, **kwargs):
+            return {'valid': False, 'error': f"Document validation not available: {AI_TOOLS_ERROR}"}
+    
+    class PineconeService:
+        def __init__(self):
+            pass
+        def is_available(self):
+            return False
+        def index_document(self, *args, **kwargs):
+            return {'success': False, 'error': f"Pinecone indexing not available: {AI_TOOLS_ERROR}"}
+    
+    document_extractor = DocumentExtractor()
 
 class KnowledgeBaseFeature:
     """Knowledge Base (PDF Upload) feature for Streamlit UI"""
@@ -48,11 +52,11 @@ class KnowledgeBaseFeature:
         self.ai_tools_available = AI_TOOLS_AVAILABLE
         self.ai_tools_error = AI_TOOLS_ERROR
         try:
-            self.pdf_service = PDFUploaderService()
-            self.document_extractor = DocumentExtractor()
+            self.document_extractor = document_extractor
+            self.pinecone_service = PineconeService()
         except Exception as e:
-            self.pdf_service = None
             self.document_extractor = None
+            self.pinecone_service = None
             if AI_TOOLS_AVAILABLE:
                 self.ai_tools_error = str(e)
         
@@ -171,15 +175,15 @@ class KnowledgeBaseFeature:
             
             # Show service status
             st.markdown("#### 🔧 Service Status")
-            if self.pdf_service and self.pdf_service.is_s3_available():
-                st.success("✅ S3 Storage Connected")
-            else:
-                st.error("❌ S3 Storage Unavailable")
-            
             if self.document_extractor:
                 st.success("✅ Document Extractor Ready")
             else:
                 st.error("❌ Document Extractor Unavailable")
+            
+            if self.pinecone_service and self.pinecone_service.is_available():
+                st.success("✅ Vector Database Connected")
+            else:
+                st.error("❌ Vector Database Unavailable")
             
             # Upload statistics
             if 'upload_stats' in st.session_state:
@@ -258,14 +262,47 @@ class KnowledgeBaseFeature:
                         username = st.session_state.get('username', 'Anonymous')
                         email = st.session_state.get('user_email', 'user@example.com')
                         
-                        # Process document using PDFUploaderService
-                        result = self.pdf_service.process_document(
-                            file_content=file_content,
-                            filename=file_name,
-                            user_id=user_id,
-                            username=username,
-                            email=email
-                        )
+                        # Process document using document extractor and Pinecone
+                        # Validate file first
+                        validation_result = self.document_extractor.validate_file(file_content, file_name)
+                        if not validation_result['valid']:
+                            raise Exception(validation_result['error'])
+                        
+                        # Extract content
+                        extraction_result = self.document_extractor.extract_content(file_content, file_name)
+                        if not extraction_result['success']:
+                            raise Exception(f"Content extraction failed: {extraction_result['error']}")
+                        
+                        # Index to Pinecone if available
+                        pinecone_indexed = False
+                        pinecone_error = None
+                        if self.pinecone_service and self.pinecone_service.is_available():
+                            try:
+                                pinecone_result = self.pinecone_service.index_document(
+                                    document_id=f"doc_{user_id}_{int(time.time())}",
+                                    file_name=file_name,
+                                    file_type=extraction_result['file_type'],
+                                    content=extraction_result['content'],
+                                    user_id=user_id,
+                                    username=username,
+                                    file_url=f"https://s3.amazonaws.com/bucket/documents/{file_name}"
+                                )
+                                pinecone_indexed = pinecone_result['success']
+                                if not pinecone_indexed:
+                                    pinecone_error = pinecone_result.get('error', 'Unknown error')
+                            except Exception as e:
+                                pinecone_error = str(e)
+                        
+                        # Create result similar to PDFUploaderService
+                        result = {
+                            'success': True,
+                            'content': extraction_result['content'],
+                            'word_count': extraction_result['word_count'],
+                            'file_type': extraction_result['file_type'],
+                            'uploaded_url': f"https://s3.amazonaws.com/bucket/documents/{file_name}",
+                            'pinecone_indexed': pinecone_indexed,
+                            'pinecone_error': pinecone_error
+                        }
                         
                         # Enhanced result tracking with Pinecone indexing status
                         upload_status = 'success' if result.get('success') else 'failed'

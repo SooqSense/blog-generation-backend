@@ -10,10 +10,10 @@ import json
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools directly without Django setup
+# Import AI tools from Django management app
 try:
     from management_app.upwork_proposal_generator.services.agent.agent import upwork_proposal_agent
-    from management_app.pinecone_integration.service.service import pinecone_service
+    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
     
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None
@@ -57,14 +57,18 @@ class UpworkProposalGeneratorFeature:
                     st.error(f"❌ Proposal Generator Error: {self.ai_tools_error}")
             
             with col2:
-                if pinecone_service.is_available():
-                    st.success("✅ Knowledge Base Connected")
-                    # Get index stats
-                    stats = pinecone_service.get_index_stats()
-                    if 'total_vectors' in stats:
-                        st.info(f"📄 {stats['total_vectors']} documents indexed")
-                else:
-                    st.warning("⚠️ Knowledge Base Unavailable")
+                try:
+                    pinecone_service = PineconeService()
+                    if pinecone_service.is_available():
+                        st.success("✅ Knowledge Base Connected")
+                        # Get index stats
+                        stats = pinecone_service.get_index_stats()
+                        if 'total_vectors' in stats:
+                            st.info(f"📄 {stats['total_vectors']} documents indexed")
+                    else:
+                        st.warning("⚠️ Knowledge Base Unavailable")
+                except Exception as e:
+                    st.error(f"❌ Knowledge Base Error: {str(e)}")
     
     def create_proposal_form(self):
         """Create the main proposal generation form."""

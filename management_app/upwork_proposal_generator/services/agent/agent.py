@@ -7,7 +7,7 @@ import re
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
 
-from management_app.pinecone_integration.service.service import pinecone_service
+# from management_app.pinecone_integration.service.service import pinecone_service
 from ..prompts.prompts import UPWORK_PROPOSAL_SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class UpworkProposalAgent:
     
     def __init__(self):
         self.openai_client = self._initialize_openai()
-        self.pinecone_service = pinecone_service
+        # self.pinecone_service = pinecone_service
     
     def _initialize_openai(self) -> Optional[OpenAI]:
         """Initialize OpenAI client with API key."""
@@ -50,26 +50,9 @@ class UpworkProposalAgent:
     def _search_relevant_projects(self, requirements: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Search for relevant projects in the knowledge base based on requirements."""
         try:
-            if not self.pinecone_service.is_available():
-                logger.warning("⚠️ Pinecone service not available, proceeding without project context")
-                return []
-            
-            # Search for relevant projects using the requirements as query
-            search_query = f"project experience work {requirements}"
-            search_result = self.pinecone_service.search_documents(
-                query=search_query,
-                user_id=None,  # Search all documents as specified in the service
-                top_k=top_k,
-                include_metadata=True
-            )
-            
-            if search_result.get('success', False):
-                projects = search_result.get('results', [])
-                logger.info(f"✅ Found {len(projects)} relevant projects for requirements")
-                return projects
-            else:
-                logger.warning(f"⚠️ Project search failed: {search_result.get('error', 'Unknown error')}")
-                return []
+            # Pinecone service temporarily disabled
+            logger.warning("⚠️ Pinecone service not available, proceeding without project context")
+            return []
                 
         except Exception as e:
             logger.error(f"❌ Error searching for relevant projects: {str(e)}")
