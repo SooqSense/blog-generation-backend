@@ -24,6 +24,37 @@ except Exception as e:
     AI_TOOLS_ERROR = str(e)
     print(f"⚠️ Upwork Proposal Generator: AI tools import failed - {str(e)}")
 
+# Import database queries separately to avoid import issues
+try:
+    # Try multiple import paths
+    try:
+        from streamlit.database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
+        from django.db import connection
+        DATABASE_AVAILABLE = True
+        print("✅ Upwork Proposal Generator: Database queries imported successfully")
+    except ImportError:
+        # Try relative import
+        import sys
+        from pathlib import Path
+        current_dir = Path(__file__).parent
+        streamlit_dir = current_dir.parent
+        sys.path.insert(0, str(streamlit_dir))
+        
+        from database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
+        from django.db import connection
+        DATABASE_AVAILABLE = True
+        print("✅ Upwork Proposal Generator: Database queries imported successfully (relative path)")
+        
+except Exception as e:
+    DATABASE_AVAILABLE = False
+    print(f"⚠️ Upwork Proposal Generator: Database queries import failed - {str(e)}")
+    # Create a dummy class to avoid errors
+    class UpworkProposalQueries:
+        @staticmethod
+        def save_upwork_proposal(*args, **kwargs):
+            print(f"⚠️ Database not available - proposal not saved: {args[1] if len(args) > 1 else 'Unknown'}")
+            return None
+
 
 class UpworkProposalGeneratorFeature:
     """Upwork Proposal Generator feature for Streamlit UI"""
@@ -31,6 +62,13 @@ class UpworkProposalGeneratorFeature:
     def __init__(self):
         self.ai_tools_available = AI_TOOLS_AVAILABLE
         self.ai_tools_error = AI_TOOLS_ERROR
+        self.database_available = DATABASE_AVAILABLE
+        # Initialize pinecone service
+        try:
+            self.pinecone_service = PineconeService()
+        except Exception as e:
+            self.pinecone_service = None
+            print(f"⚠️ Pinecone service initialization failed: {str(e)}")
     
     def display_feature_header(self):
         """Display the feature header with branding and info."""
@@ -58,11 +96,10 @@ class UpworkProposalGeneratorFeature:
             
             with col2:
                 try:
-                    pinecone_service = PineconeService()
-                    if pinecone_service.is_available():
+                    if self.pinecone_service and self.pinecone_service.is_available():
                         st.success("✅ Knowledge Base Connected")
                         # Get index stats
-                        stats = pinecone_service.get_index_stats()
+                        stats = self.pinecone_service.get_index_stats()
                         if 'total_vectors' in stats:
                             st.info(f"📄 {stats['total_vectors']} documents indexed")
                     else:
@@ -214,8 +251,110 @@ class UpworkProposalGeneratorFeature:
         
         return urls
     
-    def generate_proposal(self, form_data):
-        """Generate the proposal using the AI agent."""
+    def _convert_user_id_to_numeric(self, user_id):
+        """Convert user ID to numeric format for database storage."""
+        try:
+            # If it's already an integer, return it
+            if isinstance(user_id, int):
+                return user_id
+            
+            # If it's a string, try to convert to int
+            if isinstance(user_id, str):
+                # Handle Clerk user IDs (e.g., "user_333qjM1Dv7YGwzJgZMyUNHPgN30")
+                if user_id.startswith('user_'):
+                    # For Clerk IDs, try to find or create a Django user
+                    django_user_id = self._get_or_create_django_user(user_id)
+                    if django_user_id:
+                        print(f"✅ Clerk user ID {user_id} mapped to Django user ID {django_user_id}")
+                        return django_user_id
+                    else:
+                        print(f"⚠️ Could not create Django user for Clerk ID: {user_id}")
+                        return None
+                
+                # Try to convert string to int
+                try:
+                    return int(user_id)
+                except ValueError:
+                    print(f"⚠️ Cannot convert user ID to integer: {user_id}")
+                    return None
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Error converting user ID: {str(e)}")
+            return None
+    
+    def _get_or_create_django_user(self, clerk_user_id):
+        """Get or create a Django user for a Clerk user ID."""
+        try:
+            if not self.database_available:
+                return None
+                
+            # Try to find existing user by clerk_user_id
+            existing_user_id = self._find_user_by_clerk_id(clerk_user_id)
+            if existing_user_id:
+                return existing_user_id
+            
+            # Create a new Django user for this Clerk ID
+            new_user_id = self._create_django_user_for_clerk(clerk_user_id)
+            return new_user_id
+            
+        except Exception as e:
+            print(f"⚠️ Error getting/creating Django user: {str(e)}")
+            return None
+    
+    def _find_user_by_clerk_id(self, clerk_user_id):
+        """Find existing Django user by Clerk user ID."""
+        try:
+            if not self.database_available:
+                return None
+                
+            # Query the database to find existing user by clerk_user_id
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id FROM users WHERE clerk_user_id = %s
+                """, [clerk_user_id])
+                
+                result = cursor.fetchone()
+                if result:
+                    return result[0]
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ Error finding user by Clerk ID: {str(e)}")
+            return None
+    
+    def _create_django_user_for_clerk(self, clerk_user_id):
+        """Create a new Django user for a Clerk user ID."""
+        try:
+            # Create a basic user record
+            # This is a simplified approach - you may want to enhance this
+            import hashlib
+            import time
+            
+            # Generate a username from the Clerk ID
+            username = f"clerk_user_{hashlib.md5(clerk_user_id.encode()).hexdigest()[:8]}"
+            email = f"{username}@clerk.local"  # Placeholder email
+            
+            # Use the database service to create user
+            if hasattr(UpworkProposalQueries, 'create_user'):
+                user_id = UpworkProposalQueries.create_user(
+                    username=username,
+                    email=email,
+                    clerk_user_id=clerk_user_id
+                )
+                return user_id
+            else:
+                # Fallback: return None to skip saving
+                print(f"⚠️ Cannot create user - database service doesn't support user creation")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ Error creating Django user: {str(e)}")
+            return None
+    
+    def generate_proposal(self, form_data, user_id=None):
+        """Generate the proposal using the AI agent and save to database."""
         if not self.ai_tools_available:
             return {
                 'success': False,
@@ -239,6 +378,46 @@ class UpworkProposalGeneratorFeature:
                 use_knowledge_base=form_data.get('use_knowledge_base', False)
             )
             
+            # Save to database if generation was successful and user_id is provided
+            if result.get('success') and user_id and self.database_available:
+                try:
+                    # Convert user_id to integer if it's a string (Clerk user ID)
+                    numeric_user_id = self._convert_user_id_to_numeric(user_id)
+                    
+                    if numeric_user_id:
+                        proposal_id = UpworkProposalQueries.save_upwork_proposal(
+                            user_id=numeric_user_id,
+                            client_name=form_data['client_name'].strip() or None,
+                            company_name=form_data['company_name'].strip() or None,
+                            title=form_data['title'].strip(),
+                            requirements=form_data['requirements'].strip(),
+                            company_website_links=company_websites,
+                            your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                            upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                            contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                            proposal_content=result.get('proposal', ''),
+                            status='completed' if result.get('success') else 'failed',
+                            error_message=result.get('error') if not result.get('success') else None
+                        )
+                        result['proposal_id'] = proposal_id
+                        result['saved_to_database'] = True
+                        print(f"✅ Proposal saved to database with ID: {proposal_id}")
+                    else:
+                        result['saved_to_database'] = False
+                        result['database_error'] = f"Invalid user ID format: {user_id}"
+                        print(f"⚠️ Invalid user ID format: {user_id}")
+                        
+                except Exception as db_error:
+                    print(f"⚠️ Failed to save proposal to database: {str(db_error)}")
+                    result['saved_to_database'] = False
+                    result['database_error'] = str(db_error)
+            else:
+                result['saved_to_database'] = False
+                if not self.database_available:
+                    result['database_error'] = "Database service not available"
+                elif not user_id:
+                    result['database_error'] = "User ID not provided"
+            
             return result
             
         except Exception as e:
@@ -251,6 +430,14 @@ class UpworkProposalGeneratorFeature:
         """Display the generated proposal result."""
         if result.get('success'):
             st.markdown("### ✅ Generated Proposal")
+            
+            # Show database save status
+            if result.get('saved_to_database'):
+                st.success(f"💾 Proposal saved to database (ID: {result.get('proposal_id')})")
+            elif result.get('database_error'):
+                st.warning(f"⚠️ Database save failed: {result.get('database_error')}")
+            else:
+                st.info("ℹ️ Proposal not saved to database (user not authenticated)")
             
             # Display the proposal in a styled container
             proposal_content = result.get('proposal', '')
@@ -387,7 +574,9 @@ class UpworkProposalGeneratorFeature:
                 else:
                     # Generate proposal
                     with st.spinner("🤖 Generating your winning proposal..."):
-                        result = self.generate_proposal(form_data)
+                        # Get user_id from session state (if available)
+                        user_id = st.session_state.get('user_id', None)
+                        result = self.generate_proposal(form_data, user_id)
                     
                     # Display result
                     self.display_proposal_result(result, form_data, form_data['show_metadata'])
@@ -408,8 +597,8 @@ class UpworkProposalGeneratorFeature:
             
             # Knowledge Base info
             st.markdown("### 📚 Knowledge Base")
-            if pinecone_service.is_available():
-                stats = pinecone_service.get_index_stats()
+            if self.pinecone_service and self.pinecone_service.is_available():
+                stats = self.pinecone_service.get_index_stats()
                 if 'total_vectors' in stats:
                     st.info(f"✅ {stats['total_vectors']} documents available for project matching")
                     st.caption("💡 Uncheck 'Use Knowledge Base' to generate proposals without project examples")

@@ -14,6 +14,7 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+
 try:
     from management_app.pinecone_integration.config.config import PineconeConfig
     config = PineconeConfig()
@@ -110,6 +111,7 @@ class PineconeService:
             raise
     
     
+    
     def create_document_chunks(self, content: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Legacy method - kept for backward compatibility."""
         if len(content) <= chunk_size:
@@ -161,7 +163,8 @@ class PineconeService:
         content: str, 
         user_id: int,
         username: str,
-        file_url: str
+        file_url: str,
+        document_links: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Simple, clean document indexing into Pinecone."""
         try:
@@ -187,6 +190,9 @@ class PineconeService:
                 # Generate embeddings for the chunk
                 embeddings = self.generate_embeddings(chunk)
                 
+                # Use document-level links for all chunks (links are extracted at document level)
+                chunk_links = document_links or []
+                
                 # Simple, clean metadata structure
                 metadata = {
                     'document_id': document_id,
@@ -198,7 +204,8 @@ class PineconeService:
                     'user_id': user_id,
                     'username': username,
                     'file_url': file_url,
-                    'indexed_at': datetime.utcnow().isoformat()
+                    'indexed_at': datetime.utcnow().isoformat(),
+                    'links': chunk_links  # Document-level links for this chunk
                 }
                 
                 vectors.append({

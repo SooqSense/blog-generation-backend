@@ -285,7 +285,8 @@ class KnowledgeBaseFeature:
                                     content=extraction_result['content'],
                                     user_id=user_id,
                                     username=username,
-                                    file_url=f"https://s3.amazonaws.com/bucket/documents/{file_name}"
+                                    file_url=f"https://s3.amazonaws.com/bucket/documents/{file_name}",
+                                    document_links=extraction_result.get('links', [])
                                 )
                                 pinecone_indexed = pinecone_result['success']
                                 if not pinecone_indexed:

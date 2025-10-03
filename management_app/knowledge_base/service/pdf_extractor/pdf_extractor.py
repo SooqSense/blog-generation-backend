@@ -6,7 +6,8 @@ Supports PDF, DOCX, MD, and TXT files.
 import os
 import io
 import logging
-from typing import Dict, Any, Optional, Tuple
+import re
+from typing import Dict, Any, Optional, Tuple, List
 import mimetypes
 
 # Import libraries for different file types
@@ -35,6 +36,26 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Compiled URL regex + exclusions (fast and reasonably strict)
+_URL_RE = re.compile(
+    r"https?://(?:[\w-]+\.)+[\w-]+(?:/[^\s<>\"'\[\]{}|\\^`\n]*)?",
+    re.IGNORECASE,
+)
+
+_EXCLUDED_URL_PATTERNS = [
+    r".*\.s3[\w.-]*\.amazonaws\.com",
+    r".*storage\.googleapis\.com",
+    r".*blob\.core\.windows\.net",
+    r".*dropbox\.com.*",
+    r".*drive\.google\.com.*",
+    r".*onedrive\.com.*",
+    r".*example\.(?:com|org|net).*",
+    r".*localhost.*",
+    r".*127\.0\.0\.1.*",
+    r".*0\.0\.0\.0.*",
+]
+_EXCLUDED_URL_RE_LIST = [re.compile(p, re.IGNORECASE) for p in _EXCLUDED_URL_PATTERNS]
+
 class DocumentExtractor:
     """Service for extracting content from various document types."""
     
@@ -49,6 +70,41 @@ class DocumentExtractor:
     def get_supported_types(self) -> list:
         """Return list of supported file types."""
         return list(self.supported_types.keys())
+    
+    def extract_links(self, text: str, max_links: int = 20) -> List[str]:
+        """
+        Extracts and cleans URLs from text.
+        - Dedupes
+        - Filters common storage/placeholder domains
+        - Trims trailing punctuation
+        """
+        if not text:
+            return []
+        
+        raw = _URL_RE.findall(text)
+        seen = set()
+        out: List[str] = []
+
+        for url in raw:
+            clean = re.sub(r"[.,:;!?)\]}\s]+$", "", url).strip()
+            if not clean or clean in seen:
+                continue
+
+            # filter exclusions
+            excluded = False
+            for rx in _EXCLUDED_URL_RE_LIST:
+                if rx.match(clean):
+                    excluded = True
+                    break
+            if excluded:
+                continue
+
+            out.append(clean)
+            seen.add(clean)
+            if len(out) >= max_links:
+                break
+
+        return out
     
     def detect_file_type(self, filename: str, file_content: bytes) -> str:
         """Detect file type from filename and content."""
@@ -109,7 +165,11 @@ class DocumentExtractor:
                 result['word_count'] = word_count
                 result['file_type'] = file_type
                 
-                logger.info(f"✅ Successfully extracted {word_count} words from {filename}")
+                # Extract links from the content
+                extracted_links = self.extract_links(result['content'])
+                result['links'] = extracted_links
+                
+                logger.info(f"✅ Successfully extracted {word_count} words and {len(extracted_links)} links from {filename}")
             else:
                 logger.error(f"❌ Failed to extract content from {filename}: {result.get('error')}")
             

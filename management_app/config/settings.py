@@ -45,12 +45,16 @@ INSTALLED_APPS = [
     "ai_trends",
     "knowledge_base",
     "chatbot",
+    "authentication",  # Authentication app
+    "upwork_proposal_generator",  # Upwork proposal generator app
+    
+    # Integration apps
+    "langsmith_integration",  # LangSmith integration for AI cost tracking
+    "pinecone_integration",  # Pinecone integration for vector search
     
     # Third-party apps
     "rest_framework",
     "drf_spectacular",
-    "authentication",  # Authentication app
-    "upwork_proposal_generator",  # Upwork proposal generator app
     "rest_framework_simplejwt",  # JWT token authentication
     "social_django",  # Social auth
     "corsheaders",  # CORS headers
