@@ -111,6 +111,29 @@ class UpworkProposalGeneratorFeature:
         """Create the main proposal generation form."""
         st.markdown("### 📝 Project Details")
         
+        # Template Upload Section
+        st.markdown("#### 📄 Template Upload (Optional)")
+        uploaded_template = st.file_uploader(
+            "Upload your proposal template (PDF, DOCX, TXT, MD)",
+            type=['pdf', 'docx', 'txt', 'md'],
+            help="Upload a template document to fill instead of generating a new proposal",
+            key="template_upload"
+        )
+        
+        # Store template content in session state
+        template_content = None
+        if uploaded_template:
+            template_content = self._extract_template_content(uploaded_template)
+            if template_content:
+                st.success(f"✅ Template uploaded: {uploaded_template.name}")
+                st.session_state['template_content'] = template_content
+                st.session_state['template_name'] = uploaded_template.name
+            else:
+                st.error("❌ Failed to extract content from template")
+                st.session_state['template_content'] = None
+        else:
+            st.session_state['template_content'] = None
+        
         with st.form("proposal_form"):
             # Client Information Section
             st.markdown("#### 👤 Client Information")
@@ -251,6 +274,29 @@ class UpworkProposalGeneratorFeature:
         
         return urls
     
+    def _extract_template_content(self, uploaded_file):
+        """Extract content from uploaded template file."""
+        try:
+            # Import document extractor
+            from management_app.knowledge_base.service.pdf_extractor.pdf_extractor import DocumentExtractor
+            document_extractor = DocumentExtractor()
+            
+            # Read file content
+            file_content = uploaded_file.read()
+            
+            # Extract content using document extractor
+            extraction_result = document_extractor.extract_content(file_content, uploaded_file.name)
+            
+            if extraction_result['success']:
+                return extraction_result['content']
+            else:
+                st.error(f"❌ Failed to extract content: {extraction_result.get('error', 'Unknown error')}")
+                return None
+                
+        except Exception as e:
+            st.error(f"❌ Error extracting template content: {str(e)}")
+            return None
+    
     def _convert_user_id_to_numeric(self, user_id):
         """Convert user ID to numeric format for database storage."""
         try:
@@ -353,6 +399,296 @@ class UpworkProposalGeneratorFeature:
             print(f"⚠️ Error creating Django user: {str(e)}")
             return None
     
+    def _generate_template_proposal(self, template_content, client_name, company_name, title, requirements, company_websites, your_name, upwork_profile_link, contact_information, use_knowledge_base):
+        """Generate a filled template using the same logic as regular proposal generation."""
+        try:
+            # Use the same knowledge base search as regular proposals
+            if use_knowledge_base and self.pinecone_service and self.pinecone_service.is_available():
+                # Search for relevant projects using the same logic
+                search_result = self.pinecone_service.search_documents(
+                    query=requirements,
+                    top_k=15,
+                    include_metadata=True
+                )
+                
+                if search_result['success'] and search_result['results']:
+                    # Format projects the same way as regular proposals
+                    formatted_projects = self._format_projects_for_template(search_result['results'])
+                else:
+                    formatted_projects = "No relevant projects found in knowledge base."
+            else:
+                formatted_projects = "Knowledge base search disabled."
+            
+            # Create template filling prompt using the same structure as normal proposal generation
+            template_filling_prompt = f"""
+You are a professional proposal template filler. Fill out the provided template with the given information while maintaining the exact structure and formatting of the original template.
+
+TEMPLATE DOCUMENT:
+{template_content}
+
+CLIENT INFORMATION:
+- Client Name: {client_name or "Not specified"}
+- Company: {company_name or "Not specified"}
+- Company Websites: {', '.join(company_websites) if company_websites else "Not provided"}
+
+PROJECT DETAILS:
+- Title: {title}
+- Requirements: {requirements}
+
+YOUR PERSONAL INFORMATION FOR PROPOSAL SIGNATURE:
+- Your Name: {your_name or "Not provided"}
+- Upwork Profile: {upwork_profile_link or "Not provided"}
+- Contact Information: {self._format_contact_information(contact_information)}
+
+RELEVANT PROJECTS FROM KNOWLEDGE BASE:
+{formatted_projects}
+
+IMPORTANT: The projects above include verified URLs. When you write the proposal, include these URLs in the format "Project Name: Description. (Link: URL)" for each relevant project mentioned. NEVER omit URLs when they are available.
+
+INSTRUCTIONS:
+1. Keep the EXACT structure, formatting, and layout of the template
+2. Replace placeholders like [Name], [Company], [Date], etc. with the provided information
+3. Use the relevant projects to enhance the proposal where appropriate
+4. Maintain professional tone and structure
+5. Don't change the template layout - just fill in the blanks
+6. If the template has specific sections, keep them intact
+7. Preserve any existing formatting, bullet points, or structure
+8. Only replace placeholder text, don't add new sections unless the template has placeholders for them
+9. IMPORTANT: Only include actual user information if it's provided. If user information is "Not provided", omit those sections entirely or use professional defaults
+10. Do NOT include placeholder text like [Your Name], [Your Email], [Your Phone], [Your Upwork Profile Link] in the final output
+11. If the template has signature placeholders, replace them with actual information or remove them if no information is provided
+12. Use the same proposal generation logic as the normal proposal generator - follow the template structure but fill it with the same intelligent content
+13. CRITICAL: When showing relevant projects, ALWAYS include the project URLs in the format "Project Name: Description. (Link: URL)" - use the verified URLs provided in the project data
+14. If projects have "✅ VERIFIED PROJECT URLs" - use those exact URLs in the proposal in the format "Project Name: Description. (Link: URL)"
+15. If projects show "❌ Project URLs: No valid project URLs found" - mention projects without making them clickable
+16. EXAMPLE FORMAT: "- Project Overview at 2456: Successfully implemented CRM and platform integration. (Link: https://www.2456.ai/)"
+17. NEVER show projects without URLs when URLs are available - always include them in the format above
+
+Return the completed document with all placeholders filled in with actual information only.
+"""
+            
+            # Use OpenAI to fill the template with the same system prompt as normal proposal generation
+            from management_app.upwork_proposal_generator.services.prompts.prompts import UPWORK_PROPOSAL_SYSTEM_PROMPT
+            
+            response = upwork_proposal_agent.openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": UPWORK_PROPOSAL_SYSTEM_PROMPT},
+                    {"role": "user", "content": template_filling_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+                top_p=0.9,
+                frequency_penalty=0.3,
+                presence_penalty=0.1
+            )
+            
+            filled_document = response.choices[0].message.content.strip()
+            
+            return {
+                'success': True,
+                'proposal': filled_document,
+                'projects_found': len(search_result.get('results', [])) if use_knowledge_base else 0,
+                'model_used': 'gpt-4o',
+                'token_usage': {
+                    'prompt_tokens': response.usage.prompt_tokens,
+                    'completion_tokens': response.usage.completion_tokens,
+                    'total_tokens': response.usage.total_tokens
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Template filling failed: {str(e)}",
+                'proposal': None
+            }
+    
+    def _format_projects_for_template(self, projects):
+        """Format projects for template filling with URLs (same as normal proposal generation)."""
+        if not projects:
+            return "No relevant projects found."
+        
+        formatted_projects = []
+        for i, project in enumerate(projects[:3], 1):  # Limit to 3 projects
+            project_data = project
+            file_name = project_data.get('file_name', 'Unknown')
+            
+            # Extract URLs from both content and metadata
+            all_urls = []
+            
+            # Get URLs from content
+            content_urls = project_data.get('urls', [])
+            if content_urls:
+                for url in content_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Get URLs from metadata
+            metadata_urls = project_data.get('document_links', [])
+            if metadata_urls:
+                for url in metadata_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Extract URLs from content text (like normal proposal generation)
+            chunk_content = project_data.get('chunk_content', '')
+            if chunk_content:
+                extracted_urls = self._extract_urls_from_content(chunk_content)
+                for url_info in extracted_urls:
+                    all_urls.append({
+                        'url': url_info['url'],
+                        'project_name': url_info.get('project_name', file_name)
+                    })
+            
+            project_entry = f"\n**Project {i}: {file_name}**\n"
+            
+            # Use extracted URLs from content and metadata with project names
+            if all_urls:
+                url_list = []
+                for url_info in all_urls[:2]:  # Max 2 URLs per project
+                    # Format: Project Name (exact_url)
+                    url_entry = f"{url_info['project_name']} ({url_info['url']})"
+                    url_list.append(url_entry)
+                project_entry += f"✅ VERIFIED PROJECT URLs: {' | '.join(url_list)}\n"
+                project_entry += f"🔒 MANDATORY: Only use these EXACT URLs in your proposal - no modifications allowed\n"
+                print(f"🔍 Template: Found URLs for {file_name}: {url_list}")
+            else:
+                project_entry += f"❌ Project URLs: No valid project URLs found in this content\n"
+                project_entry += f"🚫 CRITICAL: DO NOT create any clickable links for this project\n"
+                project_entry += f"⚠️ MENTION PROJECT WITHOUT BRACKETS: Write 'at [project name]' NOT '[project name](link)'\n"
+                print(f"🔍 Template: No URLs found for {file_name}")
+            
+            # Add description
+            chunk_content = project_data.get('chunk_content', '')
+            if chunk_content:
+                project_entry += f"Description: {chunk_content[:200]}...\n"
+            
+            formatted_projects.append(project_entry)
+        
+        final_formatted = "\n".join(formatted_projects)
+        print(f"🔍 Template: Final formatted projects:\n{final_formatted}")
+        return final_formatted
+    
+    def _format_contact_information(self, contact_info):
+        """Format contact information for proper display in proposal signature with explicit line breaks."""
+        if not contact_info or not contact_info.strip():
+            return "Email: [Your Email]\nPhone: [Your Phone]"
+        
+        # Clean up the contact information
+        contact_info = contact_info.strip()
+        
+        # If it already has proper line breaks, format them consistently
+        if '\n' in contact_info:
+            lines = []
+            for line in contact_info.split('\n'):
+                line = line.strip()
+                if line:
+                    # Ensure each line has proper format (Email:, Phone:, etc.)
+                    if ':' not in line:
+                        # If no colon, try to detect what kind of contact info this is
+                        if '@' in line:
+                            line = f"Email: {line}"
+                        elif any(char.isdigit() for char in line):
+                            line = f"Phone: {line}"
+                        else:
+                            line = f"Contact: {line}"
+                    lines.append(line)
+            return '\n'.join(lines)
+        
+        # If it's a single line, try to parse and format it properly
+        formatted_lines = []
+        
+        # Look for email patterns
+        import re
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        phone_pattern = r'\+?[\d\s\-\(\)]{10,}'
+        
+        emails = re.findall(email_pattern, contact_info)
+        phones = re.findall(phone_pattern, contact_info)
+        
+        # Add emails
+        for email in emails:
+            formatted_lines.append(f"Email: {email}")
+        
+        # Add phones
+        for phone in phones:
+            formatted_lines.append(f"Phone: {phone}")
+        
+        # Look for other patterns like LinkedIn, Website, etc.
+        if 'linkedin.com' in contact_info.lower():
+            linkedin_match = re.search(r'linkedin\.com/in/[\w\-]+', contact_info, re.IGNORECASE)
+            if linkedin_match:
+                formatted_lines.append(f"LinkedIn: {linkedin_match.group()}")
+        
+        # If no patterns found, try to split by common separators
+        if not formatted_lines:
+            # Try splitting by common patterns
+            parts = re.split(r'\s*(?:Email:|Phone:|LinkedIn:|Contact:)\s*', contact_info, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                # Found structured data
+                labels = re.findall(r'(Email:|Phone:|LinkedIn:|Contact:)', contact_info, re.IGNORECASE)
+                for i, (label, part) in enumerate(zip(labels, parts[1:])):
+                    if part.strip():
+                        formatted_lines.append(f"{label.capitalize()} {part.strip()}")
+            else:
+                # Fallback: just use the original contact info with a generic label
+                formatted_lines.append(f"Contact: {contact_info}")
+        
+        return '\n'.join(formatted_lines) if formatted_lines else contact_info
+    
+
+    def _extract_urls_from_content(self, content: str):
+        """Extract URLs from content text (same logic as normal proposal generation)."""
+        import re
+        
+        # URL regex pattern
+        url_pattern = r'https?://(?:[\w-]+\.)+[\w-]+(?:/[^\s<>"\'\[\]{}|\\^`\n]*)?'
+        urls = re.findall(url_pattern, content, re.IGNORECASE)
+        
+        # Excluded patterns (storage URLs, etc.)
+        excluded_patterns = [
+            r'.*\.s3[\w.-]*\.amazonaws\.com',
+            r'.*storage\.googleapis\.com',
+            r'.*blob\.core\.windows\.net',
+            r'.*dropbox\.com.*',
+            r'.*drive\.google\.com.*',
+            r'.*onedrive\.com.*',
+            r'.*example\.(?:com|org|net).*',
+            r'.*localhost.*',
+            r'.*0\.0\.0\.0.*',
+        ]
+        
+        extracted_urls = []
+        for url in urls:
+            # Check if URL should be excluded
+            is_excluded = False
+            for pattern in excluded_patterns:
+                if re.match(pattern, url, re.IGNORECASE):
+                    is_excluded = True
+                    break
+            
+            if not is_excluded:
+                # Clean up URL
+                clean_url = re.sub(r'[.,:;!?)\]}\s]+$', '', url)
+                clean_url = clean_url.lower().strip()
+                
+                if clean_url and len(clean_url) > 10:
+                    # Extract project name from URL
+                    domain = re.sub(r'https?://', '', clean_url).split('/')[0]
+                    project_name = domain.replace('www.', '').replace('.com', '').replace('.ai', '').replace('.io', '')
+                    
+                    extracted_urls.append({
+                        'url': clean_url,
+                        'project_name': project_name
+                    })
+        
+        return extracted_urls
+    
     def generate_proposal(self, form_data, user_id=None):
         """Generate the proposal using the AI agent and save to database."""
         if not self.ai_tools_available:
@@ -365,18 +701,37 @@ class UpworkProposalGeneratorFeature:
             # Parse company websites
             company_websites = self.parse_company_websites(form_data['company_websites'])
             
-            # Generate proposal
-            result = upwork_proposal_agent.generate_proposal(
-                client_name=form_data['client_name'].strip(),
-                company_name=form_data['company_name'].strip(),
-                title=form_data['title'].strip(),
-                requirements=form_data['requirements'].strip(),
-                company_websites=company_websites,
-                your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
-                upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
-                contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
-                use_knowledge_base=form_data.get('use_knowledge_base', False)
-            )
+            # Check if template is uploaded
+            template_content = st.session_state.get('template_content')
+            
+            if template_content:
+                print(f"🔍 Using template filling for proposal generation")
+                # Use template filling instead of regular proposal generation
+                result = self._generate_template_proposal(
+                    template_content=template_content,
+                    client_name=form_data['client_name'].strip(),
+                    company_name=form_data['company_name'].strip(),
+                    title=form_data['title'].strip(),
+                    requirements=form_data['requirements'].strip(),
+                    company_websites=company_websites,
+                    your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                    upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                    contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                    use_knowledge_base=form_data.get('use_knowledge_base', False)
+                )
+            else:
+                # Generate regular proposal
+                result = upwork_proposal_agent.generate_proposal(
+                    client_name=form_data['client_name'].strip(),
+                    company_name=form_data['company_name'].strip(),
+                    title=form_data['title'].strip(),
+                    requirements=form_data['requirements'].strip(),
+                    company_websites=company_websites,
+                    your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                    upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                    contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                    use_knowledge_base=form_data.get('use_knowledge_base', False)
+                )
             
             # Save to database if generation was successful and user_id is provided
             if result.get('success') and user_id and self.database_available:
@@ -436,7 +791,12 @@ class UpworkProposalGeneratorFeature:
     def display_proposal_result(self, result, form_data, show_metadata=False):
         """Display the generated proposal result."""
         if result.get('success'):
-            st.markdown("### ✅ Generated Proposal")
+            # Check if this is a template result
+            template_content = st.session_state.get('template_content')
+            if template_content:
+                st.markdown("### ✅ Filled Template")
+            else:
+                st.markdown("### ✅ Generated Proposal")
             
             # Show database save status
             if result.get('saved_to_database'):
@@ -463,14 +823,25 @@ class UpworkProposalGeneratorFeature:
             
             with col2:
                 # Download as text file
-                company_name_clean = form_data.get('company_name', 'proposal').replace(' ', '_').lower()
-                st.download_button(
-                    label="📄 Download Proposal",
-                    data=proposal_content,
-                    file_name=f"proposal_{company_name_clean}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
+                template_content = st.session_state.get('template_content')
+                if template_content:
+                    template_name = st.session_state.get('template_name', 'template').replace(' ', '_').lower()
+                    st.download_button(
+                        label="📄 Download Filled Template",
+                        data=proposal_content,
+                        file_name=f"filled_{template_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+                else:
+                    company_name_clean = form_data.get('company_name', 'proposal').replace(' ', '_').lower()
+                    st.download_button(
+                        label="📄 Download Proposal",
+                        data=proposal_content,
+                        file_name=f"proposal_{company_name_clean}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
             
             # Show metadata if requested
             if show_metadata:

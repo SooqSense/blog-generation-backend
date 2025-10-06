@@ -448,6 +448,7 @@ class StreamlitApp:
             - Uses your knowledge base for relevant project examples
             - Follows proven proposal writing strategies
             - Professional formatting and call-to-action
+            - **NEW**: Upload template documents to fill instead of generating from scratch
             """)
             
             st.markdown("""
