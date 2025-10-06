@@ -152,7 +152,7 @@ class SimpleClerkAuth:
                 return False
             
             # Update last login using user service
-            self.user_service.update_user_last_login(django_user['id'])
+            self.user_service.update_user_last_login(django_user['django_user_id'])
             
             # Set user as authenticated using session service
             user_data = {
@@ -162,10 +162,10 @@ class SimpleClerkAuth:
                 'authenticated': True,
                 'token': token,
                 'clerk_user_id': user_id,
-                'django_user_id': django_user['id'],
+                'django_user_id': django_user['django_user_id'],
                 'username': django_user['username'],
                 'is_new_user': django_user.get('is_new', False),
-                'created_at': django_user.get('created_at'),
+                'created_at': django_user.get('date_joined'),
                 'updated_at': django_user.get('updated_at')
             }
             

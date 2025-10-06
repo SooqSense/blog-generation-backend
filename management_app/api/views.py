@@ -4989,7 +4989,8 @@ def upload_pdf_api(request):
             content=processing_result['content'],
             user_id=user.id,
             username=user.username,
-            file_url=processing_result['uploaded_url']
+            file_url=processing_result['uploaded_url'],
+            document_links=processing_result.get('links', [])
         )
         
         # Update database record with indexing results

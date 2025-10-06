@@ -385,19 +385,26 @@ class UpworkProposalGeneratorFeature:
                     numeric_user_id = self._convert_user_id_to_numeric(user_id)
                     
                     if numeric_user_id:
-                        proposal_id = UpworkProposalQueries.save_upwork_proposal(
-                            user_id=numeric_user_id,
-                            client_name=form_data['client_name'].strip() or None,
-                            company_name=form_data['company_name'].strip() or None,
-                            title=form_data['title'].strip(),
-                            requirements=form_data['requirements'].strip(),
-                            company_website_links=company_websites,
-                            your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
-                            upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
-                            contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
-                            proposal_content=result.get('proposal', ''),
-                            status='completed' if result.get('success') else 'failed',
-                            error_message=result.get('error') if not result.get('success') else None
+                        # Prepare proposal data as dictionary
+                        proposal_data = {
+                            'client_name': form_data['client_name'].strip() or None,
+                            'company_name': form_data['company_name'].strip() or None,
+                            'title': form_data['title'].strip(),
+                            'requirements': form_data['requirements'].strip(),
+                            'company_website_links': company_websites,
+                            'your_name': form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                            'upwork_profile_link': form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                            'contact_information': form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                            'proposal_content': result.get('proposal', ''),
+                            'status': 'completed' if result.get('success') else 'failed',
+                            'error_message': result.get('error') if not result.get('success') else None
+                        }
+                        
+                        # Create instance of UpworkProposalQueries
+                        upwork_queries = UpworkProposalQueries()
+                        proposal_id = upwork_queries.save_upwork_proposal(
+                            proposal_data=proposal_data,
+                            user_id=numeric_user_id
                         )
                         result['proposal_id'] = proposal_id
                         result['saved_to_database'] = True

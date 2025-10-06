@@ -40,24 +40,23 @@ class SessionService:
         if 'auth_cache' not in st.session_state:
             st.session_state.auth_cache = {}
         
-        # Initialize persistent session storage using st.cache_data
+        # Initialize persistent session storage using st.cache
         self._init_persistent_storage()
     
     def _init_persistent_storage(self):
-        """Initialize persistent storage using st.cache_data"""
+        """Initialize persistent storage using st.cache"""
         # Create a persistent cache for user sessions
         if 'persistent_sessions' not in st.session_state:
             st.session_state.persistent_sessions = {}
     
-    @st.cache_data(ttl=86400)  # Cache for 24 hours
     def _get_persistent_user_data(_clerk_user_id: str) -> Optional[Dict[str, Any]]:
         """Get persistent user data by Clerk user ID"""
         return None  # This will be populated by the cache
     
     def _store_persistent_user_data(self, clerk_user_id: str, user_data: Dict[str, Any]):
-        """Store user data persistently using st.cache_data"""
+        """Store user data persistently using st.cache"""
         try:
-            # Use st.cache_data for true persistence across refreshes
+            # Use st.cache for true persistence across refreshes
             self._get_persistent_user_data.clear()  # Clear cache first
             
             # Store in persistent sessions

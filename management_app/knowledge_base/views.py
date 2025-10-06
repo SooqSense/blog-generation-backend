@@ -126,7 +126,8 @@ def upload_pdf_api(request):
                     content=extraction_result['content'],
                     user_id=request.user.id,
                     username=request.user.username,
-                    file_url=uploaded_url
+                    file_url=uploaded_url,
+                    document_links=extraction_result.get('links', [])
                 )
                 
                 if pinecone_result['success']:

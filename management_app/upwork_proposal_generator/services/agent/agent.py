@@ -495,20 +495,40 @@ class UpworkProposalAgent:
                 chunk['content'] for chunk in project_data['content_chunks'][:3]  # Max 3 chunks per project
             ])[:800]  # Limit content length
             
-            # Extract actual project URLs from content instead of using S3 file_url
+            # Extract actual project URLs from content and metadata
             project_urls = self._extract_project_urls(combined_content)
             
+            # Also check for links stored in Pinecone metadata
+            metadata_links = []
+            for chunk in project_data['content_chunks']:
+                if 'links' in chunk and chunk['links']:
+                    metadata_links.extend(chunk['links'])
+            
+            # Combine URLs from content extraction and metadata
+            all_urls = project_urls.copy()
+            for link in metadata_links:
+                if link and link not in [url_info['url'] for url_info in project_urls]:
+                    # Create a simple project info for metadata links
+                    domain = re.sub(r'https?://', '', link).split('/')[0]
+                    project_name = domain.replace('www.', '').replace('.com', '').replace('.ai', '').replace('.io', '')
+                    all_urls.append({
+                        'url': link,
+                        'domain': domain,
+                        'project_name': project_name,
+                        'context': f"Project link from {project_data['file_name']}"
+                    })
+            
             # Log for debugging
-            logger.info(f"🔗 Project {i} ({project_data['file_name']}): Found {len(project_urls)} URLs")
-            for url_info in project_urls:
+            logger.info(f"🔗 Project {i} ({project_data['file_name']}): Found {len(all_urls)} URLs (content: {len(project_urls)}, metadata: {len(metadata_links)})")
+            for url_info in all_urls:
                 logger.info(f"   - {url_info['project_name']}: {url_info['url']}")
             
             project_entry = f"\n**Project {i}: {project_data['file_name']}**\n"
             
-            # Use extracted URLs from content with project names
-            if project_urls:
+            # Use extracted URLs from content and metadata with project names
+            if all_urls:
                 url_list = []
-                for url_info in project_urls[:2]:  # Max 2 URLs per project
+                for url_info in all_urls[:2]:  # Max 2 URLs per project
                     # Format: Project Name (exact_url)
                     url_entry = f"{url_info['project_name']} ({url_info['url']})"
                     url_list.append(url_entry)
