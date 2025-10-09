@@ -1,15 +1,19 @@
 """
-Simple Clerk Authentication for Streamlit
-Handles user ID-based authentication using Clerk's backend API
+Enhanced Clerk Authentication for Streamlit with Django Integration
+Modular authentication system with clean separation of concerns
 """
 
 import streamlit as st
 import os
-import jwt
-import requests
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
-import logging
+
+# Import modular components
+from .database import DatabaseOperations
+from .user_management import UserService, UserValidator
+from .session_management import SessionService, SessionValidator
+from .ui_components import AuthUI, SidebarUI
 
 # Import Clerk backend API
 try:
@@ -29,7 +33,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SimpleClerkAuth:
-    """Simple Clerk authentication using user ID and backend API"""
+    """Enhanced Clerk authentication with modular architecture"""
     
     def __init__(self):
         # Load Clerk credentials
@@ -44,36 +48,69 @@ class SimpleClerkAuth:
         if not CLERK_BACKEND_AVAILABLE:
             logger.error("clerk_backend_api package not available")
             
-        logger.info(f"Clerk Auth initialized for user ID authentication")
+        logger.info(f"Enhanced Clerk Auth initialized with modular architecture")
         logger.info(f"  Backend API Available: {CLERK_BACKEND_AVAILABLE}")
         logger.info(f"  Secret Key Configured: {'Yes' if self.clerk_secret else 'No'}")
         
-        # Initialize Clerk client
-        self.clerk_client = None
-        if CLERK_BACKEND_AVAILABLE and self.clerk_secret:
-            try:
-                self.clerk_client = Clerk(bearer_auth=self.clerk_secret)
-                logger.info("✅ Clerk backend client initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize Clerk client: {e}")
-                self.clerk_client = None
+        # Initialize modular components
+        self._init_components()
+    
+    def _init_components(self):
+        """Initialize all modular components"""
+        try:
+            # Initialize database layer using existing connection
+            self.db_operations = DatabaseOperations()
+            
+            # Initialize user management
+            self.user_service = UserService(self.db_operations)
+            self.user_validator = UserValidator()
+            
+            # Initialize session management
+            self.session_service = SessionService(self.user_service)
+            self.session_validator = SessionValidator()
+            
+            # Initialize UI components
+            self.auth_ui = AuthUI(self.authenticate_with_user_id)
+            self.sidebar_ui = SidebarUI(
+                self.authenticate_with_user_id,
+                self.logout,
+                self.get_user
+            )
+            
+            # Initialize Clerk client
+            self.clerk_client = None
+            if CLERK_BACKEND_AVAILABLE and self.clerk_secret:
+                try:
+                    self.clerk_client = Clerk(bearer_auth=self.clerk_secret)
+                    logger.info("✅ Clerk backend client initialized successfully")
+                except Exception as e:
+                    logger.error(f"Failed to initialize Clerk client: {e}")
+                    self.clerk_client = None
+            
+            logger.info("✅ All modular components initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize components: {e}")
+            raise
     
     def is_authenticated(self) -> bool:
         """Check if user is currently authenticated"""
-        return st.session_state.get('authenticated', False)
+        return self.session_service.is_authenticated()
     
     def get_user(self) -> dict:
-        """Get current user data"""
-        return st.session_state.get('user_data', {})
+        """Get current user data with Django user information"""
+        return self.session_service.get_user_data()
     
     def authenticate_with_user_id(self, user_id: str) -> bool:
-        """Authenticate user using Clerk user ID"""
-        if not self.clerk_client:
-            logger.error("Clerk client not available")
+        """Enhanced authentication with modular components"""
+        # Validate input
+        validation_result = self.user_validator.validate_authentication_request(user_id)
+        if not validation_result['valid']:
+            logger.error(f"Authentication validation failed: {validation_result['errors']}")
             return False
         
-        if not user_id or not user_id.strip():
-            logger.error("User ID cannot be empty")
+        if not self.clerk_client:
+            logger.error("Clerk client not available")
             return False
         
         try:
@@ -89,17 +126,7 @@ class SimpleClerkAuth:
                 return False
             
             # Extract token from response
-            if hasattr(res, 'token'):
-                token = res.token
-            elif hasattr(res, 'id'):
-                token = res.id
-            else:
-                # If response is a dict
-                if isinstance(res, dict):
-                    token = res.get('token') or res.get('id')
-                else:
-                    token = str(res)
-            
+            token = self._extract_token_from_response(res)
             if not token:
                 logger.error("No token received from Clerk API")
                 return False
@@ -117,22 +144,54 @@ class SimpleClerkAuth:
                     'name': f'Clerk User {user_id[-4:]}',
                 }
             
-            # Set user as authenticated
-            self.set_authenticated_user({
+            # Create or get Django user using user service
+            django_user = self.user_service.create_or_get_user(user_id, user_info)
+            
+            if not django_user:
+                logger.error("Failed to create/get Django user")
+                return False
+            
+            # Update last login using user service
+            self.user_service.update_user_last_login(django_user['django_user_id'])
+            
+            # Set user as authenticated using session service
+            user_data = {
                 'id': user_id,
                 'email': user_info.get('email', f'user-{user_id[-8:]}@clerk.dev'),
                 'name': user_info.get('name', f'Clerk User {user_id[-4:]}'),
                 'authenticated': True,
                 'token': token,
-                'clerk_user_id': user_id
-            })
+                'clerk_user_id': user_id,
+                'django_user_id': django_user['django_user_id'],
+                'username': django_user['username'],
+                'is_new_user': django_user.get('is_new', False),
+                'created_at': django_user.get('date_joined'),
+                'updated_at': django_user.get('updated_at')
+            }
             
-            logger.info(f"✅ User {user_id} authenticated successfully")
-            return True
+            success = self.session_service.set_authenticated_user(user_data)
+            
+            if success:
+                logger.info(f"✅ User {user_id} authenticated successfully with modular integration")
+                return True
+            else:
+                logger.error("Failed to set authenticated user in session")
+                return False
             
         except Exception as e:
             logger.error(f"Authentication failed for user {user_id}: {str(e)}")
             return False
+    
+    def _extract_token_from_response(self, res) -> str:
+        """Extract token from Clerk API response"""
+        if hasattr(res, 'token'):
+            return res.token
+        elif hasattr(res, 'id'):
+            return res.id
+        elif isinstance(res, dict):
+            return res.get('token') or res.get('id')
+        else:
+            return str(res)
     
     def get_user_info(self, user_id: str) -> dict:
         """Get user information from Clerk"""
@@ -153,135 +212,89 @@ class SimpleClerkAuth:
             return {}
     
     def handle_auth_callback(self) -> bool:
-        """Handle authentication - check session state for pending auth"""
-        try:
-            # Check if there's a pending user ID authentication
-            if 'pending_user_id' in st.session_state:
-                user_id = st.session_state.pending_user_id
-                del st.session_state.pending_user_id
-                
-                logger.info(f"Processing pending authentication for user: {user_id}")
-                return self.authenticate_with_user_id(user_id)
-            
-            # Check if already authenticated
-            return self.is_authenticated()
-            
-        except Exception as e:
-            logger.error(f"Error handling auth callback: {str(e)}")
-            return False
-    
-    
-    def set_authenticated_user(self, user_data: dict):
-        """Set user as authenticated in session state"""
-        st.session_state.authenticated = True
-        st.session_state.user_data = user_data
-        
-        # Also set individual fields for backward compatibility
-        st.session_state.user_email = user_data.get('email')
-        st.session_state.username = user_data.get('name', user_data.get('email', '').split('@')[0])
-        st.session_state.user_id = user_data.get('id')
-        
-        logger.info(f"User authenticated: {user_data.get('email')}")
+        """Handle authentication with session persistence and validation"""
+        # This will automatically try to recover sessions from persistent storage
+        return self.session_service.handle_auth_callback()
     
     def logout(self):
-        """Clear authentication state"""
-        # Clear session state
-        keys_to_clear = ['authenticated', 'user_data', 'user_email', 'username', 'user_id']
-        for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
-        
-        logger.info("User logged out")
-        st.rerun()
+        """Clear authentication state and update database"""
+        success = self.session_service.clear_authentication_state()
+        if success:
+            st.rerun()
     
     def require_auth(self, feature_name: str = "this feature"):
         """Require authentication for a feature - shows user ID input if not authenticated"""
         if not self.is_authenticated():
-            st.warning(f"🔒 Please authenticate to access {feature_name}")
-            
-            col1, col2, col3 = st.columns([1, 3, 1])
-            with col2:
-                st.markdown("### 🔐 Authentication Required")
-                st.info("Enter your Clerk User ID to access this feature")
-                
-                # User ID input (masked for security)
-                user_id_input = st.text_input(
-                    "Clerk User ID",
-                    placeholder="",
-                    help="Enter your Clerk user ID (starts with 'user_')",
-                    key="require_auth_user_id",
-                    type="password"
-                )
-                
-                # Authenticate button
-                if st.button("🚀 Authenticate", type="primary", use_container_width=True, key="require_authenticate"):
-                    if user_id_input and user_id_input.strip():
-                        with st.spinner("Authenticating..."):
-                            if self.authenticate_with_user_id(user_id_input.strip()):
-                                st.success("✅ Authentication successful! Refreshing...")
-                                st.rerun()
-                            else:
-                                st.error("❌ Authentication failed. Please check your User ID.")
-                    else:
-                        st.error("Please enter a valid User ID")
-                
-                st.markdown("---")
-                st.markdown("**User ID format:** `user_xxxxxxxxxxxxxxxxxx`")
-                st.caption("🔒 Input is masked for security")
-            
-            st.stop()
+            return self.auth_ui.render_authentication_form(feature_name)
         return True
     
     def render_auth_status(self):
         """Render authentication status in sidebar"""
-        if self.is_authenticated():
-            user = self.get_user()
-            st.sidebar.markdown("### 👤 Authenticated")
-            st.sidebar.write(f"**{user.get('name', 'User')}**")
-            st.sidebar.write(f"{user.get('email', '')}")
-            
-            # Show Clerk User ID
-            clerk_user_id = user.get('clerk_user_id', user.get('id', ''))
-            if clerk_user_id:
-                st.sidebar.code(f"ID: {clerk_user_id[-8:]}", language="text")
-            
-            if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
-                self.logout()
+        is_authenticated = self.is_authenticated()
+        clerk_available = CLERK_BACKEND_AVAILABLE and self.clerk_client is not None
+        
+        # Debug: Log authentication status
+        logger.info(f"🔍 Auth Status Check: is_authenticated={is_authenticated}")
+        logger.info(f"🔍 Session State: authenticated={st.session_state.get('authenticated', False)}")
+        logger.info(f"🔍 User Data: {st.session_state.get('user_data', {})}")
+        
+        # Check database availability using existing connection
+        try:
+            from database.db_connection import get_connection
+            conn = get_connection()
+            db_available = conn is not None
+            if conn:
+                conn.close()
+        except Exception:
+            db_available = False
+        
+        self.sidebar_ui.render_authentication_sidebar(
+            is_authenticated, clerk_available, db_available
+        )
+    
+    def get_user_data_isolation_filter(self) -> dict:
+        """Get database filter conditions to ensure user data isolation"""
+        user_data = self.get_user()
+        return self.user_service.get_user_data_isolation_filter(user_data)
+    
+    def ensure_user_data_isolation(self, query: str, params: list = None) -> tuple:
+        """Ensure database queries are filtered by current user"""
+        if not self.is_authenticated():
+            raise Exception("User not authenticated")
+        
+        user_filter = self.get_user_data_isolation_filter()
+        django_user_id = user_filter['django_user_id']
+        
+        # Add user filter to query
+        if 'WHERE' in query.upper():
+            # Query already has WHERE clause
+            query += f" AND user_id = %s"
         else:
-            st.sidebar.markdown("### 🔐 Authentication")
-            st.sidebar.write("Enter your Clerk User ID")
-            
-            # User ID input in sidebar (masked for security)
-            user_id_input = st.sidebar.text_input(
-                "Clerk User ID",
-                placeholder="",
-                help="Your Clerk user ID",
-                key="sidebar_user_id",
-                type="password"
-            )
-            
-            # Authenticate button
-            if st.sidebar.button("🚀 Authenticate", use_container_width=True, type="primary"):
-                if user_id_input and user_id_input.strip():
-                    with st.spinner("Authenticating..."):
-                        if self.authenticate_with_user_id(user_id_input.strip()):
-                            st.sidebar.success("✅ Authentication successful!")
-                            st.rerun()
-                        else:
-                            st.sidebar.error("❌ Authentication failed")
-                else:
-                    st.sidebar.error("Please enter User ID")
-            
-            # Help text
-            st.sidebar.markdown("---")
-            st.sidebar.caption("💡 User ID format: user_xxxxxxxxxx")
-            st.sidebar.caption("🔒 Input is masked for security")
-            
-            # Show Clerk backend status
-            if CLERK_BACKEND_AVAILABLE and self.clerk_client:
-                st.sidebar.success("🔗 Clerk API Connected")
-            else:
-                st.sidebar.error("⚠️ Clerk API Unavailable")
+            # Query doesn't have WHERE clause
+            query += f" WHERE user_id = %s"
+        
+        # Add user_id to parameters
+        if params is None:
+            params = [django_user_id]
+        else:
+            params.append(django_user_id)
+        
+        return query, params
+    
+    def get_user_specific_data(self, table_name: str, columns: str = "*", additional_filters: str = "", params: list = None) -> list:
+        """Get user-specific data from any table with automatic user isolation"""
+        if not self.is_authenticated():
+            raise Exception("User not authenticated")
+        
+        user_data = self.get_user()
+        django_user_id = user_data.get('django_user_id')
+        
+        if not django_user_id:
+            raise Exception("User not authenticated - cannot provide data isolation")
+        
+        return self.user_service.get_user_specific_data(
+            table_name, django_user_id, columns, additional_filters, params
+        )
 
 # Global authentication instance
 _auth_instance = None

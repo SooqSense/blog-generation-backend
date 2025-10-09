@@ -24,6 +24,37 @@ except Exception as e:
     AI_TOOLS_ERROR = str(e)
     print(f"⚠️ Upwork Proposal Generator: AI tools import failed - {str(e)}")
 
+# Import database queries separately to avoid import issues
+try:
+    # Try multiple import paths
+    try:
+        from streamlit.database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
+        from django.db import connection
+        DATABASE_AVAILABLE = True
+        print("✅ Upwork Proposal Generator: Database queries imported successfully")
+    except ImportError:
+        # Try relative import
+        import sys
+        from pathlib import Path
+        current_dir = Path(__file__).parent
+        streamlit_dir = current_dir.parent
+        sys.path.insert(0, str(streamlit_dir))
+        
+        from database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
+        from django.db import connection
+        DATABASE_AVAILABLE = True
+        print("✅ Upwork Proposal Generator: Database queries imported successfully (relative path)")
+        
+except Exception as e:
+    DATABASE_AVAILABLE = False
+    print(f"⚠️ Upwork Proposal Generator: Database queries import failed - {str(e)}")
+    # Create a dummy class to avoid errors
+    class UpworkProposalQueries:
+        @staticmethod
+        def save_upwork_proposal(*args, **kwargs):
+            print(f"⚠️ Database not available - proposal not saved: {args[1] if len(args) > 1 else 'Unknown'}")
+            return None
+
 
 class UpworkProposalGeneratorFeature:
     """Upwork Proposal Generator feature for Streamlit UI"""
@@ -31,6 +62,13 @@ class UpworkProposalGeneratorFeature:
     def __init__(self):
         self.ai_tools_available = AI_TOOLS_AVAILABLE
         self.ai_tools_error = AI_TOOLS_ERROR
+        self.database_available = DATABASE_AVAILABLE
+        # Initialize pinecone service
+        try:
+            self.pinecone_service = PineconeService()
+        except Exception as e:
+            self.pinecone_service = None
+            print(f"⚠️ Pinecone service initialization failed: {str(e)}")
     
     def display_feature_header(self):
         """Display the feature header with branding and info."""
@@ -58,11 +96,10 @@ class UpworkProposalGeneratorFeature:
             
             with col2:
                 try:
-                    pinecone_service = PineconeService()
-                    if pinecone_service.is_available():
+                    if self.pinecone_service and self.pinecone_service.is_available():
                         st.success("✅ Knowledge Base Connected")
                         # Get index stats
-                        stats = pinecone_service.get_index_stats()
+                        stats = self.pinecone_service.get_index_stats()
                         if 'total_vectors' in stats:
                             st.info(f"📄 {stats['total_vectors']} documents indexed")
                     else:
@@ -73,6 +110,29 @@ class UpworkProposalGeneratorFeature:
     def create_proposal_form(self):
         """Create the main proposal generation form."""
         st.markdown("### 📝 Project Details")
+        
+        # Template Upload Section
+        st.markdown("#### 📄 Template Upload (Optional)")
+        uploaded_template = st.file_uploader(
+            "Upload your proposal template (PDF, DOCX, TXT, MD)",
+            type=['pdf', 'docx', 'txt', 'md'],
+            help="Upload a template document to fill instead of generating a new proposal",
+            key="template_upload"
+        )
+        
+        # Store template content in session state
+        template_content = None
+        if uploaded_template:
+            template_content = self._extract_template_content(uploaded_template)
+            if template_content:
+                st.success(f"✅ Template uploaded: {uploaded_template.name}")
+                st.session_state['template_content'] = template_content
+                st.session_state['template_name'] = uploaded_template.name
+            else:
+                st.error("❌ Failed to extract content from template")
+                st.session_state['template_content'] = None
+        else:
+            st.session_state['template_content'] = None
         
         with st.form("proposal_form"):
             # Client Information Section
@@ -214,8 +274,438 @@ class UpworkProposalGeneratorFeature:
         
         return urls
     
-    def generate_proposal(self, form_data):
-        """Generate the proposal using the AI agent."""
+    def _extract_template_content(self, uploaded_file):
+        """Extract content from uploaded template file."""
+        try:
+            # Import document extractor
+            from management_app.knowledge_base.service.pdf_extractor.pdf_extractor import DocumentExtractor
+            document_extractor = DocumentExtractor()
+            
+            # Read file content
+            file_content = uploaded_file.read()
+            
+            # Extract content using document extractor
+            extraction_result = document_extractor.extract_content(file_content, uploaded_file.name)
+            
+            if extraction_result['success']:
+                return extraction_result['content']
+            else:
+                st.error(f"❌ Failed to extract content: {extraction_result.get('error', 'Unknown error')}")
+                return None
+                
+        except Exception as e:
+            st.error(f"❌ Error extracting template content: {str(e)}")
+            return None
+    
+    def _convert_user_id_to_numeric(self, user_id):
+        """Convert user ID to numeric format for database storage."""
+        try:
+            # If it's already an integer, return it
+            if isinstance(user_id, int):
+                return user_id
+            
+            # If it's a string, try to convert to int
+            if isinstance(user_id, str):
+                # Handle Clerk user IDs (e.g., "user_333qjM1Dv7YGwzJgZMyUNHPgN30")
+                if user_id.startswith('user_'):
+                    # For Clerk IDs, try to find or create a Django user
+                    django_user_id = self._get_or_create_django_user(user_id)
+                    if django_user_id:
+                        print(f"✅ Clerk user ID {user_id} mapped to Django user ID {django_user_id}")
+                        return django_user_id
+                    else:
+                        print(f"⚠️ Could not create Django user for Clerk ID: {user_id}")
+                        return None
+                
+                # Try to convert string to int
+                try:
+                    return int(user_id)
+                except ValueError:
+                    print(f"⚠️ Cannot convert user ID to integer: {user_id}")
+                    return None
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Error converting user ID: {str(e)}")
+            return None
+    
+    def _get_or_create_django_user(self, clerk_user_id):
+        """Get or create a Django user for a Clerk user ID."""
+        try:
+            if not self.database_available:
+                return None
+                
+            # Try to find existing user by clerk_user_id
+            existing_user_id = self._find_user_by_clerk_id(clerk_user_id)
+            if existing_user_id:
+                return existing_user_id
+            
+            # Create a new Django user for this Clerk ID
+            new_user_id = self._create_django_user_for_clerk(clerk_user_id)
+            return new_user_id
+            
+        except Exception as e:
+            print(f"⚠️ Error getting/creating Django user: {str(e)}")
+            return None
+    
+    def _find_user_by_clerk_id(self, clerk_user_id):
+        """Find existing Django user by Clerk user ID."""
+        try:
+            if not self.database_available:
+                return None
+                
+            # Query the database to find existing user by clerk_user_id
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT id FROM users WHERE clerk_user_id = %s
+                """, [clerk_user_id])
+                
+                result = cursor.fetchone()
+                if result:
+                    return result[0]
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ Error finding user by Clerk ID: {str(e)}")
+            return None
+    
+    def _create_django_user_for_clerk(self, clerk_user_id):
+        """Create a new Django user for a Clerk user ID."""
+        try:
+            # Create a basic user record
+            # This is a simplified approach - you may want to enhance this
+            import hashlib
+            import time
+            
+            # Generate a username from the Clerk ID
+            username = f"clerk_user_{hashlib.md5(clerk_user_id.encode()).hexdigest()[:8]}"
+            email = f"{username}@clerk.local"  # Placeholder email
+            
+            # Use the database service to create user
+            if hasattr(UpworkProposalQueries, 'create_user'):
+                user_id = UpworkProposalQueries.create_user(
+                    username=username,
+                    email=email,
+                    clerk_user_id=clerk_user_id
+                )
+                return user_id
+            else:
+                # Fallback: return None to skip saving
+                print(f"⚠️ Cannot create user - database service doesn't support user creation")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ Error creating Django user: {str(e)}")
+            return None
+    
+    def _generate_template_proposal(self, template_content, client_name, company_name, title, requirements, company_websites, your_name, upwork_profile_link, contact_information, use_knowledge_base):
+        """Generate a filled template using the same logic as regular proposal generation."""
+        try:
+            # Use the same knowledge base search as regular proposals
+            if use_knowledge_base and self.pinecone_service and self.pinecone_service.is_available():
+                # Search for relevant projects using the same logic
+                search_result = self.pinecone_service.search_documents(
+                    query=requirements,
+                    top_k=15,
+                    include_metadata=True
+                )
+                
+                if search_result['success'] and search_result['results']:
+                    # Format projects the same way as regular proposals
+                    formatted_projects = self._format_projects_for_template(search_result['results'])
+                else:
+                    formatted_projects = "No relevant projects found in knowledge base."
+            else:
+                formatted_projects = "Knowledge base search disabled."
+            
+            # Create template filling prompt focused on document structure preservation
+            template_filling_prompt = f"""
+TEMPLATE DOCUMENT TO FILL:
+{template_content}
+
+INFORMATION TO FILL THE TEMPLATE WITH:
+
+CLIENT INFORMATION:
+- Client Name: {client_name or "Not specified"}
+- Company: {company_name or "Not specified"}
+- Company Websites: {', '.join(company_websites) if company_websites else "Not provided"}
+
+PROJECT DETAILS:
+- Title: {title}
+- Requirements: {requirements}
+
+YOUR PERSONAL INFORMATION:
+- Your Name: {your_name or "Not provided"}
+- Upwork Profile: {upwork_profile_link or "Not provided"}
+- Contact Information: {self._format_contact_information(contact_information)}
+
+RELEVANT PROJECTS FROM KNOWLEDGE BASE:
+{formatted_projects}
+
+TASK: Fill out the template document above with the provided information while preserving its exact structure and formatting.
+
+CRITICAL REQUIREMENTS:
+1. PRESERVE EXACT STRUCTURE: Keep the original document's sections, formatting, bullet points, numbering, and layout exactly as they are
+2. FILL PLACEHOLDERS: Replace any placeholder text like [Name], [Company], [Date], [Your Name], etc. with the actual information provided
+3. MAINTAIN ORIGINAL TONE: Keep the same writing style and professional tone as the original template
+4. NO STRUCTURAL CHANGES: Don't add new sections, change the organization, or modify the document's structure
+5. SMART CONTENT INTEGRATION: Use the provided information to enhance the template content where appropriate
+6. URL INCLUSION: When relevant projects are provided with URLs, include them in the format "Project Name: Description. (Link: URL)"
+7. REMOVE ALL PLACEHOLDERS: Don't leave any placeholder text like [Your Name], [Your Email], etc. in the final output
+8. PROFESSIONAL OUTPUT: Ensure the filled document is ready for professional use
+
+The goal is to make the template look exactly like the original but with all the placeholder information filled in with real data.
+"""
+            
+            # Use a specialized template filling system prompt
+            template_system_prompt = """
+You are a professional document template filler. Your job is to fill out document templates while preserving their exact structure, formatting, and layout.
+
+CRITICAL INSTRUCTIONS:
+1. PRESERVE THE EXACT STRUCTURE: Keep the original document's formatting, sections, bullet points, numbering, and layout
+2. FILL PLACEHOLDERS ONLY: Replace placeholder text like [Name], [Company], [Date] with actual information
+3. MAINTAIN ORIGINAL TONE: Keep the same writing style and tone as the original template
+4. NO STRUCTURAL CHANGES: Don't add new sections or change the document's organization
+5. PRESERVE FORMATTING: Keep original spacing, indentation, and visual structure
+6. SMART CONTENT INTEGRATION: Use the provided information to enhance the template content intelligently
+7. URL INCLUSION: When relevant projects are provided with URLs, include them in the format "Project Name: Description. (Link: URL)"
+8. REMOVE PLACEHOLDERS: Don't leave any placeholder text in the final output
+9. PROFESSIONAL OUTPUT: Ensure the filled document is ready for professional use
+
+Your task is to take the template document and fill it with the provided information while keeping it looking exactly like the original template structure.
+"""
+            
+            response = upwork_proposal_agent.openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": template_system_prompt},
+                    {"role": "user", "content": template_filling_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+                top_p=0.9,
+                frequency_penalty=0.3,
+                presence_penalty=0.1
+            )
+            
+            filled_document = response.choices[0].message.content.strip()
+            
+            return {
+                'success': True,
+                'proposal': filled_document,
+                'projects_found': len(search_result.get('results', [])) if use_knowledge_base else 0,
+                'model_used': 'gpt-4o',
+                'token_usage': {
+                    'prompt_tokens': response.usage.prompt_tokens,
+                    'completion_tokens': response.usage.completion_tokens,
+                    'total_tokens': response.usage.total_tokens
+                }
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Template filling failed: {str(e)}",
+                'proposal': None
+            }
+    
+    def _format_projects_for_template(self, projects):
+        """Format projects for template filling with URLs (same as normal proposal generation)."""
+        if not projects:
+            return "No relevant projects found."
+        
+        formatted_projects = []
+        for i, project in enumerate(projects[:3], 1):  # Limit to 3 projects
+            project_data = project
+            file_name = project_data.get('file_name', 'Unknown')
+            
+            # Extract URLs from both content and metadata
+            all_urls = []
+            
+            # Get URLs from content
+            content_urls = project_data.get('urls', [])
+            if content_urls:
+                for url in content_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Get URLs from metadata (both document_links and links fields)
+            metadata_urls = project_data.get('document_links', [])
+            if metadata_urls:
+                for url in metadata_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Also check for links field from search results
+            links_urls = project_data.get('links', [])
+            if links_urls:
+                for url in links_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Extract URLs from content text (like normal proposal generation)
+            chunk_content = project_data.get('chunk_content', '')
+            if chunk_content:
+                extracted_urls = self._extract_urls_from_content(chunk_content)
+                for url_info in extracted_urls:
+                    all_urls.append({
+                        'url': url_info['url'],
+                        'project_name': url_info.get('project_name', file_name)
+                    })
+            
+            project_entry = f"\n**Project {i}: {file_name}**\n"
+            
+            # Use extracted URLs from content and metadata with project names
+            if all_urls:
+                url_list = []
+                for url_info in all_urls[:2]:  # Max 2 URLs per project
+                    # Format: Project Name (exact_url)
+                    url_entry = f"{url_info['project_name']} ({url_info['url']})"
+                    url_list.append(url_entry)
+                project_entry += f"✅ VERIFIED PROJECT URLs: {' | '.join(url_list)}\n"
+                project_entry += f"🔒 MANDATORY: Only use these EXACT URLs in your proposal - no modifications allowed\n"
+                print(f"🔍 Template: Found URLs for {file_name}: {url_list}")
+            else:
+                project_entry += f"❌ Project URLs: No valid project URLs found in this content\n"
+                project_entry += f"🚫 CRITICAL: DO NOT create any clickable links for this project\n"
+                project_entry += f"⚠️ MENTION PROJECT WITHOUT BRACKETS: Write 'at [project name]' NOT '[project name](link)'\n"
+                print(f"🔍 Template: No URLs found for {file_name}")
+            
+            # Add description
+            chunk_content = project_data.get('chunk_content', '')
+            if chunk_content:
+                project_entry += f"Description: {chunk_content[:200]}...\n"
+            
+            formatted_projects.append(project_entry)
+        
+        final_formatted = "\n".join(formatted_projects)
+        print(f"🔍 Template: Final formatted projects:\n{final_formatted}")
+        return final_formatted
+    
+    def _format_contact_information(self, contact_info):
+        """Format contact information for proper display in proposal signature with explicit line breaks."""
+        if not contact_info or not contact_info.strip():
+            return "Email: [Your Email]\nPhone: [Your Phone]"
+        
+        # Clean up the contact information
+        contact_info = contact_info.strip()
+        
+        # If it already has proper line breaks, format them consistently
+        if '\n' in contact_info:
+            lines = []
+            for line in contact_info.split('\n'):
+                line = line.strip()
+                if line:
+                    # Ensure each line has proper format (Email:, Phone:, etc.)
+                    if ':' not in line:
+                        # If no colon, try to detect what kind of contact info this is
+                        if '@' in line:
+                            line = f"Email: {line}"
+                        elif any(char.isdigit() for char in line):
+                            line = f"Phone: {line}"
+                        else:
+                            line = f"Contact: {line}"
+                    lines.append(line)
+            return '\n'.join(lines)
+        
+        # If it's a single line, try to parse and format it properly
+        formatted_lines = []
+        
+        # Look for email patterns
+        import re
+        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        phone_pattern = r'\+?[\d\s\-\(\)]{10,}'
+        
+        emails = re.findall(email_pattern, contact_info)
+        phones = re.findall(phone_pattern, contact_info)
+        
+        # Add emails
+        for email in emails:
+            formatted_lines.append(f"Email: {email}")
+        
+        # Add phones
+        for phone in phones:
+            formatted_lines.append(f"Phone: {phone}")
+        
+        # Look for other patterns like LinkedIn, Website, etc.
+        if 'linkedin.com' in contact_info.lower():
+            linkedin_match = re.search(r'linkedin\.com/in/[\w\-]+', contact_info, re.IGNORECASE)
+            if linkedin_match:
+                formatted_lines.append(f"LinkedIn: {linkedin_match.group()}")
+        
+        # If no patterns found, try to split by common separators
+        if not formatted_lines:
+            # Try splitting by common patterns
+            parts = re.split(r'\s*(?:Email:|Phone:|LinkedIn:|Contact:)\s*', contact_info, flags=re.IGNORECASE)
+            if len(parts) > 1:
+                # Found structured data
+                labels = re.findall(r'(Email:|Phone:|LinkedIn:|Contact:)', contact_info, re.IGNORECASE)
+                for i, (label, part) in enumerate(zip(labels, parts[1:])):
+                    if part.strip():
+                        formatted_lines.append(f"{label.capitalize()} {part.strip()}")
+            else:
+                # Fallback: just use the original contact info with a generic label
+                formatted_lines.append(f"Contact: {contact_info}")
+        
+        return '\n'.join(formatted_lines) if formatted_lines else contact_info
+    
+
+    def _extract_urls_from_content(self, content: str):
+        """Extract URLs from content text (same logic as normal proposal generation)."""
+        import re
+        
+        # URL regex pattern
+        url_pattern = r'https?://(?:[\w-]+\.)+[\w-]+(?:/[^\s<>"\'\[\]{}|\\^`\n]*)?'
+        urls = re.findall(url_pattern, content, re.IGNORECASE)
+        
+        # Excluded patterns (storage URLs, etc.)
+        excluded_patterns = [
+            r'.*\.s3[\w.-]*\.amazonaws\.com',
+            r'.*storage\.googleapis\.com',
+            r'.*blob\.core\.windows\.net',
+            r'.*dropbox\.com.*',
+            r'.*drive\.google\.com.*',
+            r'.*onedrive\.com.*',
+            r'.*example\.(?:com|org|net).*',
+            r'.*localhost.*',
+            r'.*0\.0\.0\.0.*',
+        ]
+        
+        extracted_urls = []
+        for url in urls:
+            # Check if URL should be excluded
+            is_excluded = False
+            for pattern in excluded_patterns:
+                if re.match(pattern, url, re.IGNORECASE):
+                    is_excluded = True
+                    break
+            
+            if not is_excluded:
+                # Clean up URL
+                clean_url = re.sub(r'[.,:;!?)\]}\s]+$', '', url)
+                clean_url = clean_url.lower().strip()
+                
+                if clean_url and len(clean_url) > 10:
+                    # Extract project name from URL
+                    domain = re.sub(r'https?://', '', clean_url).split('/')[0]
+                    project_name = domain.replace('www.', '').replace('.com', '').replace('.ai', '').replace('.io', '')
+                    
+                    extracted_urls.append({
+                        'url': clean_url,
+                        'project_name': project_name
+                    })
+        
+        return extracted_urls
+    
+    def generate_proposal(self, form_data, user_id=None):
+        """Generate the proposal using the AI agent and save to database."""
         if not self.ai_tools_available:
             return {
                 'success': False,
@@ -226,18 +716,84 @@ class UpworkProposalGeneratorFeature:
             # Parse company websites
             company_websites = self.parse_company_websites(form_data['company_websites'])
             
-            # Generate proposal
-            result = upwork_proposal_agent.generate_proposal(
-                client_name=form_data['client_name'].strip(),
-                company_name=form_data['company_name'].strip(),
-                title=form_data['title'].strip(),
-                requirements=form_data['requirements'].strip(),
-                company_websites=company_websites,
-                your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
-                upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
-                contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
-                use_knowledge_base=form_data.get('use_knowledge_base', False)
-            )
+            # Check if template is uploaded
+            template_content = st.session_state.get('template_content')
+            
+            if template_content:
+                print(f"🔍 Using template filling for proposal generation")
+                # Use template filling instead of regular proposal generation
+                result = self._generate_template_proposal(
+                    template_content=template_content,
+                    client_name=form_data['client_name'].strip(),
+                    company_name=form_data['company_name'].strip(),
+                    title=form_data['title'].strip(),
+                    requirements=form_data['requirements'].strip(),
+                    company_websites=company_websites,
+                    your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                    upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                    contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                    use_knowledge_base=form_data.get('use_knowledge_base', False)
+                )
+            else:
+                # Generate regular proposal
+                result = upwork_proposal_agent.generate_proposal(
+                    client_name=form_data['client_name'].strip(),
+                    company_name=form_data['company_name'].strip(),
+                    title=form_data['title'].strip(),
+                    requirements=form_data['requirements'].strip(),
+                    company_websites=company_websites,
+                    your_name=form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                    upwork_profile_link=form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                    contact_information=form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                    use_knowledge_base=form_data.get('use_knowledge_base', False)
+                )
+            
+            # Save to database if generation was successful and user_id is provided
+            if result.get('success') and user_id and self.database_available:
+                try:
+                    # Convert user_id to integer if it's a string (Clerk user ID)
+                    numeric_user_id = self._convert_user_id_to_numeric(user_id)
+                    
+                    if numeric_user_id:
+                        # Prepare proposal data as dictionary
+                        proposal_data = {
+                            'client_name': form_data['client_name'].strip() or None,
+                            'company_name': form_data['company_name'].strip() or None,
+                            'title': form_data['title'].strip(),
+                            'requirements': form_data['requirements'].strip(),
+                            'company_website_links': company_websites,
+                            'your_name': form_data.get('your_name', '').strip() if form_data.get('your_name') else None,
+                            'upwork_profile_link': form_data.get('upwork_profile_link', '').strip() if form_data.get('upwork_profile_link') else None,
+                            'contact_information': form_data.get('contact_information', '').strip() if form_data.get('contact_information') else None,
+                            'proposal_content': result.get('proposal', ''),
+                            'status': 'completed' if result.get('success') else 'failed',
+                            'error_message': result.get('error') if not result.get('success') else None
+                        }
+                        
+                        # Create instance of UpworkProposalQueries
+                        upwork_queries = UpworkProposalQueries()
+                        proposal_id = upwork_queries.save_upwork_proposal(
+                            proposal_data=proposal_data,
+                            user_id=numeric_user_id
+                        )
+                        result['proposal_id'] = proposal_id
+                        result['saved_to_database'] = True
+                        print(f"✅ Proposal saved to database with ID: {proposal_id}")
+                    else:
+                        result['saved_to_database'] = False
+                        result['database_error'] = f"Invalid user ID format: {user_id}"
+                        print(f"⚠️ Invalid user ID format: {user_id}")
+                        
+                except Exception as db_error:
+                    print(f"⚠️ Failed to save proposal to database: {str(db_error)}")
+                    result['saved_to_database'] = False
+                    result['database_error'] = str(db_error)
+            else:
+                result['saved_to_database'] = False
+                if not self.database_available:
+                    result['database_error'] = "Database service not available"
+                elif not user_id:
+                    result['database_error'] = "User ID not provided"
             
             return result
             
@@ -250,7 +806,20 @@ class UpworkProposalGeneratorFeature:
     def display_proposal_result(self, result, form_data, show_metadata=False):
         """Display the generated proposal result."""
         if result.get('success'):
-            st.markdown("### ✅ Generated Proposal")
+            # Check if this is a template result
+            template_content = st.session_state.get('template_content')
+            if template_content:
+                st.markdown("### ✅ Filled Template")
+            else:
+                st.markdown("### ✅ Generated Proposal")
+            
+            # Show database save status
+            if result.get('saved_to_database'):
+                st.success(f"💾 Proposal saved to database (ID: {result.get('proposal_id')})")
+            elif result.get('database_error'):
+                st.warning(f"⚠️ Database save failed: {result.get('database_error')}")
+            else:
+                st.info("ℹ️ Proposal not saved to database (user not authenticated)")
             
             # Display the proposal in a styled container
             proposal_content = result.get('proposal', '')
@@ -269,14 +838,25 @@ class UpworkProposalGeneratorFeature:
             
             with col2:
                 # Download as text file
-                company_name_clean = form_data.get('company_name', 'proposal').replace(' ', '_').lower()
-                st.download_button(
-                    label="📄 Download Proposal",
-                    data=proposal_content,
-                    file_name=f"proposal_{company_name_clean}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
+                template_content = st.session_state.get('template_content')
+                if template_content:
+                    template_name = st.session_state.get('template_name', 'template').replace(' ', '_').lower()
+                    st.download_button(
+                        label="📄 Download Filled Template",
+                        data=proposal_content,
+                        file_name=f"filled_{template_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+                else:
+                    company_name_clean = form_data.get('company_name', 'proposal').replace(' ', '_').lower()
+                    st.download_button(
+                        label="📄 Download Proposal",
+                        data=proposal_content,
+                        file_name=f"proposal_{company_name_clean}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
             
             # Show metadata if requested
             if show_metadata:
@@ -387,7 +967,9 @@ class UpworkProposalGeneratorFeature:
                 else:
                     # Generate proposal
                     with st.spinner("🤖 Generating your winning proposal..."):
-                        result = self.generate_proposal(form_data)
+                        # Get user_id from session state (if available)
+                        user_id = st.session_state.get('user_id', None)
+                        result = self.generate_proposal(form_data, user_id)
                     
                     # Display result
                     self.display_proposal_result(result, form_data, form_data['show_metadata'])
@@ -408,8 +990,8 @@ class UpworkProposalGeneratorFeature:
             
             # Knowledge Base info
             st.markdown("### 📚 Knowledge Base")
-            if pinecone_service.is_available():
-                stats = pinecone_service.get_index_stats()
+            if self.pinecone_service and self.pinecone_service.is_available():
+                stats = self.pinecone_service.get_index_stats()
                 if 'total_vectors' in stats:
                     st.info(f"✅ {stats['total_vectors']} documents available for project matching")
                     st.caption("💡 Uncheck 'Use Knowledge Base' to generate proposals without project examples")

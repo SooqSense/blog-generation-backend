@@ -118,7 +118,7 @@ def import_streamlit_components():
 StreamlitApp, load_custom_css = import_streamlit_components()
 
 def main():
-    """Main application entry point"""
+    """Main application entry point with enhanced authentication"""
     try:
         # Load custom CSS
         load_custom_css()
@@ -127,12 +127,31 @@ def main():
         if 'streamlit_app' not in st.session_state:
             st.session_state.streamlit_app = StreamlitApp()
         
+        # Initialize authentication and handle session persistence
+        app = st.session_state.streamlit_app
+        
+        # Check authentication status and handle session persistence
+        if hasattr(app, 'auth') and app.auth:
+            # Handle authentication callback for session persistence
+            app.auth.handle_auth_callback()
+        
         # Run the app
-        st.session_state.streamlit_app.run()
+        app.run()
         
     except Exception as e:
         st.error(f"Application Error: {str(e)}")
         st.error("Please check your environment setup and try again.")
+        
+        # Show authentication status in error case
+        if 'streamlit_app' in st.session_state:
+            app = st.session_state.streamlit_app
+            if hasattr(app, 'auth') and app.auth:
+                st.info("Authentication system is available")
+                if app.auth.is_authenticated():
+                    user = app.auth.get_user()
+                    st.success(f"User authenticated: {user.get('email', 'Unknown')}")
+                else:
+                    st.warning("User not authenticated")
 
 if __name__ == "__main__":
     main()
