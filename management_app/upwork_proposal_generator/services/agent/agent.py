@@ -504,6 +504,13 @@ class UpworkProposalAgent:
                 if 'links' in chunk and chunk['links']:
                     metadata_links.extend(chunk['links'])
             
+            # Also check for links from the original search results
+            for project in projects:
+                if project.get('file_name') == project_data['file_name']:
+                    project_links = project.get('links', [])
+                    if project_links:
+                        metadata_links.extend(project_links)
+            
             # Combine URLs from content extraction and metadata
             all_urls = project_urls.copy()
             for link in metadata_links:

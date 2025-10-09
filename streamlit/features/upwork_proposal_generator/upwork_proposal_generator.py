@@ -526,10 +526,19 @@ Return the completed document with all placeholders filled in with actual inform
                         'project_name': file_name
                     })
             
-            # Get URLs from metadata
+            # Get URLs from metadata (both document_links and links fields)
             metadata_urls = project_data.get('document_links', [])
             if metadata_urls:
                 for url in metadata_urls:
+                    all_urls.append({
+                        'url': url,
+                        'project_name': file_name
+                    })
+            
+            # Also check for links field from search results
+            links_urls = project_data.get('links', [])
+            if links_urls:
+                for url in links_urls:
                     all_urls.append({
                         'url': url,
                         'project_name': file_name

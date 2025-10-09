@@ -292,7 +292,8 @@ class PineconeService:
                         'chunk_index': match['metadata'].get('chunk_index', 0),
                         'score': match['score'],
                         'file_url': match['metadata']['file_url'],
-                        'username': match['metadata']['username']
+                        'username': match['metadata']['username'],
+                        'links': match['metadata'].get('links', [])  # Include links from metadata
                     }
                     relevant_docs.append(doc_info)
             
