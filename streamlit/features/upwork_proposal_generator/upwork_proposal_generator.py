@@ -419,12 +419,12 @@ class UpworkProposalGeneratorFeature:
             else:
                 formatted_projects = "Knowledge base search disabled."
             
-            # Create template filling prompt using the same structure as normal proposal generation
+            # Create template filling prompt focused on document structure preservation
             template_filling_prompt = f"""
-You are a professional proposal template filler. Fill out the provided template with the given information while maintaining the exact structure and formatting of the original template.
-
-TEMPLATE DOCUMENT:
+TEMPLATE DOCUMENT TO FILL:
 {template_content}
+
+INFORMATION TO FILL THE TEMPLATE WITH:
 
 CLIENT INFORMATION:
 - Client Name: {client_name or "Not specified"}
@@ -435,7 +435,7 @@ PROJECT DETAILS:
 - Title: {title}
 - Requirements: {requirements}
 
-YOUR PERSONAL INFORMATION FOR PROPOSAL SIGNATURE:
+YOUR PERSONAL INFORMATION:
 - Your Name: {your_name or "Not provided"}
 - Upwork Profile: {upwork_profile_link or "Not provided"}
 - Contact Information: {self._format_contact_information(contact_information)}
@@ -443,37 +443,43 @@ YOUR PERSONAL INFORMATION FOR PROPOSAL SIGNATURE:
 RELEVANT PROJECTS FROM KNOWLEDGE BASE:
 {formatted_projects}
 
-IMPORTANT: The projects above include verified URLs. When you write the proposal, include these URLs in the format "Project Name: Description. (Link: URL)" for each relevant project mentioned. NEVER omit URLs when they are available.
+TASK: Fill out the template document above with the provided information while preserving its exact structure and formatting.
 
-INSTRUCTIONS:
-1. Keep the EXACT structure, formatting, and layout of the template
-2. Replace placeholders like [Name], [Company], [Date], etc. with the provided information
-3. Use the relevant projects to enhance the proposal where appropriate
-4. Maintain professional tone and structure
-5. Don't change the template layout - just fill in the blanks
-6. If the template has specific sections, keep them intact
-7. Preserve any existing formatting, bullet points, or structure
-8. Only replace placeholder text, don't add new sections unless the template has placeholders for them
-9. IMPORTANT: Only include actual user information if it's provided. If user information is "Not provided", omit those sections entirely or use professional defaults
-10. Do NOT include placeholder text like [Your Name], [Your Email], [Your Phone], [Your Upwork Profile Link] in the final output
-11. If the template has signature placeholders, replace them with actual information or remove them if no information is provided
-12. Use the same proposal generation logic as the normal proposal generator - follow the template structure but fill it with the same intelligent content
-13. CRITICAL: When showing relevant projects, ALWAYS include the project URLs in the format "Project Name: Description. (Link: URL)" - use the verified URLs provided in the project data
-14. If projects have "✅ VERIFIED PROJECT URLs" - use those exact URLs in the proposal in the format "Project Name: Description. (Link: URL)"
-15. If projects show "❌ Project URLs: No valid project URLs found" - mention projects without making them clickable
-16. EXAMPLE FORMAT: "- Project Overview at 2456: Successfully implemented CRM and platform integration. (Link: https://www.2456.ai/)"
-17. NEVER show projects without URLs when URLs are available - always include them in the format above
+CRITICAL REQUIREMENTS:
+1. PRESERVE EXACT STRUCTURE: Keep the original document's sections, formatting, bullet points, numbering, and layout exactly as they are
+2. FILL PLACEHOLDERS: Replace any placeholder text like [Name], [Company], [Date], [Your Name], etc. with the actual information provided
+3. MAINTAIN ORIGINAL TONE: Keep the same writing style and professional tone as the original template
+4. NO STRUCTURAL CHANGES: Don't add new sections, change the organization, or modify the document's structure
+5. SMART CONTENT INTEGRATION: Use the provided information to enhance the template content where appropriate
+6. URL INCLUSION: When relevant projects are provided with URLs, include them in the format "Project Name: Description. (Link: URL)"
+7. REMOVE ALL PLACEHOLDERS: Don't leave any placeholder text like [Your Name], [Your Email], etc. in the final output
+8. PROFESSIONAL OUTPUT: Ensure the filled document is ready for professional use
 
-Return the completed document with all placeholders filled in with actual information only.
+The goal is to make the template look exactly like the original but with all the placeholder information filled in with real data.
 """
             
-            # Use OpenAI to fill the template with the same system prompt as normal proposal generation
-            from management_app.upwork_proposal_generator.services.prompts.prompts import UPWORK_PROPOSAL_SYSTEM_PROMPT
+            # Use a specialized template filling system prompt
+            template_system_prompt = """
+You are a professional document template filler. Your job is to fill out document templates while preserving their exact structure, formatting, and layout.
+
+CRITICAL INSTRUCTIONS:
+1. PRESERVE THE EXACT STRUCTURE: Keep the original document's formatting, sections, bullet points, numbering, and layout
+2. FILL PLACEHOLDERS ONLY: Replace placeholder text like [Name], [Company], [Date] with actual information
+3. MAINTAIN ORIGINAL TONE: Keep the same writing style and tone as the original template
+4. NO STRUCTURAL CHANGES: Don't add new sections or change the document's organization
+5. PRESERVE FORMATTING: Keep original spacing, indentation, and visual structure
+6. SMART CONTENT INTEGRATION: Use the provided information to enhance the template content intelligently
+7. URL INCLUSION: When relevant projects are provided with URLs, include them in the format "Project Name: Description. (Link: URL)"
+8. REMOVE PLACEHOLDERS: Don't leave any placeholder text in the final output
+9. PROFESSIONAL OUTPUT: Ensure the filled document is ready for professional use
+
+Your task is to take the template document and fill it with the provided information while keeping it looking exactly like the original template structure.
+"""
             
             response = upwork_proposal_agent.openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": UPWORK_PROPOSAL_SYSTEM_PROMPT},
+                    {"role": "system", "content": template_system_prompt},
                     {"role": "user", "content": template_filling_prompt}
                 ],
                 temperature=0.7,
