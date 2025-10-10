@@ -79,15 +79,32 @@ class ChatbotFeature:
         
     def initialize_chat_session(self):
         """Initialize chat session state"""
-        if 'chat_messages' not in st.session_state:
-            st.session_state.chat_messages = []
+        # Get current user ID for user-specific chat
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated. Please log in to use chat.")
+            return
         
+        # Initialize user-specific chat storage
+        if 'user_chat_messages' not in st.session_state:
+            st.session_state.user_chat_messages = {}
+        
+        if 'user_chat_sessions' not in st.session_state:
+            st.session_state.user_chat_sessions = {}
+        
+        if 'user_conversation_context' not in st.session_state:
+            st.session_state.user_conversation_context = {}
+        
+        # Set current user's chat messages
+        if current_user_id not in st.session_state.user_chat_messages:
+            st.session_state.user_chat_messages[current_user_id] = []
+        
+        if current_user_id not in st.session_state.user_conversation_context:
+            st.session_state.user_conversation_context[current_user_id] = []
+        
+        # Set current user's session ID
         if 'chat_session_id' not in st.session_state:
-            user_id = st.session_state.get('user_id', 1)
-            st.session_state.chat_session_id = self.generate_session_id(user_id)
-        
-        if 'conversation_context' not in st.session_state:
-            st.session_state.conversation_context = []
+            st.session_state.chat_session_id = self.generate_session_id(current_user_id)
     
     def generate_session_id(self, user_id):
         """Generate a unique session ID"""
@@ -271,8 +288,10 @@ class ChatbotFeature:
                 
         with col_control2:
             if st.button("🗑️ Clear Chat", help="Clear all messages"):
-                st.session_state.chat_messages = []
-                st.session_state.conversation_context = []
+                current_user_id = st.session_state.get('user_id')
+                if current_user_id:
+                    st.session_state.user_chat_messages[current_user_id] = []
+                    st.session_state.user_conversation_context[current_user_id] = []
                 st.rerun()
                 
         with col_control3:
@@ -315,11 +334,19 @@ class ChatbotFeature:
 
     def display_chat_messages(self):
         """Display chat messages"""
+        # Get current user's messages
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        user_messages = st.session_state.user_chat_messages.get(current_user_id, [])
+        
         # Create a scrollable chat container
         chat_container = st.container()
         
         with chat_container:
-            if not st.session_state.chat_messages:
+            if not user_messages:
                 st.markdown(
                     """
                     <div class="message-bubble" style="display: flex; justify-content: center; margin: 40px 5px;">
@@ -350,7 +377,7 @@ class ChatbotFeature:
                 return
             
             # Display all messages in a chat-like format
-            for i, message in enumerate(st.session_state.chat_messages):
+            for i, message in enumerate(user_messages):
                 message_type = message.get('type', 'user')
                 content = message.get('content', '')
                 timestamp = message.get('timestamp', '')
@@ -456,13 +483,18 @@ class ChatbotFeature:
             return
         
         try:
-            # Add user message
+            # Add user message (user-specific)
+            current_user_id = st.session_state.get('user_id')
+            if not current_user_id:
+                st.error("❌ User not authenticated.")
+                return
+            
             user_message = {
                 'type': 'user',
                 'content': query,
                 'timestamp': datetime.now().strftime('%H:%M:%S')
             }
-            st.session_state.chat_messages.append(user_message)
+            st.session_state.user_chat_messages[current_user_id].append(user_message)
             
             # Show modern typing indicator
             typing_placeholder = st.empty()
@@ -556,21 +588,21 @@ class ChatbotFeature:
                             'enhanced_query': enhanced_query
                         }
                     }
-                    st.session_state.chat_messages.append(assistant_message)
+                    st.session_state.user_chat_messages[current_user_id].append(assistant_message)
                     
-                    # Update conversation context
-                    st.session_state.conversation_context.append({
+                    # Update conversation context (user-specific)
+                    st.session_state.user_conversation_context[current_user_id].append({
                         'role': 'user',
                         'content': query
                     })
-                    st.session_state.conversation_context.append({
+                    st.session_state.user_conversation_context[current_user_id].append({
                         'role': 'assistant',
                         'content': ai_response
                     })
                     
-                    # Keep context manageable
-                    if len(st.session_state.conversation_context) > 20:
-                        st.session_state.conversation_context = st.session_state.conversation_context[-20:]
+                    # Keep context manageable (user-specific)
+                    if len(st.session_state.user_conversation_context[current_user_id]) > 20:
+                        st.session_state.user_conversation_context[current_user_id] = st.session_state.user_conversation_context[current_user_id][-20:]
                     
                     # Clear typing indicator
                     typing_placeholder.empty()
@@ -585,7 +617,7 @@ class ChatbotFeature:
                         'sources': [],
                         'processing_info': {}
                     }
-                    st.session_state.chat_messages.append(error_message)
+                    st.session_state.user_chat_messages[current_user_id].append(error_message)
             
             else:
                 # Chatbot not available
@@ -596,7 +628,7 @@ class ChatbotFeature:
                     'sources': [],
                     'processing_info': {}
                 }
-                st.session_state.chat_messages.append(error_message)
+                st.session_state.user_chat_messages[current_user_id].append(error_message)
             
             # Form will clear automatically, just refresh to show new message
             st.rerun()
@@ -606,16 +638,26 @@ class ChatbotFeature:
     
     def start_new_session(self):
         """Start a new chat session"""
-        user_id = st.session_state.get('user_id', 1)
-        st.session_state.chat_session_id = self.generate_session_id(user_id)
-        st.session_state.chat_messages = []
-        st.session_state.conversation_context = []
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        st.session_state.chat_session_id = self.generate_session_id(current_user_id)
+        st.session_state.user_chat_messages[current_user_id] = []
+        st.session_state.user_conversation_context[current_user_id] = []
         st.success("🆕 New chat session started!")
         st.rerun()
     
     def save_chat_session(self):
         """Save current chat session"""
-        if not st.session_state.chat_messages:
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        user_messages = st.session_state.user_chat_messages.get(current_user_id, [])
+        if not user_messages:
             st.warning("No messages to save!")
             return
         
@@ -625,15 +667,15 @@ class ChatbotFeature:
         
         session_data = {
             'session_id': st.session_state.chat_session_id,
-            'messages': st.session_state.chat_messages.copy(),
+            'messages': user_messages.copy(),
             'saved_at': datetime.now(),
-            'message_count': len(st.session_state.chat_messages),
-            'user_id': st.session_state.get('user_id', 1),
+            'message_count': len(user_messages),
+            'user_id': current_user_id,
             'username': st.session_state.get('username', 'Anonymous')
         }
         
         st.session_state.saved_chat_sessions.append(session_data)
-        st.success(f"💾 Chat session saved! ({len(st.session_state.chat_messages)} messages)")
+        st.success(f"💾 Chat session saved! ({len(user_messages)} messages)")
     
     def render_chat_history(self):
         """Render chat history interface"""
@@ -676,9 +718,11 @@ class ChatbotFeature:
                     
                 with col_session2:
                     if st.button(f"🔄 Load Session", key=f"load_{i}"):
-                        st.session_state.chat_messages = session.get('messages', [])
-                        st.session_state.chat_session_id = session_id
-                        st.success(f"✅ Loaded session: {session_id}")
+                        current_user_id = st.session_state.get('user_id')
+                        if current_user_id:
+                            st.session_state.user_chat_messages[current_user_id] = session.get('messages', [])
+                            st.session_state.chat_session_id = session_id
+                            st.success(f"✅ Loaded session: {session_id}")
                         st.rerun()
                     
                     if st.button(f"🗑️ Delete", key=f"delete_{i}"):
