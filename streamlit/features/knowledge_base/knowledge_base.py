@@ -84,16 +84,6 @@ class KnowledgeBaseFeature:
                 st.error("🚫 Admin Access Required")
                 st.warning("Only administrators can access the Knowledge Base.")
                 st.info("Contact your administrator to request access.")
-                
-                # Show current user info for debugging
-                with st.expander("🔍 Current User Info", expanded=False):
-                    st.json({
-                        "is_admin": is_admin,
-                        "permissions": permissions,
-                        "email": user_data.get('email', 'Unknown'),
-                        "public_metadata": user_data.get('public_metadata', {})
-                    })
-                
                 return False
             
             # Admin access granted

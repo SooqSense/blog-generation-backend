@@ -167,7 +167,7 @@ class AuthUI:
         Args:
             logout_callback: Function to call for logout
         """
-        if st.button("🚪 Logout", type="secondary", use_container_width=True):
+        if st.button("🚪 Logout", type="secondary"):
             logout_callback()
     
     def render_authentication_help(self):

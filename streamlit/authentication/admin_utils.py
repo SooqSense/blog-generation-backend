@@ -84,31 +84,14 @@ def display_user_permissions():
     """
     permissions = get_user_permissions()
     
-    st.markdown("### 🔐 User Permissions")
+    # Simple admin status display
+    if permissions['is_admin']:
+        st.success("✅ ADMIN ACCESS DETECTED!")
+        st.success("✅ Admin Access")
+    else:
+        st.info("👤 Regular User Access")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Clerk Permissions:**")
-        st.code(f"permissions: {permissions['permissions']}")
-        
-        if permissions['is_admin']:
-            st.success("👑 Admin User")
-        else:
-            st.info("👤 Regular User")
-    
-    with col2:
-        st.markdown("**Database Permissions:**")
-        st.code(f"is_staff: {permissions['is_staff']}")
-        st.code(f"is_superuser: {permissions['is_superuser']}")
-        st.code(f"is_active: {permissions['is_active']}")
-    
-    if permissions['public_metadata']:
-        st.markdown("**Public Metadata:**")
-        st.json(permissions['public_metadata'])
-    
-    # Add refresh button to force fresh Clerk API call
-    st.markdown("---")
+    # Keep refresh button for troubleshooting
     if st.button("🔄 Refresh Metadata from Clerk", help="Force fetch fresh metadata from Clerk API"):
         # Clear all session data
         for key in list(st.session_state.keys()):

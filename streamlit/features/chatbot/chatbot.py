@@ -266,17 +266,17 @@ class ChatbotFeature:
         col_control1, col_control2, col_control3 = st.columns(3)
         
         with col_control1:
-            if st.button("🆕 New Session", use_container_width=True, help="Start a new chat session"):
+            if st.button("🆕 New Session", help="Start a new chat session"):
                 self.start_new_session()
                 
         with col_control2:
-            if st.button("🗑️ Clear Chat", use_container_width=True, help="Clear all messages"):
+            if st.button("🗑️ Clear Chat", help="Clear all messages"):
                 st.session_state.chat_messages = []
                 st.session_state.conversation_context = []
                 st.rerun()
                 
         with col_control3:
-            if st.button("💾 Save", use_container_width=True, help="Save this conversation"):
+            if st.button("💾 Save", help="Save this conversation"):
                 self.save_chat_session()
     
     def process_markdown_content(self, content):
@@ -501,17 +501,34 @@ class ChatbotFeature:
             
             # Use enhanced contextual RAG system - let the chatbot handle search internally
             if self.chatbot:
-                response_result = self.chatbot.generate_response(
-                    query=query,
-                    relevant_documents=None,  # Let the enhanced RAG system handle search
-                    conversation_history=st.session_state.conversation_context,
-                    top_k=30,  # Use more documents for better context
-                    user_id=st.session_state.get('user_id', 1)
-                )
+                # Check if the chatbot has the correct method
+                if hasattr(self.chatbot, 'ask'):
+                    response_result = self.chatbot.ask(
+                        query=query,
+                        top_k=30,  # Use more documents for better context
+                        user_id=st.session_state.get('user_id', 1)
+                    )
+                elif hasattr(self.chatbot, 'generate_response'):
+                    response_result = self.chatbot.generate_response(
+                        query=query,
+                        relevant_documents=None,  # Let the enhanced RAG system handle search
+                        conversation_history=st.session_state.conversation_context,
+                        top_k=30,  # Use more documents for better context
+                        user_id=st.session_state.get('user_id', 1)
+                    )
+                else:
+                    response_result = {
+                        'success': False,
+                        'error': 'Chatbot method not found',
+                        'response': 'I apologize, but the chatbot service is not properly configured.',
+                        'sources_used': [],
+                        'processing_time': 0,
+                        'tokens_used': 0
+                    }
                 
                 if response_result.get('success'):
                     ai_response = response_result.get('response', 'I apologize, but I could not generate a response.')
-                    sources_used = response_result.get('sources_used', [])
+                    sources_used = response_result.get('sources', [])  # 'ask' method returns 'sources', not 'sources_used'
                     processing_time = response_result.get('processing_time', 0)
                     tokens_used = response_result.get('tokens_used', 0)
                     model_used = response_result.get('model_used', 'Unknown')
@@ -645,13 +662,13 @@ class ChatbotFeature:
                     st.write(f"**User:** {session.get('username', 'Anonymous')}")
                     
                 with col_session2:
-                    if st.button(f"🔄 Load Session", key=f"load_{i}", use_container_width=True):
+                    if st.button(f"🔄 Load Session", key=f"load_{i}"):
                         st.session_state.chat_messages = session.get('messages', [])
                         st.session_state.chat_session_id = session_id
                         st.success(f"✅ Loaded session: {session_id}")
                         st.rerun()
                     
-                    if st.button(f"🗑️ Delete", key=f"delete_{i}", use_container_width=True):
+                    if st.button(f"🗑️ Delete", key=f"delete_{i}"):
                         st.session_state.saved_chat_sessions.remove(session)
                         st.success("🗑️ Session deleted")
                         st.rerun()
@@ -670,7 +687,7 @@ class ChatbotFeature:
                         st.caption(f"... and {len(messages) - 3} more messages")
         
         # Clear all history
-        if st.button("🗑️ Clear All History", type="secondary", use_container_width=True):
+        if st.button("🗑️ Clear All History", type="secondary"):
             st.session_state.saved_chat_sessions = []
             st.success("🗑️ All chat history cleared!")
             st.rerun()
@@ -825,7 +842,7 @@ class ChatbotFeature:
                 rate_limit = st.slider("Rate Limit (requests/min)", 10, 100, 30)
         
         # Save settings
-        if st.button("💾 Save Chat Settings", type="primary", use_container_width=True):
+        if st.button("💾 Save Chat Settings", type="primary"):
             settings = {
                 'model_temperature': model_temperature,
                 'max_tokens': max_tokens,

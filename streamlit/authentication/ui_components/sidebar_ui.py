@@ -58,7 +58,7 @@ class SidebarUI:
                 pass
         
         # Logout button
-        if st.sidebar.button("🚪 Logout", use_container_width=True, type="secondary"):
+        if st.sidebar.button("🚪 Logout", type="secondary"):
             self.logout_callback()
     
     def render_unauthenticated_sidebar(self, clerk_available: bool, db_available: bool):
