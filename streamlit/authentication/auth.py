@@ -134,7 +134,9 @@ class SimpleClerkAuth:
             logger.info(f"✅ Sign-in token generated successfully")
             
             # Get user details from Clerk
+            logger.info(f"🔍 Getting user info for: {user_id}")
             user_info = self.get_user_info(user_id)
+            logger.info(f"📊 User info received: {user_info}")
             
             if not user_info:
                 logger.warning("Could not retrieve user info, using basic data")
@@ -166,7 +168,11 @@ class SimpleClerkAuth:
                 'username': django_user['username'],
                 'is_new_user': django_user.get('is_new', False),
                 'created_at': django_user.get('date_joined'),
-                'updated_at': django_user.get('updated_at')
+                'updated_at': django_user.get('updated_at'),
+                # Clerk permissions from metadata
+                'permissions': user_info.get('permissions', 'user'),
+                'is_admin': user_info.get('is_admin', False),
+                'public_metadata': user_info.get('public_metadata', {})
             }
             
             success = self.session_service.set_authenticated_user(user_data)
@@ -194,22 +200,84 @@ class SimpleClerkAuth:
             return str(res)
     
     def get_user_info(self, user_id: str) -> dict:
-        """Get user information from Clerk"""
+        """Get user information from Clerk including metadata"""
         if not self.clerk_client:
-            return {}
-        
-        try:
-            # This would typically use the users API to get user details
-            # For now, we'll return basic info based on user_id
+            logger.warning("Clerk client not available")
             return {
                 'id': user_id,
                 'email': f'user-{user_id[-8:]}@clerk.dev',
                 'name': f'Clerk User {user_id[-4:]}',
-                'user_id': user_id
+                'user_id': user_id,
+                'permissions': 'user',
+                'is_admin': False,
+                'public_metadata': {}
             }
+        
+        try:
+            logger.info(f"🔍 Fetching user info from Clerk API for: {user_id}")
+            
+            # Get user details from Clerk API
+            user_details = self.clerk_client.users.get(user_id=user_id)
+            
+            if user_details:
+                logger.info(f"✅ Clerk API response received: {type(user_details)}")
+                
+                # Extract metadata for permissions
+                public_metadata = getattr(user_details, 'public_metadata', {})
+                permissions = public_metadata.get('permissions', 'user')
+                
+                logger.info(f"📊 Public metadata: {public_metadata}")
+                logger.info(f"🔐 Permissions: {permissions}")
+                
+                # Get email from user details
+                email_addresses = getattr(user_details, 'email_addresses', [])
+                if email_addresses and len(email_addresses) > 0:
+                    email_obj = email_addresses[0]
+                    email = getattr(email_obj, 'email_address', f'user-{user_id[-8:]}@clerk.dev')
+                else:
+                    email = f'user-{user_id[-8:]}@clerk.dev'
+                
+                # Get name from user details
+                first_name = getattr(user_details, 'first_name', '')
+                last_name = getattr(user_details, 'last_name', '')
+                name = f"{first_name} {last_name}".strip() or f'Clerk User {user_id[-4:]}'
+                
+                user_info = {
+                    'id': user_id,
+                    'email': email,
+                    'name': name,
+                    'user_id': user_id,
+                    'permissions': permissions,
+                    'is_admin': permissions == 'admin',
+                    'public_metadata': public_metadata
+                }
+                
+                logger.info(f"✅ User info extracted: {user_info}")
+                return user_info
+            else:
+                logger.warning("❌ Clerk API returned None")
+                # Fallback to basic info if API call fails
+                return {
+                    'id': user_id,
+                    'email': f'user-{user_id[-8:]}@clerk.dev',
+                    'name': f'Clerk User {user_id[-4:]}',
+                    'user_id': user_id,
+                    'permissions': 'user',
+                    'is_admin': False,
+                    'public_metadata': {}
+                }
         except Exception as e:
-            logger.error(f"Failed to get user info for {user_id}: {str(e)}")
-            return {}
+            logger.error(f"❌ Failed to get user info for {user_id}: {str(e)}")
+            # Fallback to basic info
+            return {
+                'id': user_id,
+                'email': f'user-{user_id[-8:]}@clerk.dev',
+                'name': f'Clerk User {user_id[-4:]}',
+                'user_id': user_id,
+                'permissions': 'user',
+                'is_admin': False,
+                'public_metadata': {}
+            }
     
     def handle_auth_callback(self) -> bool:
         """Handle authentication with session persistence and validation"""

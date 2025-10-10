@@ -409,6 +409,41 @@ class StreamlitApp:
         else:
             st.warning("⚠️ Database connection not available")
         
+        # ✅ Test Admin Permissions
+        if hasattr(self, 'auth') and self.auth and self.auth.is_authenticated():
+            try:
+                from authentication.admin_utils import is_user_admin, get_user_permissions, display_admin_badge
+                
+                st.markdown("### 🔐 Admin Permissions Test")
+                
+                # Debug: Show current user data
+                user_data = st.session_state.get('user_data', {})
+                st.markdown("**Debug - Current User Data:**")
+                st.json(user_data)
+                
+                # Check specific fields
+                st.markdown("**Debug - Permission Fields:**")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.text(f"permissions: {user_data.get('permissions', 'NOT_FOUND')}")
+                with col2:
+                    st.text(f"is_admin: {user_data.get('is_admin', 'NOT_FOUND')}")
+                with col3:
+                    st.text(f"public_metadata: {user_data.get('public_metadata', 'NOT_FOUND')}")
+                
+                if is_user_admin():
+                    st.success("👑 ADMIN ACCESS DETECTED!")
+                    display_admin_badge()
+                    
+                    # Show admin permissions
+                    permissions = get_user_permissions()
+                    st.json(permissions)
+                else:
+                    st.info("👤 Regular user access")
+                    
+            except Exception as e:
+                st.error(f"❌ Admin test failed: {e}")
+        
         # Feature cards
         col1, col2 = st.columns(2)
         

@@ -105,6 +105,7 @@ class DatabaseOperations:
             
             if result:
                 return {
+                    'id': result[0],
                     'django_user_id': result[0],
                     'username': result[1],
                     'email': result[2],
