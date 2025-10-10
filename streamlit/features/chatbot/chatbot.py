@@ -639,15 +639,28 @@ class ChatbotFeature:
         """Render chat history interface"""
         st.markdown("### 📜 Chat History")
         
+        # Get current user ID to filter sessions
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated. Please log in to view chat history.")
+            return
+        
         if 'saved_chat_sessions' not in st.session_state or not st.session_state.saved_chat_sessions:
             st.info("No saved chat sessions. Your conversations will appear here after you save them.")
             return
         
-        # Show saved sessions
-        sessions = st.session_state.saved_chat_sessions
-        st.markdown(f"#### 💾 Saved Sessions ({len(sessions)})")
+        # Filter sessions to show only current user's sessions
+        all_sessions = st.session_state.saved_chat_sessions
+        user_sessions = [session for session in all_sessions if session.get('user_id') == current_user_id]
         
-        for i, session in enumerate(reversed(sessions), 1):
+        if not user_sessions:
+            st.info("No saved chat sessions. Your conversations will appear here after you save them.")
+            return
+        
+        # Show only user's sessions
+        st.markdown(f"#### 💾 Your Saved Sessions ({len(user_sessions)})")
+        
+        for i, session in enumerate(reversed(user_sessions), 1):
             session_id = session.get('session_id', f'Session {i}')
             message_count = session.get('message_count', 0)
             saved_at = session.get('saved_at', datetime.now())
@@ -669,8 +682,12 @@ class ChatbotFeature:
                         st.rerun()
                     
                     if st.button(f"🗑️ Delete", key=f"delete_{i}"):
-                        st.session_state.saved_chat_sessions.remove(session)
-                        st.success("🗑️ Session deleted")
+                        # Only delete if it's the current user's session
+                        if session.get('user_id') == current_user_id:
+                            st.session_state.saved_chat_sessions.remove(session)
+                            st.success("🗑️ Session deleted")
+                        else:
+                            st.error("❌ You can only delete your own sessions")
                         st.rerun()
                 
                 # Show message preview
@@ -686,10 +703,14 @@ class ChatbotFeature:
                     if len(messages) > 3:
                         st.caption(f"... and {len(messages) - 3} more messages")
         
-        # Clear all history
+        # Clear all history for current user only
         if st.button("🗑️ Clear All History", type="secondary"):
-            st.session_state.saved_chat_sessions = []
-            st.success("🗑️ All chat history cleared!")
+            # Remove only current user's sessions
+            st.session_state.saved_chat_sessions = [
+                session for session in st.session_state.saved_chat_sessions 
+                if session.get('user_id') != current_user_id
+            ]
+            st.success("🗑️ All your chat history cleared!")
             st.rerun()
     
     def render_chat_settings(self):
