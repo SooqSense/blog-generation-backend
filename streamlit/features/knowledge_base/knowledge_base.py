@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 import io
 
+# Authentication will be checked via session state
+
 # Add the project root to the path for imports
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -54,16 +56,62 @@ class KnowledgeBaseFeature:
         try:
             self.document_extractor = document_extractor
             self.pinecone_service = PineconeService()
+            # Initialize pdf_service as None for now (can be added later if needed)
+            self.pdf_service = None
         except Exception as e:
             self.document_extractor = None
             self.pinecone_service = None
+            self.pdf_service = None
             if AI_TOOLS_AVAILABLE:
                 self.ai_tools_error = str(e)
+    
+    def _check_admin_permissions(self):
+        """Check if user has admin permissions for Knowledge Base access"""
+        try:
+            # Get current user data from session
+            user_data = st.session_state.get('user_data', {})
+            
+            if not user_data:
+                st.error("🔒 Not authenticated")
+                st.info("Please log in to access the Knowledge Base.")
+                return False
+            
+            # Check if user is admin
+            is_admin = user_data.get('is_admin', False)
+            permissions = user_data.get('permissions', 'user')
+            
+            if not is_admin and permissions != 'admin':
+                st.error("🚫 Admin Access Required")
+                st.warning("Only administrators can access the Knowledge Base.")
+                st.info("Contact your administrator to request access.")
+                
+                # Show current user info for debugging
+                with st.expander("🔍 Current User Info", expanded=False):
+                    st.json({
+                        "is_admin": is_admin,
+                        "permissions": permissions,
+                        "email": user_data.get('email', 'Unknown'),
+                        "public_metadata": user_data.get('public_metadata', {})
+                    })
+                
+                return False
+            
+            # Admin access granted
+            st.success("✅ Admin access confirmed")
+            return True
+            
+        except Exception as e:
+            st.error(f"🔒 Permission check failed: {str(e)}")
+            return False
         
     def render(self):
         """Render the knowledge base interface"""
         st.markdown("# 📚 Knowledge Base")
         st.markdown("Upload and manage your project documents, PDFs, and files to build a searchable knowledge base.")
+        
+        # Check admin permissions first
+        if not self._check_admin_permissions():
+            return
         
         # Check if AI tools are available
         if not self.ai_tools_available:
@@ -556,14 +604,14 @@ class KnowledgeBaseFeature:
         
         with col_storage1:
             st.markdown("**S3 Configuration:**")
-            if self.pdf_service and self.pdf_service.is_s3_available():
+            if self.pdf_service and hasattr(self.pdf_service, 'is_s3_available') and self.pdf_service.is_s3_available():
                 st.success("✅ S3 Connected")
                 st.write("**Bucket:** Available")
                 st.write("**Region:** Configured")
             else:
-                st.error("❌ S3 Not Connected")
-                st.write("Check environment variables:")
-                st.code("AWS_ACCESS_KEY_ID\nAWS_SECRET_ACCESS_KEY\nAWS_S3_BUCKET_NAME")
+                st.warning("⚠️ S3 Service Not Available")
+                st.write("PDF service is not configured. S3 functionality is disabled.")
+                st.write("To enable S3, configure the PDF service in the knowledge base settings.")
                 
         with col_storage2:
             st.markdown("**Vector Database:**")
