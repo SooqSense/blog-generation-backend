@@ -3,7 +3,7 @@ FROM python:3.12.8-slim AS base
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=config.settings
+ENV DJANGO_SETTINGS_MODULE=management_app.config.settings
 
 # Set work directory
 WORKDIR /app
@@ -54,7 +54,7 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
 
 # Streamlit stage for Cloud Run deployment
 FROM base AS streamlit
@@ -119,4 +119,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 

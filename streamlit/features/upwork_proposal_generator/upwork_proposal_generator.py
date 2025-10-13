@@ -31,7 +31,14 @@ try:
     
     # Setup Django if not already configured
     if not settings.configured:
+        # Set the correct Django settings module path
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'management_app.config.settings')
+        # Add the project root to Python path
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
         django.setup()
     
     from django.db import connection

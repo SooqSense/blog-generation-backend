@@ -2,7 +2,7 @@ import os
 from celery import Celery
 
 # Set the default Django settings module for the 'celery' program.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'management_app.config.settings')
 
 # Initialize Django before creating Celery app (with comprehensive safety check)
 import django
