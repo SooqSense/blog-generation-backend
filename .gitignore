@@ -264,7 +264,7 @@ temporary/
 *.db-journal
 *.db-wal
 *.db-shm
-database/
+# database/  # Commented out - we need the database/ folder for connection module
 Database/
 data/
 Data/

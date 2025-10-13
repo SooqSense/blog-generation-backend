@@ -2,26 +2,56 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-
 # Add the project root to the path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables from .env file
-env_path = project_root / '.env'
-load_dotenv(env_path)
-print(f"🔧 Streamlit base loading environment from: {env_path}")
+# Note: Environment variables are loaded via Django settings, not dotenv
+print(f"🔧 Streamlit base using Django settings for environment variables")
 
-# ✅ Import DB connection
+# ✅ Database connection using Django settings
+DB_CONNECTION_AVAILABLE = False
+get_connection = None
+
+def _get_db_connection():
+    """Get database connection using Django's connection"""
+    try:
+        from django.db import connection
+        from django.conf import settings
+        
+        # Validate Django database configuration
+        db_config = settings.DATABASES['default']
+        db_host = db_config.get('HOST')
+        db_name = db_config.get('NAME')
+        db_user = db_config.get('USER')
+        db_password = db_config.get('PASSWORD')
+        
+        if not all([db_host, db_name, db_user, db_password]):
+            return None
+        
+        # Test Django's database connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            if result:
+                return connection
+            else:
+                return None
+    except Exception as e:
+        print(f"⚠️ Database connection not available: {str(e)}")
+        return None
+
+# Try to get connection
 try:
-    from database.db_connection import get_connection
-    DB_CONNECTION_AVAILABLE = True
-    print("✅ Database connection module imported successfully")
-except ImportError as e:
+    conn = _get_db_connection()
+    if conn:
+        DB_CONNECTION_AVAILABLE = True
+        get_connection = _get_db_connection
+        print("✅ Database connection available")
+    else:
+        print("⚠️ Database connection not available")
+except Exception as e:
     print(f"⚠️ Database connection not available: {str(e)}")
-    DB_CONNECTION_AVAILABLE = False
-    get_connection = None
 
 # Import Simple Clerk authentication with fallback strategies
 AUTH_AVAILABLE = False

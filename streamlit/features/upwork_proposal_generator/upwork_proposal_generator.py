@@ -24,35 +24,90 @@ except Exception as e:
     AI_TOOLS_ERROR = str(e)
     print(f"⚠️ Upwork Proposal Generator: AI tools import failed - {str(e)}")
 
-# Import database queries separately to avoid import issues
+# Import database connection using Django settings
 try:
-    # Try multiple import paths
-    try:
-        from streamlit.database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
-        from django.db import connection
+    import django
+    from django.conf import settings
+    
+    # Setup Django if not already configured
+    if not settings.configured:
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'management_app.config.settings')
+        django.setup()
+    
+    from django.db import connection
+    
+    # Check if database configuration is available
+    db_config = settings.DATABASES['default']
+    db_host = db_config.get('HOST')
+    db_name = db_config.get('NAME')
+    db_user = db_config.get('USER')
+    db_password = db_config.get('PASSWORD')
+    
+    if all([db_host, db_name, db_user, db_password]):
         DATABASE_AVAILABLE = True
-        print("✅ Upwork Proposal Generator: Database queries imported successfully")
-    except ImportError:
-        # Try relative import
-        import sys
-        from pathlib import Path
-        current_dir = Path(__file__).parent
-        streamlit_dir = current_dir.parent
-        sys.path.insert(0, str(streamlit_dir))
-        
-        from database.db_queeries.upwork_proposal_queries import UpworkProposalQueries
-        from django.db import connection
-        DATABASE_AVAILABLE = True
-        print("✅ Upwork Proposal Generator: Database queries imported successfully (relative path)")
+        print("✅ Upwork Proposal Generator: Database connection available via Django settings")
+    else:
+        DATABASE_AVAILABLE = False
+        print("⚠️ Upwork Proposal Generator: Database configuration incomplete")
         
 except Exception as e:
     DATABASE_AVAILABLE = False
-    print(f"⚠️ Upwork Proposal Generator: Database queries import failed - {str(e)}")
-    # Create a dummy class to avoid errors
-    class UpworkProposalQueries:
-        @staticmethod
-        def save_upwork_proposal(*args, **kwargs):
-            print(f"⚠️ Database not available - proposal not saved: {args[1] if len(args) > 1 else 'Unknown'}")
+    print(f"⚠️ Upwork Proposal Generator: Database connection failed - {str(e)}")
+
+# Create a simple database operations class using Django ORM
+class UpworkProposalQueries:
+    """Database operations for Upwork proposals using Django ORM"""
+    
+    def __init__(self):
+        self.connection = connection
+    
+    def save_upwork_proposal(self, proposal_data, user_id=None):
+        """Save upwork proposal to database using raw SQL with Django connection"""
+        if not DATABASE_AVAILABLE:
+            print("⚠️ Database not available - proposal not saved")
+            return None
+        
+        try:
+            # Use raw SQL with Django connection to avoid ORM issues
+            import json
+            from datetime import datetime
+            
+            with self.connection.cursor() as cursor:
+                # Insert the proposal using raw SQL
+                cursor.execute("""
+                    INSERT INTO upwork_proposals 
+                    (client_name, company_name, title, requirements, company_website_links, 
+                     proposal_content, contact_information, upwork_profile_link, your_name, 
+                     user_id, status, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    proposal_data.get('client_name', ''),
+                    proposal_data.get('company_name', ''),
+                    proposal_data.get('title', ''),
+                    proposal_data.get('requirements', ''),
+                    json.dumps(proposal_data.get('company_website_links', [])),
+                    proposal_data.get('proposal_content', ''),
+                    proposal_data.get('contact_information', ''),
+                    proposal_data.get('upwork_profile_link', ''),
+                    proposal_data.get('your_name', ''),
+                    user_id,
+                    'generated',
+                    datetime.now(),
+                    datetime.now()
+                ))
+                
+                result = cursor.fetchone()
+                if result:
+                    proposal_id = result[0]
+                    print(f"✅ Upwork proposal saved with ID: {proposal_id}")
+                    return proposal_id
+                else:
+                    print("❌ No ID returned from database insert")
+                    return None
+            
+        except Exception as e:
+            print(f"❌ Failed to save upwork proposal: {e}")
             return None
 
 
