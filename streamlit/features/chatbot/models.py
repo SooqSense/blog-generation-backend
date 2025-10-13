@@ -2,11 +2,9 @@
 Chat database models for persistent chat storage
 """
 from django.db import models
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.utils import timezone
 import json
-
-User = get_user_model()
 
 
 class ChatSession(models.Model):
