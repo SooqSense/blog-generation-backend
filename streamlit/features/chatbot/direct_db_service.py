@@ -22,12 +22,30 @@ class DirectDBChatService:
     def connect(self):
         """Connect to PostgreSQL database"""
         try:
+            # Get environment variables - NO FALLBACKS for production safety
+            db_host = os.getenv('DB_HOST')
+            db_port = os.getenv('DB_PORT')
+            db_name = os.getenv('DB_NAME')
+            db_user = os.getenv('DB_USER')
+            db_password = os.getenv('DB_PASSWORD')
+            
+            # Validate all required environment variables
+            if not all([db_host, db_port, db_name, db_user, db_password]):
+                missing_vars = []
+                if not db_host: missing_vars.append('DB_HOST')
+                if not db_port: missing_vars.append('DB_PORT')
+                if not db_name: missing_vars.append('DB_NAME')
+                if not db_user: missing_vars.append('DB_USER')
+                if not db_password: missing_vars.append('DB_PASSWORD')
+                
+                raise Exception(f"Missing required environment variables: {', '.join(missing_vars)}")
+            
             self.connection = psycopg2.connect(
-                host=os.getenv('DB_HOST', 'localhost'),
-                port=os.getenv('DB_PORT', '5432'),
-                database=os.getenv('DB_NAME', 'ai_blog_generation'),
-                user =os.getenv('DB_USER', 'postgres'),
-                password=os.getenv('DB_PASSWORD', 'postgres')
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_password
             )
             print("✅ Direct database connection established")
         except Exception as e:
