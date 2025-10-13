@@ -49,9 +49,11 @@ try:
         get_connection = _get_db_connection
         print("✅ Database connection available")
     else:
-        print("⚠️ Database connection not available")
+        print("⚠️ Database connection not available - check environment variables")
+        print("💡 Required: DB_HOST, DB_NAME, DB_USER, DB_PASSWORD")
 except Exception as e:
     print(f"⚠️ Database connection not available: {str(e)}")
+    print("💡 Check your database environment variables in production")
 
 # Import Simple Clerk authentication with fallback strategies
 AUTH_AVAILABLE = False
@@ -313,7 +315,7 @@ class StreamlitApp:
                 print(f"❌ Database connection failed: {e}")
                 self.db_connection = None
         else:
-            print("⚠️ Database connection module not available")
+            print("⚠️ Database connection not available - using fallback mode")
             self.db_connection = None
 
     def execute_db_query(self, query, params=None, fetch_one=False, fetch_all=False):
