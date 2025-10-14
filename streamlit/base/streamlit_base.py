@@ -441,6 +441,7 @@ class StreamlitApp:
         else:
             st.warning("⚠️ Database connection not available")
         
+        
         # Feature cards
         col1, col2 = st.columns(2)
         

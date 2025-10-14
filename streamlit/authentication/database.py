@@ -127,29 +127,31 @@ class DatabaseOperations:
             return None
         
         try:
-            with self.connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT id, username, email, clerk_user_id, is_active, is_staff, is_superuser, 
-                           created_at, last_login
-                    FROM users 
-                    WHERE id = %s
-                """, (user_id,))
-                
-                result = cursor.fetchone()
-                
-                if result:
-                    return {
-                        'django_user_id': result[0],
-                        'username': result[1],
-                        'email': result[2],
-                        'clerk_user_id': result[3],
-                        'is_active': result[4],
-                        'is_staff': result[5],
-                        'is_superuser': result[6],
-                        'date_joined': result[7],
-                        'last_login': result[8]
-                    }
-                return None
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT id, username, email, clerk_user_id, is_active, is_staff, is_superuser, 
+                       created_at, last_login
+                FROM users 
+                WHERE id = %s
+            """, (user_id,))
+            
+            result = cursor.fetchone()
+            cursor.close()
+            
+            if result:
+                return {
+                    'id': result[0],
+                    'django_user_id': result[0],
+                    'username': result[1],
+                    'email': result[2],
+                    'clerk_user_id': result[3],
+                    'is_active': result[4],
+                    'is_staff': result[5],
+                    'is_superuser': result[6],
+                    'date_joined': result[7],
+                    'last_login': result[8]
+                }
+            return None
         except Exception as e:
             print(f"❌ Error getting user by ID: {e}")
             return None

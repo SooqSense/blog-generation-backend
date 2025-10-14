@@ -8,6 +8,39 @@ import uuid
 from datetime import datetime
 from typing import List, Dict, Any
 
+# Import chat service for database operations - DATABASE ONLY
+CHAT_SERVICE_AVAILABLE = False
+ChatService = None
+
+try:
+    # Try direct database service first (more reliable)
+    from .direct_db_service import DirectDBChatService
+    ChatService = DirectDBChatService
+    CHAT_SERVICE_AVAILABLE = True
+    print("✅ Direct database chat service initialized")
+except Exception as e:
+    print(f"❌ Direct database service failed: {e}")
+    
+    # Fallback to Django service
+    try:
+        import sys
+        import os
+        sys.path.append('/Users/softwareengineer/Desktop/blog /blog-generation-backend/management_app')
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
+        
+        import django
+        if not django.apps.apps.ready:
+            django.setup()
+        
+        from chatbot.chat_service import DjangoChatService
+        ChatService = DjangoChatService
+        CHAT_SERVICE_AVAILABLE = True
+        print("✅ Django chat service initialized")
+    except Exception as e2:
+        CHAT_SERVICE_AVAILABLE = False
+        print(f"❌ Django service also failed: {e2}")
+        print("❌ Chat will not work without database!")
+
 # Add the project root to the path for imports
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -74,20 +107,49 @@ class ChatbotFeature:
             if AI_TOOLS_AVAILABLE:
                 self.ai_tools_error = str(e)
         
+        # Initialize chat service for database operations
+        self.chat_service = None
+        if CHAT_SERVICE_AVAILABLE and ChatService:
+            try:
+                self.chat_service = ChatService()
+                print("✅ Chat service initialized successfully")
+            except Exception as e:
+                print(f"❌ Failed to initialize chat service: {e}")
+                self.chat_service = None
+        else:
+            print("❌ Chat service not available - Django setup failed")
+        
         # Initialize session state for chat
         self.initialize_chat_session()
         
     def initialize_chat_session(self):
         """Initialize chat session state"""
-        if 'chat_messages' not in st.session_state:
-            st.session_state.chat_messages = []
+        # Get current user ID for user-specific chat
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated. Please log in to use chat.")
+            return
         
+        # Initialize user-specific chat storage
+        if 'user_chat_messages' not in st.session_state:
+            st.session_state.user_chat_messages = {}
+        
+        if 'user_chat_sessions' not in st.session_state:
+            st.session_state.user_chat_sessions = {}
+        
+        if 'user_conversation_context' not in st.session_state:
+            st.session_state.user_conversation_context = {}
+        
+        # Set current user's chat messages
+        if current_user_id not in st.session_state.user_chat_messages:
+            st.session_state.user_chat_messages[current_user_id] = []
+        
+        if current_user_id not in st.session_state.user_conversation_context:
+            st.session_state.user_conversation_context[current_user_id] = []
+        
+        # Set current user's session ID
         if 'chat_session_id' not in st.session_state:
-            user_id = st.session_state.get('user_id', 1)
-            st.session_state.chat_session_id = self.generate_session_id(user_id)
-        
-        if 'conversation_context' not in st.session_state:
-            st.session_state.conversation_context = []
+            st.session_state.chat_session_id = self.generate_session_id(current_user_id)
     
     def generate_session_id(self, user_id):
         """Generate a unique session ID"""
@@ -266,17 +328,19 @@ class ChatbotFeature:
         col_control1, col_control2, col_control3 = st.columns(3)
         
         with col_control1:
-            if st.button("🆕 New Session", use_container_width=True, help="Start a new chat session"):
+            if st.button("🆕 New Session", help="Start a new chat session"):
                 self.start_new_session()
                 
         with col_control2:
-            if st.button("🗑️ Clear Chat", use_container_width=True, help="Clear all messages"):
-                st.session_state.chat_messages = []
-                st.session_state.conversation_context = []
+            if st.button("🗑️ Clear Chat", help="Clear all messages"):
+                current_user_id = st.session_state.get('user_id')
+                if current_user_id:
+                    st.session_state.user_chat_messages[current_user_id] = []
+                    st.session_state.user_conversation_context[current_user_id] = []
                 st.rerun()
                 
         with col_control3:
-            if st.button("💾 Save", use_container_width=True, help="Save this conversation"):
+            if st.button("💾 Save", help="Save this conversation"):
                 self.save_chat_session()
     
     def process_markdown_content(self, content):
@@ -314,12 +378,54 @@ class ChatbotFeature:
         return processed
 
     def display_chat_messages(self):
-        """Display chat messages"""
+        """Display chat messages - DATABASE ONLY"""
+        # Get current user's messages
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        # DATABASE ONLY - No session state fallback
+        if not self.chat_service:
+            st.error("❌ Database service not available. Chat disabled.")
+            st.error(f"CHAT_SERVICE_AVAILABLE: {CHAT_SERVICE_AVAILABLE}")
+            st.error(f"ChatService class: {ChatService}")
+            return
+        
+        user_messages = []
+        try:
+            session_id = st.session_state.get('chat_session_id')
+            if session_id:
+                db_messages = self.chat_service.get_session_messages(current_user_id, session_id)
+                # Handle both Django model objects and dict objects
+                for msg in db_messages:
+                    if hasattr(msg, 'message_type'):
+                        # Django model object
+                        user_messages.append({
+                            'type': msg.message_type,
+                            'content': msg.content,
+                            'timestamp': msg.formatted_timestamp,
+                            'sources': msg.sources,
+                            'processing_info': msg.processing_info
+                        })
+                    elif isinstance(msg, dict):
+                        # Dict object from direct database service
+                        user_messages.append({
+                            'type': msg.get('message_type', 'user'),
+                            'content': msg.get('content', ''),
+                            'timestamp': msg.get('timestamp', ''),
+                            'sources': msg.get('sources', []),
+                            'processing_info': msg.get('processing_info', {})
+                        })
+        except Exception as e:
+            st.error(f"❌ Database error: {e}")
+            return
+        
         # Create a scrollable chat container
         chat_container = st.container()
         
         with chat_container:
-            if not st.session_state.chat_messages:
+            if not user_messages:
                 st.markdown(
                     """
                     <div class="message-bubble" style="display: flex; justify-content: center; margin: 40px 5px;">
@@ -350,7 +456,7 @@ class ChatbotFeature:
                 return
             
             # Display all messages in a chat-like format
-            for i, message in enumerate(st.session_state.chat_messages):
+            for i, message in enumerate(user_messages):
                 message_type = message.get('type', 'user')
                 content = message.get('content', '')
                 timestamp = message.get('timestamp', '')
@@ -456,13 +562,29 @@ class ChatbotFeature:
             return
         
         try:
-            # Add user message
-            user_message = {
-                'type': 'user',
-                'content': query,
-                'timestamp': datetime.now().strftime('%H:%M:%S')
-            }
-            st.session_state.chat_messages.append(user_message)
+            # Add user message - DATABASE ONLY
+            current_user_id = st.session_state.get('user_id')
+            if not current_user_id:
+                st.error("❌ User not authenticated.")
+                return
+            
+            # DATABASE ONLY - No session state
+            if not self.chat_service:
+                st.error("❌ Database service not available. Cannot save message.")
+                return
+            
+            try:
+                session_id = st.session_state.get('chat_session_id')
+                if session_id:
+                    self.chat_service.save_message(
+                        current_user_id, session_id, 'user', query
+                    )
+                else:
+                    st.error("❌ No active chat session.")
+                    return
+            except Exception as e:
+                st.error(f"❌ Database error: {e}")
+                return
             
             # Show modern typing indicator
             typing_placeholder = st.empty()
@@ -501,17 +623,34 @@ class ChatbotFeature:
             
             # Use enhanced contextual RAG system - let the chatbot handle search internally
             if self.chatbot:
-                response_result = self.chatbot.generate_response(
-                    query=query,
-                    relevant_documents=None,  # Let the enhanced RAG system handle search
-                    conversation_history=st.session_state.conversation_context,
-                    top_k=30,  # Use more documents for better context
-                    user_id=st.session_state.get('user_id', 1)
-                )
+                # Check if the chatbot has the correct method
+                if hasattr(self.chatbot, 'ask'):
+                    response_result = self.chatbot.ask(
+                        query=query,
+                        top_k=30,  # Use more documents for better context
+                        user_id=st.session_state.get('user_id', 1)
+                    )
+                elif hasattr(self.chatbot, 'generate_response'):
+                    response_result = self.chatbot.generate_response(
+                        query=query,
+                        relevant_documents=None,  # Let the enhanced RAG system handle search
+                        conversation_history=st.session_state.conversation_context,
+                        top_k=30,  # Use more documents for better context
+                        user_id=st.session_state.get('user_id', 1)
+                    )
+                else:
+                    response_result = {
+                        'success': False,
+                        'error': 'Chatbot method not found',
+                        'response': 'I apologize, but the chatbot service is not properly configured.',
+                        'sources_used': [],
+                        'processing_time': 0,
+                        'tokens_used': 0
+                    }
                 
                 if response_result.get('success'):
                     ai_response = response_result.get('response', 'I apologize, but I could not generate a response.')
-                    sources_used = response_result.get('sources_used', [])
+                    sources_used = response_result.get('sources', [])  # 'ask' method returns 'sources', not 'sources_used'
                     processing_time = response_result.get('processing_time', 0)
                     tokens_used = response_result.get('tokens_used', 0)
                     model_used = response_result.get('model_used', 'Unknown')
@@ -539,21 +678,34 @@ class ChatbotFeature:
                             'enhanced_query': enhanced_query
                         }
                     }
-                    st.session_state.chat_messages.append(assistant_message)
+                    # Save to database - DATABASE ONLY
+                    try:
+                        session_id = st.session_state.get('chat_session_id')
+                        if session_id:
+                            self.chat_service.save_message(
+                                current_user_id, session_id, 'assistant', ai_response,
+                                sources=sources_used, processing_info=assistant_message.get('processing_info', {})
+                            )
+                        else:
+                            st.error("❌ No active chat session.")
+                            return
+                    except Exception as e:
+                        st.error(f"❌ Database error: {e}")
+                        return
                     
-                    # Update conversation context
-                    st.session_state.conversation_context.append({
+                    # Update conversation context (user-specific)
+                    st.session_state.user_conversation_context[current_user_id].append({
                         'role': 'user',
                         'content': query
                     })
-                    st.session_state.conversation_context.append({
+                    st.session_state.user_conversation_context[current_user_id].append({
                         'role': 'assistant',
                         'content': ai_response
                     })
                     
-                    # Keep context manageable
-                    if len(st.session_state.conversation_context) > 20:
-                        st.session_state.conversation_context = st.session_state.conversation_context[-20:]
+                    # Keep context manageable (user-specific)
+                    if len(st.session_state.user_conversation_context[current_user_id]) > 20:
+                        st.session_state.user_conversation_context[current_user_id] = st.session_state.user_conversation_context[current_user_id][-20:]
                     
                     # Clear typing indicator
                     typing_placeholder.empty()
@@ -568,7 +720,7 @@ class ChatbotFeature:
                         'sources': [],
                         'processing_info': {}
                     }
-                    st.session_state.chat_messages.append(error_message)
+                    st.session_state.user_chat_messages[current_user_id].append(error_message)
             
             else:
                 # Chatbot not available
@@ -579,7 +731,7 @@ class ChatbotFeature:
                     'sources': [],
                     'processing_info': {}
                 }
-                st.session_state.chat_messages.append(error_message)
+                st.session_state.user_chat_messages[current_user_id].append(error_message)
             
             # Form will clear automatically, just refresh to show new message
             st.rerun()
@@ -589,16 +741,26 @@ class ChatbotFeature:
     
     def start_new_session(self):
         """Start a new chat session"""
-        user_id = st.session_state.get('user_id', 1)
-        st.session_state.chat_session_id = self.generate_session_id(user_id)
-        st.session_state.chat_messages = []
-        st.session_state.conversation_context = []
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        st.session_state.chat_session_id = self.generate_session_id(current_user_id)
+        st.session_state.user_chat_messages[current_user_id] = []
+        st.session_state.user_conversation_context[current_user_id] = []
         st.success("🆕 New chat session started!")
         st.rerun()
     
     def save_chat_session(self):
         """Save current chat session"""
-        if not st.session_state.chat_messages:
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated.")
+            return
+        
+        user_messages = st.session_state.user_chat_messages.get(current_user_id, [])
+        if not user_messages:
             st.warning("No messages to save!")
             return
         
@@ -608,29 +770,70 @@ class ChatbotFeature:
         
         session_data = {
             'session_id': st.session_state.chat_session_id,
-            'messages': st.session_state.chat_messages.copy(),
+            'messages': user_messages.copy(),
             'saved_at': datetime.now(),
-            'message_count': len(st.session_state.chat_messages),
-            'user_id': st.session_state.get('user_id', 1),
+            'message_count': len(user_messages),
+            'user_id': current_user_id,
             'username': st.session_state.get('username', 'Anonymous')
         }
         
         st.session_state.saved_chat_sessions.append(session_data)
-        st.success(f"💾 Chat session saved! ({len(st.session_state.chat_messages)} messages)")
+        st.success(f"💾 Chat session saved! ({len(user_messages)} messages)")
     
     def render_chat_history(self):
-        """Render chat history interface"""
+        """Render chat history interface - DATABASE ONLY"""
         st.markdown("### 📜 Chat History")
         
-        if 'saved_chat_sessions' not in st.session_state or not st.session_state.saved_chat_sessions:
+        # Get current user ID to filter sessions
+        current_user_id = st.session_state.get('user_id')
+        if not current_user_id:
+            st.error("❌ User not authenticated. Please log in to view chat history.")
+            return
+        
+        # DATABASE ONLY - No session state fallback
+        if not self.chat_service:
+            st.error("❌ Database service not available. Chat history disabled.")
+            st.error(f"CHAT_SERVICE_AVAILABLE: {CHAT_SERVICE_AVAILABLE}")
+            st.error(f"ChatService class: {ChatService}")
+            return
+        
+        user_sessions = []
+        try:
+            db_sessions = self.chat_service.get_user_sessions(current_user_id)
+            # Handle both Django model objects and dict objects
+            for session in db_sessions:
+                if hasattr(session, 'session_id'):
+                    # Django model object
+                    user_sessions.append({
+                        'session_id': session.session_id,
+                        'title': session.title,
+                        'message_count': session.message_count,
+                        'saved_at': session.last_message_time,
+                        'user_id': current_user_id,
+                        'username': st.session_state.get('username', 'Anonymous')
+                    })
+                elif isinstance(session, dict):
+                    # Dict object from direct database service
+                    user_sessions.append({
+                        'session_id': session.get('session_id', ''),
+                        'title': session.get('title', 'Chat Session'),
+                        'message_count': session.get('message_count', 0),
+                        'saved_at': session.get('saved_at', datetime.now()),
+                        'user_id': current_user_id,
+                        'username': st.session_state.get('username', 'Anonymous')
+                    })
+        except Exception as e:
+            st.error(f"❌ Database error: {e}")
+            return
+        
+        if not user_sessions:
             st.info("No saved chat sessions. Your conversations will appear here after you save them.")
             return
         
-        # Show saved sessions
-        sessions = st.session_state.saved_chat_sessions
-        st.markdown(f"#### 💾 Saved Sessions ({len(sessions)})")
+        # Show only user's sessions
+        st.markdown(f"#### 💾 Your Saved Sessions ({len(user_sessions)})")
         
-        for i, session in enumerate(reversed(sessions), 1):
+        for i, session in enumerate(reversed(user_sessions), 1):
             session_id = session.get('session_id', f'Session {i}')
             message_count = session.get('message_count', 0)
             saved_at = session.get('saved_at', datetime.now())
@@ -645,15 +848,52 @@ class ChatbotFeature:
                     st.write(f"**User:** {session.get('username', 'Anonymous')}")
                     
                 with col_session2:
-                    if st.button(f"🔄 Load Session", key=f"load_{i}", use_container_width=True):
-                        st.session_state.chat_messages = session.get('messages', [])
-                        st.session_state.chat_session_id = session_id
-                        st.success(f"✅ Loaded session: {session_id}")
+                    if st.button(f"🔄 Load Session", key=f"load_{i}"):
+                        current_user_id = st.session_state.get('user_id')
+                        if current_user_id:
+                            # DATABASE ONLY - Load from database
+                            try:
+                                db_messages = self.chat_service.get_session_messages(current_user_id, session_id)
+                                # Handle both Django model objects and dict objects
+                                messages = []
+                                for msg in db_messages:
+                                    if hasattr(msg, 'message_type'):
+                                        # Django model object
+                                        messages.append({
+                                            'type': msg.message_type,
+                                            'content': msg.content,
+                                            'timestamp': msg.formatted_timestamp,
+                                            'sources': msg.sources,
+                                            'processing_info': msg.processing_info
+                                        })
+                                    elif isinstance(msg, dict):
+                                        # Dict object from direct database service
+                                        messages.append({
+                                            'type': msg.get('message_type', 'user'),
+                                            'content': msg.get('content', ''),
+                                            'timestamp': msg.get('timestamp', ''),
+                                            'sources': msg.get('sources', []),
+                                            'processing_info': msg.get('processing_info', {})
+                                        })
+                                
+                                # Store in session state for display (temporary)
+                                if 'user_chat_messages' not in st.session_state:
+                                    st.session_state.user_chat_messages = {}
+                                st.session_state.user_chat_messages[current_user_id] = messages
+                                
+                                st.session_state.chat_session_id = session_id
+                                st.success(f"✅ Loaded session: {session_id}")
+                            except Exception as e:
+                                st.error(f"❌ Database error: {e}")
                         st.rerun()
                     
-                    if st.button(f"🗑️ Delete", key=f"delete_{i}", use_container_width=True):
-                        st.session_state.saved_chat_sessions.remove(session)
-                        st.success("🗑️ Session deleted")
+                    if st.button(f"🗑️ Delete", key=f"delete_{i}"):
+                        # DATABASE ONLY - Delete from database
+                        try:
+                            self.chat_service.delete_session(current_user_id, session_id)
+                            st.success("🗑️ Session deleted from database")
+                        except Exception as e:
+                            st.error(f"❌ Database error: {e}")
                         st.rerun()
                 
                 # Show message preview
@@ -669,10 +909,13 @@ class ChatbotFeature:
                     if len(messages) > 3:
                         st.caption(f"... and {len(messages) - 3} more messages")
         
-        # Clear all history
-        if st.button("🗑️ Clear All History", type="secondary", use_container_width=True):
-            st.session_state.saved_chat_sessions = []
-            st.success("🗑️ All chat history cleared!")
+        # Clear all history - DATABASE ONLY
+        if st.button("🗑️ Clear All History", type="secondary"):
+            try:
+                self.chat_service.clear_user_sessions(current_user_id)
+                st.success("🗑️ All your chat history cleared from database!")
+            except Exception as e:
+                st.error(f"❌ Database error: {e}")
             st.rerun()
     
     def render_chat_settings(self):
@@ -825,7 +1068,7 @@ class ChatbotFeature:
                 rate_limit = st.slider("Rate Limit (requests/min)", 10, 100, 30)
         
         # Save settings
-        if st.button("💾 Save Chat Settings", type="primary", use_container_width=True):
+        if st.button("💾 Save Chat Settings", type="primary"):
             settings = {
                 'model_temperature': model_temperature,
                 'max_tokens': max_tokens,
