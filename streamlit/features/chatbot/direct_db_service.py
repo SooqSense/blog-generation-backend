@@ -171,7 +171,12 @@ class DirectDBChatService:
             return messages
             
         except Exception as e:
-            print(f"Error getting session messages: {e}")
+            error_msg = str(e)
+            if "does not exist" in error_msg:
+                print(f"❌ Database table missing: {error_msg}")
+                print("💡 Run migrations on your production database: python manage.py migrate")
+            else:
+                print(f"Error getting session messages: {e}")
             return []
     
     def save_message(self, user_id, session_id: str, message_type: str, 
