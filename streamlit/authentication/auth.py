@@ -7,8 +7,6 @@ import streamlit as st
 import os
 import logging
 from pathlib import Path
-from dotenv import load_dotenv
-
 # Import modular components
 from .database import DatabaseOperations
 from .user_management import UserService, UserValidator
@@ -23,10 +21,8 @@ except ImportError:
     CLERK_BACKEND_AVAILABLE = False
     print("⚠️ clerk_backend_api not installed. Please install with: pip install clerk-backend-api")
 
-# Load environment variables
+# Note: Environment variables are loaded via Django settings, not dotenv
 project_root = Path(__file__).parent.parent.parent
-env_path = project_root / '.env'
-load_dotenv(env_path)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -306,13 +302,15 @@ class SimpleClerkAuth:
         logger.info(f"🔍 Session State: authenticated={st.session_state.get('authenticated', False)}")
         logger.info(f"🔍 User Data: {st.session_state.get('user_data', {})}")
         
-        # Check database availability using existing connection
+        # Check database availability using Django settings
         try:
-            from database.db_connection import get_connection
-            conn = get_connection()
-            db_available = conn is not None
-            if conn:
-                conn.close()
+            from django.conf import settings
+            db_config = settings.DATABASES['default']
+            db_host = db_config.get('HOST')
+            db_name = db_config.get('NAME')
+            db_user = db_config.get('USER')
+            db_password = db_config.get('PASSWORD')
+            db_available = all([db_host, db_name, db_user, db_password])
         except Exception:
             db_available = False
         

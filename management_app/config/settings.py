@@ -35,7 +35,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    
     # Modular apps
     "blog_generator",
     "ai_news",
@@ -47,11 +46,9 @@ INSTALLED_APPS = [
     "chatbot",
     "authentication",  # Authentication app
     "upwork_proposal_generator",  # Upwork proposal generator app
-    
     # Integration apps
     "langsmith_integration",  # LangSmith integration for AI cost tracking
     "pinecone_integration",  # Pinecone integration for vector search
-    
     # Third-party apps
     "rest_framework",
     "drf_spectacular",
@@ -97,11 +94,14 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": os.environ.get("DB_ENGINE", "django.db.backends.postgresql"),
-        "NAME": os.environ.get("DB_NAME", "ai_blog_generation"),
-        "USER": os.environ.get("DB_USER", "postgres"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", "postgres"),
-        "HOST": os.environ.get("DB_HOST", "localhost"),
-        "PORT": os.environ.get("DB_PORT", "5432"),
+        "NAME": os.environ.get("DB_NAME"),
+        "USER": os.environ.get("DB_USER"),
+        "PASSWORD": os.environ.get("DB_PASSWORD"),
+        "HOST": os.environ.get("DB_HOST"),
+        "PORT": os.environ.get("DB_PORT"),
+        "OPTIONS": {
+            "connect_timeout": 10
+        }
     }
 }
 
@@ -357,10 +357,12 @@ DJANGO_ENVIRONMENT = os.getenv("DJANGO_ENVIRONMENT", "development")
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Pinecone Configuration  
+# Pinecone Configuration
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 # Set Pinecone index name based on environment, with explicit override capability
-_default_index = "artilence-staging" if DJANGO_ENVIRONMENT == "staging" else "artilence-development"
+_default_index = (
+    "artilence-staging" if DJANGO_ENVIRONMENT == "staging" else "artilence-development"
+)
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", _default_index)
 
 # Serper API Configuration (for web search)
@@ -372,12 +374,16 @@ FAL_KEY = os.getenv("FAL_KEY")
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback"
+)
 
 # LinkedIn OAuth Configuration
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
-LINKEDIN_REDIRECT_URI = os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
+LINKEDIN_REDIRECT_URI = os.getenv(
+    "LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback"
+)
 
 # AWS S3 Configuration
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
