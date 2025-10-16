@@ -1,0 +1,124 @@
+name: Deploy Django to Cloud Run (production)
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: artilence
+  REGION: asia-south2
+  REPOSITORY: sooqsense-bloggenerator
+  SERVICE_NAME: sooqsense-django-production
+  IMAGE_NAME: django
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Required for Workload Identity Federation
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Authenticate using Workload Identity Federation (no JSON keys!)
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/798090991303/locations/global/workloadIdentityPools/github-pool/providers/github
+          service_account: ci-deployer@artilence.iam.gserviceaccount.com
+
+      # Set up gcloud CLI
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      # Configure Docker to use gcloud as credential helper
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      # Build and push Docker image to Artifact Registry
+      - name: Build & Push Docker Image
+        run: |
+          echo "🔨 Building Django Next-Staging Docker image..."
+          docker build --target staging -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+          echo "📤 Pushing to Artifact Registry..."
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # Deploy to Cloud Run
+      - name: Deploy to Cloud Run
+        run: |
+          echo "🚀 Deploying Django to Cloud Run Production..."
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --platform=managed \
+            --allow-unauthenticated \
+            --memory=2Gi \
+            --cpu=2 \
+            --timeout=3000 \
+            --max-instances=2 \
+            --min-instances=0 \
+            --concurrency=100 \
+            --set-env-vars="DJANGO_ENVIRONMENT=production" \
+            --set-env-vars="DEBUG=False" \
+            --set-env-vars="PORT=8000" \
+            --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \
+            --set-env-vars="DB_PORT=5432" \
+            --set-env-vars="DB_NAME=neondb" \
+            --set-env-vars="DB_USER=neondb_owner" \
+            --set-env-vars="DB_PASSWORD=npg_zy0JNK3kohmb" \
+            --set-env-vars="OPENAI_API_KEY=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" \
+            --set-env-vars="SERPER_API_KEY=da3cefd9584b4016a82e1e116b2badfcb07e5df1" \
+            --set-env-vars="PINECONE_API_KEY=pcsk_EJHEg_B99xZ7vPcUkDSsD3Gj7KFwCeKgQCWKPvxX5894Cvy72z7DnXfdYCzN35pdp9M5K" \
+            --set-env-vars="PINECONE_INDEX_NAME=artilence-production" \
+            --set-env-vars="S3_BUCKET_NAME=sooqsense" \
+            --set-env-vars="AWS_REGION=us-east-1" \
+            --set-env-vars="AWS_ACCESS_KEY_ID=AKIAT7JJVEEM4IU2334A" \
+            --set-env-vars="AWS_SECRET_ACCESS_KEY=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" \
+            --set-env-vars="REDIS_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
+            --set-env-vars="CELERY_BROKER_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
+            --set-env-vars="CELERY_RESULT_BACKEND=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
+            --set-env-vars="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_Y2xpbWJpbmctcm9vc3Rlci02MC5jbGVyay5hY2NvdW50cy5kZXYk" \
+            --set-env-vars="CLERK_SECRET_KEY=sk_test_VQ0vUgco3WhaI3iqA6okF3zCGV0XTAjpdnz0rJxgfi" \
+            --set-env-vars="CLERK_BACKEND_AVAILABLE=https://api.clerk.com" \
+            --set-env-vars="CLERK_FRONTEND_URL=https://climbing-rooster-60.clerk.accounts.dev" \
+            --set-env-vars="CLERK_JWKS_URL=https://climbing-rooster-60.clerk.accounts.dev/.well-known/jwks.json" \
+            --set-env-vars="GOOGLE_CLIENT_ID=229772932214-hil3ggbh30c83ag635c6ao6a4h91dvfo.apps.googleusercontent.com" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=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" \
+            --set-env-vars="LINKEDIN_CLIENT_ID=77bbsr8z46dzgg" \
+            --set-env-vars="LINKEDIN_CLIENT_SECRET=WPL_AP1.cPzBTYa3NNJXpstR.a2D98w==" \
+            --set-env-vars="LANGSMITH_TRACING=true" \
+            --set-env-vars="LANGSMITH_API_KEY=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" \
+            --set-env-vars="LANGSMITH_PROJECT=sooqsense-blog-generation" \
+            --set-env-vars="LANGSMITH_ENDPOINT=https://api.smith.langchain.com" \
+            --set-env-vars="LANGSMITH_WORKSPACE_ID=2979498f-fb22-57f7-a758-9cbbe3d40dca" \
+            --set-env-vars="FAL_KEY=e59e15f3-ee4e-4847-9650-8e1bf514b772:c9aec65bceac24694cd7dff0ddba0533"
+
+      # Get the service URL
+      - name: Get Service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "🎉 Django Production deployment successful!"
+          echo "🌐 Django API URL: $SERVICE_URL"
+          echo "📚 API Documentation: $SERVICE_URL/docs/"
+          echo "🔧 Admin Panel: $SERVICE_URL/admin/"
+
+      # Health check
+      - name: Health Check
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "🔍 Performing production health check..."
+          sleep 30  # Wait for service to be ready
+
+          # Test basic endpoint
+          if curl -f "$SERVICE_URL/admin/" > /dev/null 2>&1; then
+            echo "✅ Django Production service is healthy!"
+          else
+            echo "⚠️ Health check failed, but deployment completed"
+          fi
