@@ -67,7 +67,6 @@ jobs:
             --concurrency=100 \
             --set-env-vars="DJANGO_ENVIRONMENT=production" \
             --set-env-vars="DEBUG=False" \
-            --set-env-vars="PORT=8000" \
             --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \
             --set-env-vars="DB_PORT=5432" \
             --set-env-vars="DB_NAME=neondb" \
