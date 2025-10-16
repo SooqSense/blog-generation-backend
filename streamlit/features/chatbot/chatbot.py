@@ -45,52 +45,86 @@ except Exception as e:
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools from Django management app
-try:
-    from management_app.chatbot.service.agent.agent import ProjectChatbot, project_chatbot
-    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
+# API-based chatbot (no direct Django imports)
+import requests
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API base URL from environment
+API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
+
+# API service class for chatbot
+class ChatbotAPI:
+    """API service for chatbot operations"""
     
-    AI_TOOLS_AVAILABLE = True
-    AI_TOOLS_ERROR = None
-    print("✅ Chatbot feature: AI tools imported successfully")
+    def __init__(self):
+        self.base_url = API_BASE_URL
+        self.auth_headers = self._get_auth_headers()
     
-except Exception as e:
-    AI_TOOLS_AVAILABLE = False
-    AI_TOOLS_ERROR = str(e)
-    print(f"⚠️ Chatbot feature: AI tools import failed - {str(e)}")
+    def _get_auth_headers(self):
+        """Get authentication headers from session state"""
+        import streamlit as st
+        headers = {"Content-Type": "application/json"}
+        
+        # Get JWT token from session state
+        if hasattr(st, 'session_state') and 'jwt_token' in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.jwt_token}"
+        
+        return headers
     
-    # Create dummy classes for graceful degradation
-    class ProjectChatbot:
-        def __init__(self, *args, **kwargs):
-            pass
-        def generate_response(self, *args, **kwargs):
+    def ask(self, query, top_k=30, user_id=1):
+        """Ask chatbot via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/chatbot/ask/",
+                json={
+                    "query": query,
+                    "top_k": top_k,
+                    "user_id": user_id
+                },
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
             return {
                 'success': False,
-                'error': f"Chatbot not available: {AI_TOOLS_ERROR}",
+                'error': str(e),
                 'response': "I'm sorry, the chatbot service is not available right now.",
-                'sources_used': [],
+                'sources': [],
                 'processing_time': 0,
                 'tokens_used': 0
             }
-        def generate_session_id(self, user_id):
-            return f"chat_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        def is_available(self):
-            return False
     
-    class PineconeService:
-        def __init__(self, *args, **kwargs):
-            pass
-        def search_documents(self, *args, **kwargs):
-            return {
-                'success': False,
-                'error': f"Vector search not available: {AI_TOOLS_ERROR}",
-                'results': [],
-                'total_results': 0
-            }
-        def is_available(self):
-            return False
+    def generate_session_id(self, user_id):
+        """Generate session ID"""
+        return f"chat_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    project_chatbot = ProjectChatbot()
+    def is_available(self):
+        """Check if chatbot API is available"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/chatbot/status/",
+                headers=self.auth_headers
+            )
+            return response.status_code == 200
+        except:
+            return False
+
+# Initialize API service
+try:
+    chatbot_api = ChatbotAPI()
+    AI_TOOLS_AVAILABLE = True
+    AI_TOOLS_ERROR = None
+    print("✅ Chatbot feature: API service initialized successfully")
+except Exception as e:
+    AI_TOOLS_AVAILABLE = False
+    AI_TOOLS_ERROR = str(e)
+    print(f"⚠️ Chatbot feature: API service initialization failed - {str(e)}")
+    chatbot_api = None
 
 class ChatbotFeature:
     """AI Chatbot feature for Streamlit UI"""
@@ -98,14 +132,8 @@ class ChatbotFeature:
     def __init__(self):
         self.ai_tools_available = AI_TOOLS_AVAILABLE
         self.ai_tools_error = AI_TOOLS_ERROR
-        try:
-            self.chatbot = project_chatbot
-            self.pinecone_service = PineconeService()
-        except Exception as e:
-            self.chatbot = None
-            self.pinecone_service = None
-            if AI_TOOLS_AVAILABLE:
-                self.ai_tools_error = str(e)
+        self.chatbot = chatbot_api
+        self.pinecone_service = None  # Not needed for API-based approach
         
         # Initialize chat service for database operations
         self.chat_service = None
@@ -621,32 +649,13 @@ class ChatbotFeature:
                 unsafe_allow_html=True
             )
             
-            # Use enhanced contextual RAG system - let the chatbot handle search internally
+            # Use API-based chatbot
             if self.chatbot:
-                # Check if the chatbot has the correct method
-                if hasattr(self.chatbot, 'ask'):
-                    response_result = self.chatbot.ask(
-                        query=query,
-                        top_k=30,  # Use more documents for better context
-                        user_id=st.session_state.get('user_id', 1)
-                    )
-                elif hasattr(self.chatbot, 'generate_response'):
-                    response_result = self.chatbot.generate_response(
-                        query=query,
-                        relevant_documents=None,  # Let the enhanced RAG system handle search
-                        conversation_history=st.session_state.conversation_context,
-                        top_k=30,  # Use more documents for better context
-                        user_id=st.session_state.get('user_id', 1)
-                    )
-                else:
-                    response_result = {
-                        'success': False,
-                        'error': 'Chatbot method not found',
-                        'response': 'I apologize, but the chatbot service is not properly configured.',
-                        'sources_used': [],
-                        'processing_time': 0,
-                        'tokens_used': 0
-                    }
+                response_result = self.chatbot.ask(
+                    query=query,
+                    top_k=30,  # Use more documents for better context
+                    user_id=st.session_state.get('user_id', 1)
+                )
                 
                 if response_result.get('success'):
                     ai_response = response_result.get('response', 'I apologize, but I could not generate a response.')

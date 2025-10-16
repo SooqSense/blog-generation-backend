@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -114,7 +114,6 @@ def convert_markdown_to_json(markdown_content):
     description="Fetch and generate daily AI news from specified country and keywords using Serper API.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def generate_daily_ai_news(request):
     """
     Generate daily AI news based on country and keywords.

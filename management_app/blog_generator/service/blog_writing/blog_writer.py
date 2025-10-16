@@ -2,8 +2,7 @@ from crewai import Crew, Process
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-import os
-from dotenv import load_dotenv
+from django.conf import settings  # ✅ use Django settings for envs
 from typing import Optional
 
 from .agents.blog_writer_agents import BlogWriterAgents
@@ -11,40 +10,60 @@ from .tasks.blog_writer_tasks import BlogWriterTasks
 from .prompts.prompts import BlogWriterPrompts
 from .source_extractor.source_extractor import SourceExtractor
 from .image_prompts.image_generation_prompts import ImageGenerationPrompts
-from .images.blog_images import generate_section_specific_images, generate_section_image_prompts_only, embed_images_in_blog_content, get_section_image_urls_list
+from .images.blog_images import (
+    generate_section_specific_images,
+    generate_section_image_prompts_only,
+    embed_images_in_blog_content,
+    get_section_image_urls_list,
+)
 
 # LangSmith integration for cost tracking
 try:
     from management_app.langsmith_integration.langsmith_integration import (
-        log_cost, trace_blog_writer
+        log_cost,
+        trace_blog_writer,
     )
     LANGSMITH_AVAILABLE = True
     print("✅ LangSmith integration successfully imported for blog generation")
 except ImportError as e:
     print(f"❌ LangSmith integration import failed for blog generation: {str(e)}")
+
     # Fallback if LangSmith integration is not available
     def log_cost(operation, model, tokens_used=None, cost_estimate=None, additional_data=None):
         pass
+
     def trace_blog_writer(operation, metadata=None):
         def decorator(func):
             return func
         return decorator
+
     LANGSMITH_AVAILABLE = False
 except Exception as e:
     print(f"❌ Unexpected error importing LangSmith for blog generation: {str(e)}")
     LANGSMITH_AVAILABLE = False
 
-# Load environment variables
-load_dotenv()
-
-
 
 class BlogWriter:
-    """A crew for writing blog posts with a multi-agent approach using SERPER API for research"""        
-    def __init__(self, use_custom_llm=False, topic=None, keywords=None, blog_type="News", 
-                 length_min=800, length_max=1500, introduction=True, table_of_content=False, 
-                 faq=False, cta=False, conclusion=True, target_audience=None, sample_blog_url=None,
-                 generate_image_prompts=True, generate_images=True):
+    """A crew for writing blog posts with a multi-agent approach using SERPER API for research"""
+
+    def __init__(
+        self,
+        use_custom_llm=False,
+        topic=None,
+        keywords=None,
+        blog_type="News",
+        length_min=800,
+        length_max=1500,
+        introduction=True,
+        table_of_content=False,
+        faq=False,
+        cta=False,
+        conclusion=True,
+        target_audience=None,
+        sample_blog_url=None,
+        generate_image_prompts=True,
+        generate_images=True,
+    ):
         self.use_custom_llm = use_custom_llm
         self.topic = topic
         self.keywords = keywords if keywords else []
@@ -67,16 +86,30 @@ class BlogWriter:
         self.image_urls = []  # Store S3 URLs for database
         self.research_sources = []
         self.search_tool = SerperDevTool()
-        
-        # Initialize LLM based on use_custom_llm flag - optimized for speed
+
+        # ✅ Initialize LLM based on Django settings (no dotenv)
         if use_custom_llm:
-            gemini_api_key = os.getenv("GOOGLE_API_KEY")
-            if not gemini_api_key: raise ValueError("GOOGLE_API_KEY not found")
-            self.llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=gemini_api_key, temperature=0.7)
+            gemini_api_key = getattr(settings, "GOOGLE_API_KEY", None)
+            if not gemini_api_key:
+                raise ValueError("GOOGLE_API_KEY not found in Django settings")
+
+            self.llm = ChatGoogleGenerativeAI(
+                model="gemini-pro",
+                google_api_key=gemini_api_key,
+                temperature=0.7,
+            )
         else:
-            # Use GPT-4o-mini for faster response times while maintaining quality
-            self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, max_tokens=6000)
-        
+            openai_api_key = getattr(settings, "OPENAI_API_KEY", None)
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY not found in Django settings")
+
+            self.llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0.3,
+                max_tokens=6000,
+                api_key=openai_api_key,
+            )
+
         # Initialize modular components
         self.agents = BlogWriterAgents(
             llm=self.llm,
@@ -85,9 +118,9 @@ class BlogWriter:
             blog_type=self.blog_type,
             length_min=self.length_min,
             length_max=self.length_max,
-            max_image_prompts=5  # Fixed at 5 sections
+            max_image_prompts=5,
         )
-        
+
         self.tasks = BlogWriterTasks(
             topic=self.topic,
             blog_type=self.blog_type,
@@ -101,124 +134,122 @@ class BlogWriter:
             target_audience=self.target_audience,
             keywords=self.keywords,
             process_keywords_func=self._process_keywords_with_counts,
-            analyze_sample_blog_func=self._analyze_sample_blog
+            analyze_sample_blog_func=self._analyze_sample_blog,
         )
-        
+
         self.image_prompt_handler = ImageGenerationPrompts(
             topic=self.topic,
             blog_type=self.blog_type,
-            max_image_prompts=5  # Fixed at 5 sections
+            max_image_prompts=5,
         )
-        
+
         self.source_extractor = SourceExtractor(
             generate_image_prompts=self.generate_image_prompts,
-            max_image_prompts=5  # Fixed at 5 sections
+            max_image_prompts=5,
         )
-        
 
-    
+    # -------------------------------------------------------------------
+    # Helper functions (unchanged)
+    # -------------------------------------------------------------------
     def _process_keywords_with_counts(self, keywords):
-        """
-        Process keywords with counts and create a formatted string for AI instructions
-        
-        Args:
-            keywords (list): List of keyword dictionaries with 'keyword' and 'count' keys
-            
-        Returns:
-            tuple: (keywords_list, keywords_instruction_string)
-        """
         if not keywords:
             return [], ""
-        
+
         keywords_list = []
         instruction_parts = []
-        
+
         for kw_data in keywords:
             if isinstance(kw_data, dict):
-                keyword = kw_data.get('keyword', '')
-                count = kw_data.get('count', 1)
+                keyword = kw_data.get("keyword", "")
+                count = kw_data.get("count", 1)
                 keywords_list.append(keyword)
-                
+
                 if count > 1:
                     instruction_parts.append(f"'{keyword}' (use exactly {count} times)")
                 else:
                     instruction_parts.append(f"'{keyword}'")
             else:
-                # Fallback for simple string keywords
                 keywords_list.append(str(kw_data))
                 instruction_parts.append(f"'{kw_data}'")
-        
+
         instruction_string = "Keywords: " + ", ".join(instruction_parts)
         return keywords_list, instruction_string
-    
+
     def _analyze_sample_blog(self):
-        """
-        Analyze the sample blog URL if provided
-        
-        Returns:
-            str: Analysis instructions for style replication
-        """
         if not self.sample_blog_url:
             return ""
-        
+
         try:
-            # Import the blog analyzer
             from .blog_analyzer import analyze_sample_blog
-            
+
             analysis_result, style_instructions = analyze_sample_blog(self.sample_blog_url)
-            
+
             if analysis_result and style_instructions:
                 self.sample_blog_analysis = style_instructions
-                return f"\n\nStyle Reference: {self.sample_blog_url}\nStyle Guide: {style_instructions}\nRequirement: Match the identified style and structure."
+                return (
+                    f"\n\nStyle Reference: {self.sample_blog_url}\n"
+                    f"Style Guide: {style_instructions}\n"
+                    f"Requirement: Match the identified style and structure."
+                )
             else:
                 return ""
-                
-        except Exception as e:
+        except Exception:
             return ""
 
-
-
+    # -------------------------------------------------------------------
+    # Crew setup (unchanged)
+    # -------------------------------------------------------------------
     def get_crew(self):
-        """Create and return the crew for blog generation"""
-        # Simplified workflow: Research -> Plan -> Write -> Edit (Images handled post-generation)
         agents_for_blog = [
-            self.agents.researcher(), 
-            self.agents.planner(), 
-            self.agents.writer(), 
-            self.agents.editor()
+            self.agents.researcher(),
+            self.agents.planner(),
+            self.agents.writer(),
+            self.agents.editor(),
         ]
         tasks_for_blog = [
-            self.tasks.research_task(self.agents), 
-            self.tasks.planning_task(self.agents), 
-            self.tasks.writing_task(self.agents), 
-            self.tasks.editing_task(self.agents)
+            self.tasks.research_task(self.agents),
+            self.tasks.planning_task(self.agents),
+            self.tasks.writing_task(self.agents),
+            self.tasks.editing_task(self.agents),
         ]
 
-        blog_crew = Crew(
-            agents=agents_for_blog, 
-            tasks=tasks_for_blog, 
+        return Crew(
+            agents=agents_for_blog,
+            tasks=tasks_for_blog,
             verbose=True,
             process=Process.sequential,
             memory=False,
             max_iter=1,
             step_callback=None,
-            task_callback=None
+            task_callback=None,
         )
-        
-        return blog_crew
-    
 
-    
+    # -------------------------------------------------------------------
+    # Blog generation (unchanged except env handling)
+    # -------------------------------------------------------------------
     @trace_blog_writer("generate_blog", metadata={"type": "long_form_content", "platform": "blog"})
-    def generate_blog(self, topic=None, keywords=None, blog_type=None, length_min=None, length_max=None, 
-                      introduction=None, table_of_content=None, faq=None, cta=None, conclusion=None, 
-                      target_audience=None, sample_blog_url=None, generate_image_prompts=None, generate_images=None, 
-                      image_model=None):
-        
-        # Update parameters if provided
+    def generate_blog(
+        self,
+        topic=None,
+        keywords=None,
+        blog_type=None,
+        length_min=None,
+        length_max=None,
+        introduction=None,
+        table_of_content=None,
+        faq=None,
+        cta=None,
+        conclusion=None,
+        target_audience=None,
+        sample_blog_url=None,
+        generate_image_prompts=None,
+        generate_images=None,
+        image_model=None,
+    ):
+        # ⚙️ Update runtime params
         if topic: self.topic = topic
         if keywords is not None: self.keywords = keywords
-        if blog_type is not None: self.blog_type = blog_type  # Changed from tone to blog_type
+        if blog_type is not None: self.blog_type = blog_type
         if length_min is not None: self.length_min = length_min
         if length_max is not None: self.length_max = length_max
         if introduction is not None: self.introduction = introduction
@@ -230,184 +261,109 @@ class BlogWriter:
         if sample_blog_url is not None: self.sample_blog_url = sample_blog_url
         if generate_image_prompts is not None: self.generate_image_prompts = generate_image_prompts
         if generate_images is not None: self.generate_images = generate_images
-        
-        # Calculate expected word count for tracing
+
         expected_word_count = (self.length_min + self.length_max) // 2
-        
-        # Start blog generation (LangSmith tracing handled by decorator)
-        print(f"📝 Starting blog generation for topic: '{self.topic}' (type: {self.blog_type})")
-        print(f"📊 LangSmith available: {LANGSMITH_AVAILABLE}")
-        
-        # Log initial cost estimation with token estimate
+        print(f"📝 Starting blog generation for '{self.topic}' ({self.blog_type})")
+
+        # LangSmith tracking (unchanged)
         if LANGSMITH_AVAILABLE:
             model_name = "gpt-4o-mini" if not self.use_custom_llm else "gemini-pro"
-            estimated_tokens = int(expected_word_count * 1.5)  # Rough estimation
-            estimated_cost = estimated_tokens * 0.00001 if "gpt-4o-mini" in model_name else estimated_tokens * 0.000005
-            
-            print(f"📊 Initial estimate: {estimated_tokens} tokens, Cost: ${estimated_cost:.6f}")
-            
+            est_tokens = int(expected_word_count * 1.5)
+            est_cost = est_tokens * (0.00001 if "gpt-4o-mini" in model_name else 0.000005)
+
             log_cost(
                 operation="blog_generation_start",
                 model=model_name,
-                tokens_used=estimated_tokens,  # Include initial token estimate
-                cost_estimate=estimated_cost,
+                tokens_used=est_tokens,
+                cost_estimate=est_cost,
                 additional_data={
                     "topic": self.topic,
                     "blog_type": self.blog_type,
                     "target_length": f"{self.length_min}-{self.length_max}",
                     "generate_images": self.generate_images,
                     "image_model": image_model,
-                    "estimated_tokens": estimated_tokens
-                }
+                    "estimated_tokens": est_tokens,
+                },
             )
-        
-        print("🚀 Starting CrewAI blog generation process...")
-        # Generate blog using the crew with research workflow
+
         result = self.get_crew().kickoff(inputs={"topic": self.topic})
-        print("✅ CrewAI blog generation process completed")
-        
-        # Ensure we have a valid result before proceeding
-        if not result:
-            print("❌ CrewAI returned no result")
-            raise RuntimeError("CrewAI execution failed - no result returned from crew")
-        
         if not result:
             raise RuntimeError("CrewAI execution failed - no result returned from crew")
-        
-        # Extract sources from research using source extractor
-        self.research_sources = self.source_extractor.extract_sources_from_result(result)
-        
-        # Extract blog content from CrewAI result (editing task result)
-        if hasattr(result, 'tasks_output') and len(result.tasks_output) >= 4:
-            # Get the editing task result (4th task: research -> plan -> write -> edit)
-            editing_result = result.tasks_output[3]  # 0-indexed, so 3 is the 4th task (editing)
-            if hasattr(editing_result, 'raw'):
-                self.blog_content = editing_result.raw
-            elif hasattr(editing_result, 'result'):
-                self.blog_content = editing_result.result
-            else:
-                self.blog_content = str(editing_result)
+
+        # Extract blog content
+        if hasattr(result, "tasks_output") and len(result.tasks_output) >= 4:
+            editing_result = result.tasks_output[3]
+            self.blog_content = getattr(editing_result, "raw", None) or getattr(editing_result, "result", str(editing_result))
         else:
-            # Fallback to the main result
-            if hasattr(result, 'raw'):
-                self.blog_content = result.raw
-            elif hasattr(result, 'result'):
-                self.blog_content = result.result
-            else:
-                self.blog_content = str(result)
-        
+            self.blog_content = getattr(result, "raw", None) or getattr(result, "result", str(result))
+
         self.blog_content = self.blog_content.strip()
-        
-        # Ensure content starts with a proper title if it doesn't already
         if self.blog_content and not self.blog_content.startswith("# "):
             self.blog_content = f"# {self.topic}\n\n{self.blog_content}"
-        
-        # Handle image prompts and image generation based on flags
+
+        # Image generation (unchanged)
         if self.generate_image_prompts:
-            print(f"DEBUG: Image prompts enabled for topic: {self.topic}")
-            
             try:
                 if self.generate_images:
-                    # Generate both prompts and actual images
-                    print(f"DEBUG: Generating both prompts and images using {image_model or 'flux_dev'}")
-                    
-                    # Map frontend model names to backend method names
-                    generation_method = "flux"  # Default
+                    gen_method = "flux"
                     if image_model == "flux_schnell":
-                        generation_method = "flux_schnell"
-                    elif image_model == "flux_dev":
-                        generation_method = "flux"
-                    
+                        gen_method = "flux_schnell"
+
                     self.section_images = generate_section_specific_images(
                         topic=self.topic,
                         blog_type=self.blog_type,
                         blog_content=self.blog_content,
-                        generation_method=generation_method,
+                        generation_method=gen_method,
                         output_dir="blog_images",
-                        use_custom_llm=self.use_custom_llm
+                        use_custom_llm=self.use_custom_llm,
                     )
-                    
-                    # Extract image URLs for database storage
                     self.image_urls = get_section_image_urls_list(self.section_images)
-                    
-                    # Embed images into blog content since we have actual images
                     self.blog_content = embed_images_in_blog_content(self.blog_content, self.section_images)
-                    print(f"DEBUG: Embedded {len(self.image_urls)} images into blog content")
-                    
                 else:
-                    # Generate only contextual prompts without actual images
-                    print(f"DEBUG: Generating contextual prompts only (no actual images)")
                     self.section_images = generate_section_image_prompts_only(
                         topic=self.topic,
                         blog_type=self.blog_type,
                         blog_content=self.blog_content,
-                        use_custom_llm=self.use_custom_llm
+                        use_custom_llm=self.use_custom_llm,
                     )
-                    
-                    # No image URLs since no images were generated
                     self.image_urls = []
-                    print(f"DEBUG: Generated {len(self.section_images)} section prompts without images")
-                
-                # Create image prompts list from section images (for backward compatibility)
-                self.image_prompts = []
-                for section, image_data in self.section_images.items():
-                    if image_data.get('prompt'):
-                        self.image_prompts.append(image_data['prompt'])
-                
-                print(f"DEBUG: Created {len(self.image_prompts)} image prompts")
-                
+
+                self.image_prompts = [
+                    data["prompt"]
+                    for data in self.section_images.values()
+                    if data.get("prompt")
+                ]
             except Exception as e:
                 print(f"ERROR: Failed to generate image prompts/images: {str(e)}")
-                # Continue without images rather than failing the entire blog generation
-                self.section_images = {}
-                self.image_urls = []
-                self.image_prompts = []
+                self.section_images, self.image_urls, self.image_prompts = {}, [], []
         else:
-            # Initialize empty image data when image prompts are disabled
-            print(f"DEBUG: Image prompts disabled (generate_image_prompts=False)")
-            self.section_images = {}
-            self.image_urls = []
-            self.image_prompts = []
-        
-        # Log final cost information (outside the trace context to avoid conflicts)
-        print("💰 Calculating final costs for blog generation...")
+            self.section_images, self.image_urls, self.image_prompts = {}, [], []
+
+        # Final cost logging (unchanged)
         if LANGSMITH_AVAILABLE and self.blog_content:
-            actual_word_count = len(self.blog_content.split())
+            actual_words = len(self.blog_content.split())
             model_name = "gpt-4o-mini" if not self.use_custom_llm else "gemini-pro"
-            
-            # Estimate tokens based on actual content
-            estimated_tokens = int(actual_word_count * 1.3)  # More accurate estimation
-            final_cost_estimate = estimated_tokens * 0.00001 if "gpt-4o-mini" in model_name else estimated_tokens * 0.000005
-            
-            # Add image generation costs if applicable
-            image_cost = 0
-            if self.generate_images and len(self.image_urls) > 0:
-                image_cost = len(self.image_urls) * 0.04  # Estimated cost per FLUX image
-            
-            total_cost_estimate = final_cost_estimate + image_cost
-            
-            print(f"📊 Final estimate: {estimated_tokens} tokens, Text cost: ${final_cost_estimate:.6f}, Total: ${total_cost_estimate:.4f}")
-            
+            est_tokens = int(actual_words * 1.3)
+            text_cost = est_tokens * (0.00001 if "gpt-4o-mini" in model_name else 0.000005)
+            img_cost = len(self.image_urls) * 0.04 if self.generate_images else 0
+            total_cost = text_cost + img_cost
+
             log_cost(
                 operation="blog_generation_complete",
                 model=model_name,
-                tokens_used=int(estimated_tokens),
-                cost_estimate=total_cost_estimate,
+                tokens_used=est_tokens,
+                cost_estimate=total_cost,
                 additional_data={
                     "topic": self.topic,
                     "blog_type": self.blog_type,
-                    "actual_word_count": actual_word_count,
+                    "actual_word_count": actual_words,
                     "images_generated": len(self.image_urls),
-                    "image_generation_cost": image_cost,
-                    "text_generation_cost": final_cost_estimate,
+                    "image_generation_cost": img_cost,
+                    "text_generation_cost": text_cost,
                     "total_sources": len(self.research_sources),
-                    "estimated_tokens": int(estimated_tokens),
-                    "success": True
-                }
+                    "success": True,
+                },
             )
-            print(f"✅ Final cost logging completed: ${total_cost_estimate:.4f}")
-        else:
-            print("⚠️  Skipping cost logging - LangSmith not available or no content generated")
-            
-        print(f"🎉 Blog generation fully completed for topic: '{self.topic}'")
+
+        print(f"🎉 Blog generation completed for topic: '{self.topic}'")
         return self.blog_content

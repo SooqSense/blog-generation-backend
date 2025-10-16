@@ -31,8 +31,8 @@ services:
     command: >
       sh -c "
         echo 'Starting Django application...' &&
-        python management_app/manage.py migrate &&
-        python management_app/manage.py runserver 0.0.0.0:8000
+        python manage.py migrate &&
+        python manage.py runserver 0.0.0.0:8000
       "
     profiles: [development]
 

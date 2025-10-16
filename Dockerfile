@@ -25,7 +25,7 @@ RUN pip install -r requirements.txt
 FROM base AS development
 ENV DEBUG=True
 EXPOSE 8000
-CMD ["sh", "-c", "python management_app/manage.py migrate && python management_app/manage.py runserver 0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
 
 # Staging stage
 FROM base AS staging
@@ -47,7 +47,7 @@ RUN chown -R django:django /app /home/django
 USER django
 
 # Set working directory for Django app
-WORKDIR /app/management_app
+WORKDIR /app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \

@@ -1,6 +1,6 @@
 import uuid
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -46,7 +46,6 @@ from .service.agent.agent import project_chatbot
     description="Chat with AI about uploaded documents. Provide a query and optionally a session_id. If no session_id is provided, a new chat session will be created. The AI will search through your uploaded documents and provide relevant answers with source citations.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def chat_api(request):
     """Chat with AI about uploaded documents."""
     try:

@@ -4,7 +4,7 @@ import sys
 import re
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -119,7 +119,6 @@ def convert_markdown_to_json(markdown_content):
     description="Generate a detailed blog post based on the given topic and optional parameters for customization. Set 'generate_image_prompts' to true (default) to include 5 section-specific images, or false for text-only blog content.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def generate_blog_api(request):
     """
     Generate a detailed blog post from a given topic and optional parameters.

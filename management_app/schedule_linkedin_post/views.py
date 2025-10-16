@@ -1,5 +1,5 @@
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -68,7 +68,6 @@ from .service.tasks import schedule_linkedin_post_task
     description="Schedule multiple LinkedIn posts to be published at a specific date and time with delays between posts. Requires LinkedIn authentication and validates the scheduled time is in the future.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def schedule_linkedin_post_api(request):
     """Schedule multiple LinkedIn posts to be published at a specific date and time."""
     try:
@@ -153,7 +152,6 @@ def schedule_linkedin_post_api(request):
     description="Get all scheduled LinkedIn posts for the authenticated user, including their status and details.",
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def get_scheduled_posts_api(request):
     """Get all scheduled LinkedIn posts for the authenticated user."""
     try:
@@ -220,7 +218,6 @@ def get_scheduled_posts_api(request):
     description="Cancel a scheduled LinkedIn post. Only posts with 'scheduled' status can be cancelled.",
 )
 @api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
 def cancel_scheduled_post_api(request, schedule_id):
     """Cancel a scheduled LinkedIn post."""
     try:

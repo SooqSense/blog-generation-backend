@@ -9,47 +9,85 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools from Django management app
-try:
-    from management_app.blog_generator.service.blog_writing.blog_writer import BlogWriter
-    from management_app.blog_generator.service.blog_writing.blog_analyzer.blog_analyzer import analyze_sample_blog
-    from management_app.blog_generator.service.blog_writing.images.blog_images import (
-        generate_section_specific_images, 
-        generate_section_image_prompts_only, 
-        get_section_image_urls_list
-    )
-    from management_app.ai_trends.service.trending_queries import fetch_trending_queries
+# API-based blog generation (no direct Django imports)
+import requests
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API base URL from environment
+API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
+
+# API service class for blog generation
+class BlogGenerationAPI:
+    """API service for blog generation"""
     
+    def __init__(self):
+        self.base_url = API_BASE_URL
+        self.auth_headers = self._get_auth_headers()
+    
+    def _get_auth_headers(self):
+        """Get authentication headers from session state"""
+        import streamlit as st
+        headers = {"Content-Type": "application/json"}
+        
+        # Get JWT token from session state
+        if hasattr(st, 'session_state') and 'jwt_token' in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.jwt_token}"
+        
+        return headers
+    
+    def generate_blog(self, **kwargs):
+        """Generate blog via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/blogs/generate/",
+                json=kwargs,
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def analyze_blog(self, url):
+        """Analyze blog via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/blogs/analyze/",
+                json={"url": url},
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_trending_queries(self):
+        """Get trending queries via API"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/trends/",
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# Initialize API service
+try:
+    blog_api = BlogGenerationAPI()
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None
-    print("✅ Blog generation: AI tools imported successfully")
-    
+    print("✅ Blog generation: API service initialized successfully")
 except Exception as e:
     AI_TOOLS_AVAILABLE = False
     AI_TOOLS_ERROR = str(e)
-    print(f"⚠️ Blog generation: AI tools import failed - {str(e)}")
-    
-    # Create dummy classes for graceful degradation
-    class BlogWriter:
-        def __init__(self, **kwargs):
-            pass
-        def generate_blog(self, **kwargs):
-            raise Exception("AI tools not available")
-    
-    def generate_section_specific_images(*args, **kwargs):
-        raise Exception("AI section-wise image generation tools not available")
-    
-    def generate_section_image_prompts_only(*args, **kwargs):
-        raise Exception("AI section-wise image generation tools not available")
-    
-    def get_section_image_urls_list(*args, **kwargs):
-        return []
-    
-    def analyze_sample_blog(*args, **kwargs):
-        return None, "Blog analysis tools not available"
-    
-    def fetch_trending_queries(*args, **kwargs):
-        return {"rising": [], "top": []}
+    print(f"⚠️ Blog generation: API service initialization failed - {str(e)}")
+    blog_api = None
 
 class BlogGenerationFeature:
     """Blog Generation feature for Streamlit UI"""
@@ -463,7 +501,7 @@ class BlogGenerationFeature:
                 status_text.text("📝 Generating comprehensive blog content...")
                 progress_bar.progress(40)
                 
-                # Generate the blog using the proper BlogWriter method which handles everything including images
+                # Generate the blog using API
                 if generate_actual_images:
                     status_text.text(f"🖼️ Generating blog with {max_image_prompts} section-wise images using FLUX AI...")
                 elif generate_image_prompts:
@@ -473,8 +511,8 @@ class BlogGenerationFeature:
                 progress_bar.progress(70)
                 
                 try:
-                    # Use the BlogWriter's generate_blog method which handles EVERYTHING including images
-                    blog_content = self.blog_writer.generate_blog(
+                    # Use API to generate blog
+                    api_response = blog_api.generate_blog(
                         topic=kwargs.get('topic'),
                         keywords=kwargs.get('keywords', []),
                         blog_type=kwargs.get('blog_type', 'News'),
@@ -492,6 +530,11 @@ class BlogGenerationFeature:
                         image_model=kwargs.get('image_model', 'flux_dev')
                     )
                     
+                    if not api_response.get('success'):
+                        raise Exception(api_response.get('error', 'API request failed'))
+                    
+                    blog_content = api_response.get('content', '')
+                    
                     if not blog_content or len(blog_content.strip()) < 100:
                         raise Exception("Blog generation returned insufficient content")
                     
@@ -505,16 +548,16 @@ class BlogGenerationFeature:
                     st.session_state.blog_generation_status = 'error'
                     return
                 
-                # Get image data from the blog writer (images already generated by BlogWriter)
+                # Get image data from API response
                 generated_images = []
                 section_images_data = {}
                 image_prompts = []
                 
-                # Extract image data from BlogWriter - NO DUPLICATE GENERATION
+                # Extract image data from API response
                 try:
-                    if hasattr(self.blog_writer, 'section_images') and self.blog_writer.section_images:
-                        section_images_data = self.blog_writer.section_images
-                        status_text.text(f"✅ Retrieved {len(section_images_data)} section images from BlogWriter!")
+                    if api_response.get('section_images'):
+                        section_images_data = api_response.get('section_images', {})
+                        status_text.text(f"✅ Retrieved {len(section_images_data)} section images from API!")
                         print(f"DEBUG: Retrieved section images: {list(section_images_data.keys())}")
                         
                         # Convert section images to UI display format
@@ -527,32 +570,30 @@ class BlogGenerationFeature:
                                 'generation_method': section_data.get('generation_method')
                             })
                     
-                    # Extract image prompts from BlogWriter
-                    if hasattr(self.blog_writer, 'image_prompts') and self.blog_writer.image_prompts:
-                        image_prompts = self.blog_writer.image_prompts
-                        status_text.text(f"✅ Retrieved {len(image_prompts)} image prompts from BlogWriter!")
+                    # Extract image prompts from API response
+                    if api_response.get('image_prompts'):
+                        image_prompts = api_response.get('image_prompts', [])
+                        status_text.text(f"✅ Retrieved {len(image_prompts)} image prompts from API!")
                         print(f"DEBUG: Retrieved image prompts: {len(image_prompts)} prompts")
                 
                 except Exception as e:
-                    print(f"DEBUG: Error retrieving image data from BlogWriter: {str(e)}")
+                    print(f"DEBUG: Error retrieving image data from API: {str(e)}")
                     st.warning(f"Could not retrieve image data: {str(e)}")
                     # Continue without images rather than failing
                 
                 status_text.text("📚 Collecting research sources...")
                 progress_bar.progress(85)
                 
-                # Get research sources
+                # Get research sources from API response
                 research_sources = []
                 try:
-                    if hasattr(self.blog_writer, 'research_sources') and self.blog_writer.research_sources:
-                        research_sources = self.blog_writer.research_sources
+                    if api_response.get('research_sources'):
+                        research_sources = api_response.get('research_sources', [])
                         status_text.text(f"✅ Found {len(research_sources)} research sources!")
                         print(f"DEBUG: Found {len(research_sources)} research sources")
                     else:
-                        status_text.text("⚠️ No research sources found - checking attributes...")
-                        print(f"DEBUG: research_sources attribute exists: {hasattr(self.blog_writer, 'research_sources')}")
-                        if hasattr(self.blog_writer, 'research_sources'):
-                            print(f"DEBUG: research_sources value: {self.blog_writer.research_sources}")
+                        status_text.text("⚠️ No research sources found in API response")
+                        print(f"DEBUG: research_sources in API response: {api_response.get('research_sources')}")
                 except Exception as e:
                     st.warning(f"Could not extract research sources: {str(e)}")
                     print(f"DEBUG: Exception extracting research sources: {e}")
@@ -1047,7 +1088,11 @@ class BlogGenerationFeature:
             if blog_url:
                 try:
                     with st.spinner("Analyzing blog..."):
-                        analysis = analyze_sample_blog(blog_url)
+                        analysis_response = blog_api.analyze_blog(blog_url)
+                        if analysis_response.get('success'):
+                            analysis = analysis_response.get('analysis', {})
+                        else:
+                            analysis = None
                         
                         if analysis:
                             st.success("Blog analysis completed!")

@@ -4,7 +4,7 @@ Django views for Upwork Proposal Generator API.
 
 import logging
 from rest_framework import generics, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
@@ -175,7 +175,6 @@ class UpworkProposalDetailView(generics.RetrieveUpdateDestroyAPIView):
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def generate_proposal_direct(request):
     """
     Generate proposal directly without saving to database.
@@ -250,7 +249,6 @@ def generate_proposal_direct(request):
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def regenerate_proposal(request, proposal_id):
     """Regenerate proposal content for an existing proposal."""
     try:
@@ -334,7 +332,6 @@ def regenerate_proposal(request, proposal_id):
     tags=["Upwork Proposals"]
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
 def proposal_status(request, proposal_id):
     """Get the current status of a proposal generation."""
     try:

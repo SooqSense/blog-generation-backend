@@ -10,32 +10,73 @@ from PIL import Image
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools from Django management app
-try:
-    from management_app.image_generator.service.image_generator import generate_image_with_flux, generate_image_with_flux_schnell
-    from management_app.image_generator.service.edit_images import edit_image_with_flux, convert_image_to_base64
+# API-based image generation (no direct Django imports)
+import requests
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API base URL from environment
+API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
+
+# API service class for image generation
+class ImageGenerationAPI:
+    """API service for image generation operations"""
     
+    def __init__(self):
+        self.base_url = API_BASE_URL
+        self.auth_headers = self._get_auth_headers()
+    
+    def _get_auth_headers(self):
+        """Get authentication headers from session state"""
+        import streamlit as st
+        headers = {"Content-Type": "application/json"}
+        
+        # Get JWT token from session state
+        if hasattr(st, 'session_state') and 'jwt_token' in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.jwt_token}"
+        
+        return headers
+    
+    def generate_image(self, **kwargs):
+        """Generate image via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/images/generate/",
+                json=kwargs,
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def edit_image(self, **kwargs):
+        """Edit image via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/images/edit/",
+                json=kwargs,
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# Initialize API service
+try:
+    image_api = ImageGenerationAPI()
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None
-    print("✅ Image generation feature: AI tools imported successfully")
-    
+    print("✅ Image generation feature: API service initialized successfully")
 except Exception as e:
     AI_TOOLS_AVAILABLE = False
     AI_TOOLS_ERROR = str(e)
-    print(f"⚠️ Image generation feature: AI tools import failed - {str(e)}")
-    
-    # Create dummy functions for graceful degradation
-    def generate_image_with_flux(*args, **kwargs):
-        raise Exception(f"FLUX AI image generation not available: {AI_TOOLS_ERROR}")
-    
-    def generate_image_with_flux_schnell(*args, **kwargs):
-        raise Exception(f"FLUX AI image generation not available: {AI_TOOLS_ERROR}")
-    
-    def edit_image_with_flux(*args, **kwargs):
-        raise Exception(f"FLUX AI image editing not available: {AI_TOOLS_ERROR}")
-    
-    def convert_image_to_base64(*args, **kwargs):
-        raise Exception(f"Image conversion tools not available: {AI_TOOLS_ERROR}")
+    print(f"⚠️ Image generation feature: API service initialization failed - {str(e)}")
+    image_api = None
 
 class ImageGenerationFeature:
     """Image Generation feature for Streamlit UI"""
@@ -246,30 +287,32 @@ class ImageGenerationFeature:
             status_text.text("Initializing image generation...")
             progress_bar.progress(10)
             
-            # Determine generation function based on selected model
+            # Generate images using API
             model = kwargs.get('model', 'flux_dev')
-            if model == 'flux_schnell':
-                generation_func = generate_image_with_flux_schnell
-                method = "flux_schnell"
-                model_name = "FLUX Schnell"
-            else:
-                generation_func = generate_image_with_flux
-                method = "flux"
-                model_name = "FLUX Dev"
+            method = "flux_schnell" if model == 'flux_schnell' else "flux"
+            model_name = "FLUX Schnell" if model == 'flux_schnell' else "FLUX Dev"
             
             status_text.text(f"Generating {kwargs.get('count', 1)} image(s) with {model_name}...")
             progress_bar.progress(30)
             
-            # Generate images
-            images_data, total_generated, failed_generations = generation_func(
+            # Generate images via API
+            api_response = image_api.generate_image(
                 prompt=kwargs.get('prompt'),
                 size=kwargs.get('size', '1024x1024'),
-                output_dir="streamlit_images",
+                model=model,
                 topic=kwargs.get('topic'),
                 keywords=kwargs.get('keywords', []),
                 image_type=kwargs.get('image_type', 'content'),
                 count=kwargs.get('count', 1)
             )
+            
+            if not api_response.get('success'):
+                raise Exception(api_response.get('error', 'Image generation failed'))
+            
+            # Extract data from API response
+            images_data = api_response.get('images_data', [])
+            total_generated = api_response.get('total_generated', 0)
+            failed_generations = api_response.get('failed_generations', 0)
             
             status_text.text("Processing generated images...")
             progress_bar.progress(80)
@@ -462,18 +505,19 @@ class ImageGenerationFeature:
             
             with st.spinner("Converting and editing image..."):
                 # Convert uploaded file to base64
-                image_base64 = convert_image_to_base64(uploaded_file)
+                import base64
+                image_base64 = base64.b64encode(uploaded_file.read()).decode('utf-8')
                 
                 if not image_base64:
                     st.error("Failed to process the uploaded image")
                     return
                 
-                # Edit the image
-                result = edit_image_with_flux(
+                # Edit the image via API
+                result = image_api.edit_image(
                     prompt=prompt,
                     image_base64=image_base64,
                     keywords=keywords.split(',') if keywords else [],
-                    output_dir="streamlit_edited"
+                    filename=uploaded_file.name
                 )
                 
                 if result and result.get('success'):

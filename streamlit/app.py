@@ -1,157 +1,143 @@
 #!/usr/bin/env python3
 """
-Main Streamlit application entry point for AI Blog Generator
+Main Streamlit application entry point for AI Blog Generator.
+Uses Django API calls and reads configuration from Django settings.
 """
 
 import streamlit as st
-import sys
+import requests
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# IMPORTANT: set_page_config MUST be the first Streamlit command
+# Load environment variables
+load_dotenv()
+
+from authentication.auth_service import StreamlitAuthManager
+from authentication.ui_components import AuthUI, SidebarAuth
+
+# --- Streamlit setup ---
 st.set_page_config(
     page_title="AI Blog Generator",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': None,
-        'Report a bug': None,
-        'About': "AI Blog Generator - Professional content creation platform"
-    }
+    menu_items={"About": "AI Blog Generator - Professional content creation platform"},
 )
 
-# Configure Python paths for robust module importing
-def setup_python_paths():
-    """Setup Python paths to ensure proper module importing"""
-    current_file = Path(__file__).resolve()
-    
-    # Get directories
-    streamlit_dir = current_file.parent  # /streamlit/
-    project_root = streamlit_dir.parent  # /blog-generation-backend/
-    
-    # Add paths to sys.path if not already present
-    paths_to_add = [
-        str(project_root),      # For importing management_app, tools, etc.
-        str(streamlit_dir),     # For importing streamlit modules directly
-    ]
-    
-    for path in paths_to_add:
-        if path not in sys.path:
-            sys.path.insert(0, path)
-    
-    # Set environment variables
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'management_app.config.settings')
-    os.environ.setdefault('PYTHONPATH', str(project_root))
-    
-    # Debug information
-    print(f"🔧 Python Path Setup:")
-    print(f"   Streamlit Dir: {streamlit_dir}")
-    print(f"   Project Root: {project_root}")
-    print(f"   Current Dir: {os.getcwd()}")
+# --- Load backend API base URL from environment variables ---
+API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
-# Setup paths
-setup_python_paths()
+# --- Utility functions ---
 
-# Import the main app with multiple fallback strategies
-def import_streamlit_components():
-    """Import Streamlit components with fallback strategies"""
-    import_strategies = [
-        # Strategy 1: Relative import (when running from streamlit directory)  
-        lambda: __import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']),
-        # Strategy 2: Direct import using importlib to avoid naming conflicts
-        lambda: __import__('importlib', fromlist=['import_module']).import_module('base.streamlit_base'),
-        # Strategy 3: Import by ensuring streamlit directory is in path
-        lambda: (lambda streamlit_dir=str(Path(__file__).parent): 
-                 streamlit_dir not in sys.path and sys.path.insert(0, streamlit_dir) or 
-                 __import__('base.streamlit_base', fromlist=['StreamlitApp', 'load_custom_css']))(),
-        # Strategy 4: Fallback using importlib with spec
-        lambda: (lambda: (
-            __import__('importlib.util', fromlist=['spec_from_file_location', 'module_from_spec']) and
-            (spec := __import__('importlib.util').spec_from_file_location(
-                'streamlit_base_fallback', 
-                str(Path(__file__).parent / 'base' / 'streamlit_base.py')
-            )) and
-            (module := __import__('importlib.util').module_from_spec(spec)) and
-            spec.loader.exec_module(module) and
-            module
-        ) or None)()
-    ]
-    
-    for i, strategy in enumerate(import_strategies, 1):
-        try:
-            module = strategy()
-            if module is None:
-                print(f"❌ Import Strategy {i} failed: returned None")
-                continue
-            StreamlitApp = getattr(module, 'StreamlitApp')
-            load_custom_css = getattr(module, 'load_custom_css')
-            print(f"✅ Import Strategy {i} successful")
-            return StreamlitApp, load_custom_css
-        except (ImportError, AttributeError) as e:
-            print(f"❌ Import Strategy {i} failed: {e}")
-            continue
-    
-    # If all strategies fail, show error
-    st.error("🚫 Failed to import required modules")
-    st.error("**Troubleshooting Steps:**")
-    st.markdown("""
-    1. **Check Directory Structure**: Ensure you're running from the correct location
-    2. **Verify Python Path**: Make sure the project root is in your Python path
-    3. **Install Dependencies**: Run `pip install -r requirements.txt`
-    4. **Check File Integrity**: Ensure all frontend files exist and are not corrupted
-    """)
-    
-    with st.expander("🔍 Debug Information"):
-        st.write("**Current Working Directory:**", os.getcwd())
-        st.write("**File Location:**", str(Path(__file__).resolve()))
-        st.write("**Python Path:**", sys.path[:5])  # Show first 5 paths
-        st.write("**Environment Variables:**")
-        st.json({
-            "DJANGO_SETTINGS_MODULE": os.environ.get('DJANGO_SETTINGS_MODULE'),
-            "PYTHONPATH": os.environ.get('PYTHONPATH', 'Not set')
-        })
-    
-    st.stop()
+def load_custom_css():
+    css_path = Path(__file__).parent / "base" / "style.css"
+    if css_path.exists():
+        st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
 
-# Import components
-StreamlitApp, load_custom_css = import_streamlit_components()
+def call_api(endpoint: str, method: str = "GET", data=None, files=None, params=None):
+    """Helper for making API requests with JWT authentication."""
+    url = f"{API_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    headers = {"Content-Type": "application/json"}
+
+    # Get auth manager and add JWT token if available
+    auth_manager = StreamlitAuthManager()
+    auth_headers = auth_manager.get_auth_headers()
+    headers.update(auth_headers)
+
+    try:
+        if method == "GET":
+            response = requests.get(url, params=params, headers=headers)
+        elif method == "POST":
+            response = requests.post(url, json=data, files=files, headers=headers)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"API request failed: {e}")
+        return None
+
+# --- Auth + UI ---
+
+def handle_auth():
+    """Handle authentication using the new Clerk JWT system"""
+    auth_manager = StreamlitAuthManager()
+    
+    # Check if user is authenticated
+    if not auth_manager.is_authenticated():
+        # Render login page
+        auth_ui = AuthUI()
+        auth_ui.render_login_page()
+        st.stop()
+    else:
+        # Verify session token
+        if not auth_manager.verify_session():
+            st.error("Session expired. Please login again.")
+            st.stop()
+
+def render_blog_generator():
+    st.title("🧠 AI Blog Generator")
+
+    topic = st.text_input("Enter your blog topic")
+    keywords = st.text_area("Enter keywords (comma-separated)", height=80)
+    tone = st.selectbox("Choose tone", ["Professional", "Conversational", "Educational", "Inspirational"])
+    
+    if st.button("Generate Blog"):
+        if not topic:
+            st.warning("Please enter a topic first.")
+            return
+
+        with st.spinner("Generating blog post... ✨"):
+            payload = {
+                "topic": topic,
+                "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
+                "tone": tone.lower(),
+            }
+            response = call_api("blogs/generate/", "POST", data=payload)
+            if response and response.get("success"):
+                st.markdown("### 📝 Generated Blog Post")
+                st.write(response["content"])
+            else:
+                st.error("❌ Failed to generate blog post. Check API logs for details.")
+
+def render_dashboard():
+    """Render main dashboard with authentication sidebar"""
+    # Initialize authentication components
+    auth_manager = StreamlitAuthManager()
+    sidebar_auth = SidebarAuth()
+    
+    # Render authentication section in sidebar
+    sidebar_auth.render_auth_section()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.title("Navigation")
+    choice = st.sidebar.radio("Go to", ["Blog Generator", "My Posts", "Settings"])
+
+    if choice == "Blog Generator":
+        render_blog_generator()
+    elif choice == "My Posts":
+        response = call_api("Blogs/list/", "GET")
+        if response:
+            st.subheader("📚 Your Generated Blogs")
+            for post in response.get("results", []):
+                st.markdown(f"### {post['title']}")
+                st.write(post["excerpt"])
+                st.write(f"🗓️ {post['created_at']}")
+                st.divider()
+        else:
+            st.warning("No blogs found.")
+    elif choice == "Settings":
+        st.subheader("⚙️ Settings")
+        if st.button("Logout"):
+            auth_manager.logout()
+
+# --- Entry Point ---
 
 def main():
-    """Main application entry point with enhanced authentication"""
-    try:
-        # Load custom CSS
-        load_custom_css()
-        
-        # Use session state to maintain app instance and avoid recreation
-        if 'streamlit_app' not in st.session_state:
-            st.session_state.streamlit_app = StreamlitApp()
-        
-        # Initialize authentication and handle session persistence
-        app = st.session_state.streamlit_app
-        
-        # Check authentication status and handle session persistence
-        if hasattr(app, 'auth') and app.auth:
-            # Handle authentication callback for session persistence
-            app.auth.handle_auth_callback()
-        
-        # Run the app
-        app.run()
-        
-    except Exception as e:
-        st.error(f"Application Error: {str(e)}")
-        st.error("Please check your environment setup and try again.")
-        
-        # Show authentication status in error case
-        if 'streamlit_app' in st.session_state:
-            app = st.session_state.streamlit_app
-            if hasattr(app, 'auth') and app.auth:
-                st.info("Authentication system is available")
-                if app.auth.is_authenticated():
-                    user = app.auth.get_user()
-                    st.success(f"User authenticated: {user.get('email', 'Unknown')}")
-                else:
-                    st.warning("User not authenticated")
+    load_custom_css()
+    handle_auth()
+    render_dashboard()
 
 if __name__ == "__main__":
     main()

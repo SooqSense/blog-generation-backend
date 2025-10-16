@@ -1,5 +1,5 @@
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -56,7 +56,6 @@ except Exception as e:
     description="Upload a document (PDF, DOCX, MD, TXT), extract its content, index it in Pinecone for searchability, and store it in S3. The document will be available for querying through the chat API.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def upload_pdf_api(request):
     """Upload and process document files (PDF, DOCX, MD, TXT)."""

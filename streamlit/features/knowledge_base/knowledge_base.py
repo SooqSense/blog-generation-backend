@@ -12,40 +12,72 @@ import io
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import AI tools from Django management app
-try:
-    from management_app.knowledge_base.service.pdf_extractor.pdf_extractor import document_extractor
-    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
+# API-based knowledge base (no direct Django imports)
+import requests
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API base URL from environment
+API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
+
+# API service class for knowledge base
+class KnowledgeBaseAPI:
+    """API service for knowledge base operations"""
     
+    def __init__(self):
+        self.base_url = API_BASE_URL
+        self.auth_headers = self._get_auth_headers()
+    
+    def _get_auth_headers(self):
+        """Get authentication headers from session state"""
+        import streamlit as st
+        headers = {"Content-Type": "application/json"}
+        
+        # Get JWT token from session state
+        if hasattr(st, 'session_state') and 'jwt_token' in st.session_state:
+            headers["Authorization"] = f"Bearer {st.session_state.jwt_token}"
+        
+        return headers
+    
+    def upload_document(self, **kwargs):
+        """Upload document via API"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/knowledge-base/upload/",
+                json=kwargs,
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_documents(self):
+        """Get documents via API"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/knowledge-base/documents/",
+                headers=self.auth_headers
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# Initialize API service
+try:
+    kb_api = KnowledgeBaseAPI()
     AI_TOOLS_AVAILABLE = True
     AI_TOOLS_ERROR = None
-    print("✅ Knowledge Base feature: AI tools imported successfully")
-    
+    print("✅ Knowledge Base feature: API service initialized successfully")
 except Exception as e:
     AI_TOOLS_AVAILABLE = False
     AI_TOOLS_ERROR = str(e)
-    print(f"⚠️ Knowledge Base feature: AI tools import failed - {str(e)}")
-    
-    # Create dummy classes for graceful degradation
-    class DocumentExtractor:
-        def __init__(self):
-            pass
-        def extract_content(self, *args, **kwargs):
-            raise Exception(f"Document extraction not available: {AI_TOOLS_ERROR}")
-        def get_supported_types(self):
-            return ['pdf', 'docx', 'md', 'txt']
-        def validate_file(self, *args, **kwargs):
-            return {'valid': False, 'error': f"Document validation not available: {AI_TOOLS_ERROR}"}
-    
-    class PineconeService:
-        def __init__(self):
-            pass
-        def is_available(self):
-            return False
-        def index_document(self, *args, **kwargs):
-            return {'success': False, 'error': f"Pinecone indexing not available: {AI_TOOLS_ERROR}"}
-    
-    document_extractor = DocumentExtractor()
+    print(f"⚠️ Knowledge Base feature: API service initialization failed - {str(e)}")
+    kb_api = None
 
 class KnowledgeBaseFeature:
     """Knowledge Base (PDF Upload) feature for Streamlit UI"""
@@ -53,17 +85,10 @@ class KnowledgeBaseFeature:
     def __init__(self):
         self.ai_tools_available = AI_TOOLS_AVAILABLE
         self.ai_tools_error = AI_TOOLS_ERROR
-        try:
-            self.document_extractor = document_extractor
-            self.pinecone_service = PineconeService()
-            # Initialize pdf_service as None for now (can be added later if needed)
-            self.pdf_service = None
-        except Exception as e:
-            self.document_extractor = None
-            self.pinecone_service = None
-            self.pdf_service = None
-            if AI_TOOLS_AVAILABLE:
-                self.ai_tools_error = str(e)
+        self.kb_api = kb_api
+        self.document_extractor = None  # Not needed for API-based approach
+        self.pinecone_service = None  # Not needed for API-based approach
+        self.pdf_service = None
     
     def _check_admin_permissions(self):
         """Check if user has admin permissions for Knowledge Base access"""
@@ -133,18 +158,8 @@ class KnowledgeBaseFeature:
         with col1:
             st.markdown("#### 📁 File Upload")
             
-            # Get supported file types
-            if self.document_extractor:
-                supported_types = self.document_extractor.get_supported_types()
-                type_extensions = {
-                    'pdf': 'pdf',
-                    'docx': 'docx', 
-                    'md': 'md',
-                    'txt': 'txt'
-                }
-                allowed_extensions = [type_extensions.get(t) for t in supported_types if t in type_extensions]
-            else:
-                allowed_extensions = ['pdf', 'docx', 'md', 'txt']
+            # Supported file types for API
+            allowed_extensions = ['pdf', 'docx', 'md', 'txt']
             
             uploaded_files = st.file_uploader(
                 "Choose document files",
@@ -213,15 +228,15 @@ class KnowledgeBaseFeature:
             
             # Show service status
             st.markdown("#### 🔧 Service Status")
-            if self.document_extractor:
-                st.success("✅ Document Extractor Ready")
+            if self.kb_api:
+                st.success("✅ Knowledge Base API Ready")
             else:
-                st.error("❌ Document Extractor Unavailable")
+                st.error("❌ Knowledge Base API Unavailable")
             
-            if self.pinecone_service and self.pinecone_service.is_available():
-                st.success("✅ Vector Database Connected")
+            if self.ai_tools_available:
+                st.success("✅ AI Tools Available")
             else:
-                st.error("❌ Vector Database Unavailable")
+                st.error("❌ AI Tools Unavailable")
             
             # Upload statistics
             if 'upload_stats' in st.session_state:
@@ -300,48 +315,26 @@ class KnowledgeBaseFeature:
                         username = st.session_state.get('username', 'Anonymous')
                         email = st.session_state.get('user_email', 'user@example.com')
                         
-                        # Process document using document extractor and Pinecone
-                        # Validate file first
-                        validation_result = self.document_extractor.validate_file(file_content, file_name)
-                        if not validation_result['valid']:
-                            raise Exception(validation_result['error'])
+                        # Process document using API
+                        import base64
+                        file_base64 = base64.b64encode(file_content).decode('utf-8')
                         
-                        # Extract content
-                        extraction_result = self.document_extractor.extract_content(file_content, file_name)
-                        if not extraction_result['success']:
-                            raise Exception(f"Content extraction failed: {extraction_result['error']}")
+                        api_response = self.kb_api.upload_document(
+                            filename=file_name,
+                            file_content=file_base64,
+                            file_type=file_name.split('.')[-1].lower(),
+                            user_id=user_id,
+                            username=username,
+                            extract_images=options.get('extract_images', True),
+                            chunk_documents=options.get('chunk_documents', True),
+                            index_to_pinecone=options.get('index_to_pinecone', True),
+                            overwrite_existing=options.get('overwrite_existing', False)
+                        )
                         
-                        # Index to Pinecone if available
-                        pinecone_indexed = False
-                        pinecone_error = None
-                        if self.pinecone_service and self.pinecone_service.is_available():
-                            try:
-                                pinecone_result = self.pinecone_service.index_document(
-                                    document_id=f"doc_{user_id}_{int(time.time())}",
-                                    file_name=file_name,
-                                    file_type=extraction_result['file_type'],
-                                    content=extraction_result['content'],
-                                    user_id=user_id,
-                                    username=username,
-                                    file_url=f"https://s3.amazonaws.com/bucket/documents/{file_name}",
-                                    document_links=extraction_result.get('links', [])
-                                )
-                                pinecone_indexed = pinecone_result['success']
-                                if not pinecone_indexed:
-                                    pinecone_error = pinecone_result.get('error', 'Unknown error')
-                            except Exception as e:
-                                pinecone_error = str(e)
+                        if not api_response.get('success'):
+                            raise Exception(api_response.get('error', 'Document upload failed'))
                         
-                        # Create result similar to PDFUploaderService
-                        result = {
-                            'success': True,
-                            'content': extraction_result['content'],
-                            'word_count': extraction_result['word_count'],
-                            'file_type': extraction_result['file_type'],
-                            'uploaded_url': f"https://s3.amazonaws.com/bucket/documents/{file_name}",
-                            'pinecone_indexed': pinecone_indexed,
-                            'pinecone_error': pinecone_error
-                        }
+                        result = api_response.get('result', {})
                         
                         # Enhanced result tracking with Pinecone indexing status
                         upload_status = 'success' if result.get('success') else 'failed'

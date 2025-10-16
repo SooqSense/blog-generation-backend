@@ -2,7 +2,7 @@ import os
 import sys
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -46,7 +46,6 @@ from .service.edit_images import edit_image_with_flux, convert_image_to_base64
     description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
     Generate one or more professional images using FLUX AI generation models.
@@ -191,7 +190,6 @@ def generate_image_api(request):
     description="Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords. Upload an image file and provide editing instructions to transform the image using advanced AI editing capabilities.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def edit_image_api(request):
     """Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords."""

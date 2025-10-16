@@ -315,7 +315,8 @@ def get_linkedin_access_token(user_id, linkedin_profile_id):
     Get LinkedIn access token for the user
     """
     try:
-        from authentication.models import User
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
         user = User.objects.get(id=user_id)
         token = getattr(user, 'linkedin_access_token', None)
         
