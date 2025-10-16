@@ -51,10 +51,10 @@ WORKDIR /app/management_app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+    CMD curl -f http://localhost:$PORT/health/ || exit 1
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300"]
 
 # Streamlit stage for Cloud Run deployment
 FROM base AS streamlit
@@ -116,7 +116,7 @@ WORKDIR /app/management_app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+    CMD curl -f http://localhost:$PORT/health/ || exit 1
 
 EXPOSE 8000
 CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
