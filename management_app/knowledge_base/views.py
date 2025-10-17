@@ -175,7 +175,7 @@ def upload_pdf_api(request):
             "word_count": extraction_result['word_count'],
             "uploaded_url": uploaded_url,
             "content_extraction_completed": True,
-            "pinecone_indexing_completed": pinecone_indexed,
+            "pinecone_indexed": pinecone_indexed,
             "chunks_indexed": chunks_indexed,
             "processing_status": "completed",
             "extraction_method": extraction_result.get('method', 'unknown'),

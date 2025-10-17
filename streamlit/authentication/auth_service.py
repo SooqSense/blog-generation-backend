@@ -24,6 +24,9 @@ class ClerkAuthService:
         
         # Always initialize clerk_secret_key attribute
         self.clerk_secret_key = os.getenv("CLERK_SECRET_KEY")
+        
+        # Session expiry configuration - match your Clerk dashboard setting
+        self.session_expiry_days = int(os.getenv("CLERK_SESSION_EXPIRY_DAYS", "7"))  # Default 7 days
     
     
     def verify_token(self, token: str) -> Dict[str, Any]:
@@ -109,9 +112,13 @@ class ClerkAuthService:
                 
                 user_id = user_data['id']
                 
-                # Create a Clerk session for this user
+                # Create a Clerk session for this user with configurable expiry
+                from datetime import datetime, timedelta
+                expiry_time = datetime.now() + timedelta(days=self.session_expiry_days)
+                
                 session_payload = {
-                    'user_id': user_id
+                    'user_id': user_id,
+                    'expire_at': int(expiry_time.timestamp())  # Unix timestamp for 7 days from now
                 }
                 
                 # Create session using Clerk API
@@ -126,11 +133,15 @@ class ClerkAuthService:
                     session_data = session_response.json()
                     session_id = session_data['id']
                     
-                    # Get JWT token from the session
+                    # Get JWT token from the session with proper expiry
+                    token_payload = {
+                        'expires_in_seconds': self.session_expiry_days * 24 * 3600  # Convert days to seconds
+                    }
+                    
                     token_response = requests.post(
                         f'https://api.clerk.com/v1/sessions/{session_id}/tokens',
                         headers=headers,
-                        json={},
+                        json=token_payload,
                         timeout=10
                     )
                     
@@ -139,6 +150,7 @@ class ClerkAuthService:
                         clerk_token = token_data.get('jwt')
                         
                         if clerk_token:
+                            logger.info(f"Created session token with {self.session_expiry_days}-day expiry for user {user_id}")
                             # Verify the Clerk token with our backend
                             verify_result = self.verify_token(clerk_token)
                             if verify_result['success']:
@@ -146,7 +158,7 @@ class ClerkAuthService:
                                     'success': True,
                                     'user': verify_result['user'],
                                     'token': clerk_token,
-                                    'message': 'Authentication successful'
+                                    'message': f'Authentication successful with {self.session_expiry_days}-day token'
                                 }
                             else:
                                 return {

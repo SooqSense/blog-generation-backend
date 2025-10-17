@@ -27,17 +27,26 @@ django-celery-beat==2.7.0
 kombu==5.4.2
 
 ##############################
-# AI / LLM Stack
+# AI / LLM Stack (Essential Only)
 ##############################
 langchain<=0.3.20
 langchain-core<=0.3.63
 langchain-openai==0.2.6
 langchain-google-genai<=2.1.10
-langsmith==0.3.45  # Updated to compatible version
+langsmith==0.3.45
 openai>=1.83.0,<1.99.6
 langchain-community<=0.3.20
 langgraph-prebuilt<=0.6.1
 langgraph<=0.5.1
+crewai>=0.80.0
+crewai-tools>=0.8.0
+fal-client>=0.4.0
+litellm>=1.0.0
+
+##############################
+# Vector Database (Only Pinecone - You're Using This)
+##############################
+pinecone>=3.0.0
 
 ##############################
 # HTTP & Networking

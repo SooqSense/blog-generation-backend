@@ -48,7 +48,7 @@ class UpworkProposalListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         """Return proposals for the current user."""
-        return UpworkProposal.objects.filter(user=self.request.user)
+        return UpworkProposal.objects.filter(user_id=self.request.user.id)
     
     def get_serializer_class(self):
         """Return appropriate serializer based on request method."""
@@ -58,8 +58,13 @@ class UpworkProposalListCreateView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         """Create proposal and trigger generation."""
-        # Save the proposal with user and initial status
-        proposal = serializer.save(user=self.request.user, status='generating')
+        # Save the proposal with Clerk user data and initial status
+        proposal = serializer.save(
+            user_id=self.request.user.id,
+            username=self.request.user.username,
+            email=self.request.user.email,
+            status='generating'
+        )
         
         # Trigger async proposal generation
         try:
@@ -157,7 +162,7 @@ class UpworkProposalDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         """Return proposals for the current user."""
-        return UpworkProposal.objects.filter(user=self.request.user)
+        return UpworkProposal.objects.filter(user_id=self.request.user.id)
 
 
 @extend_schema(
@@ -252,7 +257,7 @@ def generate_proposal_direct(request):
 def regenerate_proposal(request, proposal_id):
     """Regenerate proposal content for an existing proposal."""
     try:
-        proposal = UpworkProposal.objects.get(id=proposal_id, user=request.user)
+        proposal = UpworkProposal.objects.get(id=proposal_id, user_id=request.user.id)
     except UpworkProposal.DoesNotExist:
         return Response(
             {
@@ -335,7 +340,7 @@ def regenerate_proposal(request, proposal_id):
 def proposal_status(request, proposal_id):
     """Get the current status of a proposal generation."""
     try:
-        proposal = UpworkProposal.objects.get(id=proposal_id, user=request.user)
+        proposal = UpworkProposal.objects.get(id=proposal_id, user_id=request.user.id)
         
         serializer = ProposalGenerationStatusSerializer({
             'success': proposal.status == 'completed',

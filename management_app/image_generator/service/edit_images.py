@@ -142,64 +142,62 @@ def edit_image_with_flux(prompt, image_base64, keywords=None, output_dir="edited
 
 
 def upload_edited_image_to_s3(image_content, output_dir, filename=None):
-    """Upload edited image to S3"""
+    """Upload edited image to S3 with improved error handling"""
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"edited_{timestamp}.jpg"
+
+    s3_key = f"{output_dir}/{filename}"
+
+    # ✅ Get S3 credentials directly from Django settings
+    aws_access_key = settings.AWS_ACCESS_KEY_ID
+    aws_secret_key = settings.AWS_SECRET_ACCESS_KEY
+    bucket_name = settings.S3_BUCKET_NAME
+    region = settings.AWS_REGION
+
+    # Debug logging
+    print(f"🔍 S3 Debug Info (Edited Image):")
+    print(f"   - Bucket: {bucket_name}")
+    print(f"   - Region: {region}")
+    print(f"   - Access Key: {'*' * 8}{aws_access_key[-4:] if aws_access_key else 'None'}")
+    print(f"   - Secret Key: {'*' * 8}{aws_secret_key[-4:] if aws_secret_key else 'None'}")
+    print(f"   - S3 Key: {s3_key}")
+
+    # ✅ REQUIRE S3 credentials - no local fallback
+    if not aws_access_key or not aws_secret_key or not bucket_name:
+        error_msg = "S3 credentials not configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME in Django settings."
+        print(f"❌ ERROR: {error_msg}")
+        raise ValueError(error_msg)
+
+    # Create S3 client
+    s3_client = boto3.client(
+        "s3",
+        region_name=region,
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_key,
+    )
+
+    # Upload edited image to S3 directly with improved error handling
     try:
-        if not filename:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"edited_{timestamp}.jpg"
-
-        s3_key = f"{output_dir}/{filename}"
-
-        # ✅ Get S3 credentials from Django settings
-        aws_access_key = getattr(settings, "AWS_ACCESS_KEY_ID", None)
-        aws_secret_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", None)
-        bucket_name = getattr(settings, "S3_BUCKET_NAME", None)
-        region = getattr(settings, "AWS_REGION", "us-east-1")
-
-        if not aws_access_key or not aws_secret_key or not bucket_name:
-            print(f"S3 credentials not found, saving edited image locally...")
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-            filepath = os.path.join(output_dir, filename)
-            with open(filepath, "wb") as f:
-                f.write(image_content)
-            print(f"Edited image saved locally: {filepath}")
-            return filepath
-
-        try:
-            s3_client = boto3.client(
-                "s3",
-                region_name=region,
-                aws_access_key_id=aws_access_key,
-                aws_secret_access_key=aws_secret_key,
-            )
-
-            s3_client.upload_fileobj(
-                io.BytesIO(image_content),
-                bucket_name,
-                s3_key,
-                ExtraArgs={"ContentType": "image/jpeg"},
-            )
-
-            region_part = f".{region}" if region and region != "us-east-1" else ""
-            final_image_url = f"https://{bucket_name}.s3{region_part}.amazonaws.com/{s3_key}"
-            print(f"Edited image uploaded to S3: {final_image_url}")
-            return final_image_url
-
-        except Exception as s3_error:
-            print(f"Error uploading edited image to S3: {str(s3_error)}")
-            print(f"Falling back to local storage...")
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-            filepath = os.path.join(output_dir, filename)
-            with open(filepath, "wb") as f:
-                f.write(image_content)
-            print(f"Edited image saved locally: {filepath}")
-            return filepath
-
+        s3_client.upload_fileobj(
+            io.BytesIO(image_content),
+            bucket_name,
+            s3_key,
+            ExtraArgs={"ContentType": "image/jpeg"},
+        )
+        region_part = f".{region}" if region and region != "us-east-1" else ""
+        final_image_url = f"https://{bucket_name}.s3{region_part}.amazonaws.com/{s3_key}"
+        print(f"✅ Edited image uploaded to S3: {final_image_url}")
+        return final_image_url
+    except boto3.exceptions.S3UploadFailedError as e:
+        print(f"❌ Failed to upload edited image to S3: {str(e)}")
+        raise
+    except boto3.exceptions.S3TransferFailedError as e:
+        print(f"❌ S3 transfer failed for edited image: {str(e)}")
+        raise
     except Exception as e:
-        print(f"Error uploading edited image: {str(e)}")
-        return None
+        print(f"❌ Unexpected error during S3 upload: {str(e)}")
+        raise
 
 
 def edit_image_with_flux_from_url(prompt, image_url, keywords=None, output_dir="edited_images", strength=0.8):

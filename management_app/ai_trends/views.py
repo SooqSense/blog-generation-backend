@@ -81,6 +81,9 @@ def fetch_and_save_related_topics(request):
             keyword=topic,
             rising_topics=result.get("rising_queries", []),
             top_topics=result.get("top_queries", []),
+            user_id=request.user.id,
+            username=request.user.username,
+            email=request.user.email,
             created_at=timezone.now(),
         )
         trending_topics.save()
