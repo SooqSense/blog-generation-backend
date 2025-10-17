@@ -2,7 +2,7 @@ import os
 import sys
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -46,7 +46,6 @@ from .service.edit_images import edit_image_with_flux, convert_image_to_base64
     description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
     Generate one or more professional images using FLUX AI generation models.
@@ -78,23 +77,24 @@ def generate_image_api(request):
         logger.info(f"Starting image generation with model: {model}, count: {count}")
         
         # Generate images using the service
-        result = generate_image(
+        images_data, total_generated, failed_generations = generate_image(
             prompt=prompt,
             keywords=keywords,
             count=count,
-            model=model,
+            generation_method=generation_method,
             image_type=image_type,
             size=size
         )
         
-        if not result["success"]:
-            logger.error(f"Image generation failed: {result['message']}")
+        if total_generated == 0:
+            error_msg = f"Failed to generate any images. {failed_generations} failed attempts."
+            logger.error(error_msg)
             return Response(
-                {"error": result["message"]},
+                {"error": error_msg},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        logger.info(f"Successfully generated {result['total_generated']} images")
+        logger.info(f"Successfully generated {total_generated} images")
 
         # Save to database
         image_generation = ImageGeneration(
@@ -102,10 +102,10 @@ def generate_image_api(request):
             username=request.user.username,
             email=request.user.email,
             prompt=prompt,
-            image_url=result["images"][0]["image_url"] if result["images"] else "",  # Legacy field
-            image_urls=[img["image_url"] for img in result["images"]],
-            images_count=result["total_generated"],
-            enhanced_prompts=[img["enhanced_prompt"] for img in result["images"]],
+            image_url=images_data[0]["image_url"] if images_data else "",  # Legacy field
+            image_urls=[img["image_url"] for img in images_data],
+            images_count=total_generated,
+            enhanced_prompts=[img["enhanced_prompt"] for img in images_data],
             generation_method=generation_method,
             image_style=model,
             created_at=timezone.now(),
@@ -115,18 +115,18 @@ def generate_image_api(request):
 
         response_data = {
             "status": "success",
-            "message": f"Successfully generated {result['total_generated']} professional images using {model}!",
+            "message": f"Successfully generated {total_generated} professional images using {model}!",
             "prompt_used": prompt,
             "count": count,
             "model": model,
             "generation_method": generation_method,
             "image_style": model,
-            "images": result["images"],
-            "total_generated": result["total_generated"],
-            "failed_generations": result["failed_generations"],
+            "images": images_data,
+            "total_generated": total_generated,
+            "failed_generations": failed_generations,
             "database_record_id": image_generation.id,
-            "stored_image_urls": [img["image_url"] for img in result["images"]],
-            "stored_images_count": result["total_generated"],
+            "stored_image_urls": [img["image_url"] for img in images_data],
+            "stored_images_count": total_generated,
         }
 
         # Serialize the successful response
@@ -191,7 +191,6 @@ def generate_image_api(request):
     description="Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords. Upload an image file and provide editing instructions to transform the image using advanced AI editing capabilities.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def edit_image_api(request):
     """Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords."""
@@ -212,16 +211,16 @@ def edit_image_api(request):
         image_base64 = convert_image_to_base64(image_file)
         
         # Edit image using the service
-        result = edit_image_with_flux(
+        success, edited_image_url, enhanced_prompt, error_msg = edit_image_with_flux(
             prompt=prompt,
             keywords=keywords,
             image_base64=image_base64
         )
         
-        if not result["success"]:
-            logger.error(f"Image editing failed: {result['message']}")
+        if not success:
+            logger.error(f"Image editing failed: {error_msg}")
             return Response(
-                {"error": result["message"]},
+                {"error": error_msg},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -235,8 +234,8 @@ def edit_image_api(request):
             prompt=prompt,
             keywords=", ".join(keywords) if keywords else "",
             uploaded_image=image_base64,
-            image_url=result["edited_image_url"],
-            enhanced_prompt=result["enhanced_prompt"],
+            image_url=edited_image_url,
+            enhanced_prompt=enhanced_prompt,
             edit_status="success",
             created_at=timezone.now(),
         )
@@ -247,13 +246,13 @@ def edit_image_api(request):
             "status": "success",
             "message": "Image edited successfully using FLUX AI!",
             "prompt_used": prompt,
-            "enhanced_prompt": result["enhanced_prompt"],
+            "enhanced_prompt": enhanced_prompt,
             "keywords": ", ".join(keywords) if keywords else "",
             "original_image_size": image_file.size,
-            "edited_image_url": result["edited_image_url"],
+            "edited_image_url": edited_image_url,
             "database_record_id": image_editing.id,
             "edit_status": "success",
-            "processing_time": result.get("processing_time", 0),
+            "processing_time": 0,  # Could be calculated if needed
             "created_at": image_editing.created_at,
         }
 

@@ -1,8 +1,6 @@
 from django.db import models
-from django.contrib.auth import get_user_model
-import json
+from django.utils import timezone
 
-User = get_user_model()
 
 class UpworkProposal(models.Model):
     """Model to store Upwork proposal generation requests and results."""
@@ -22,9 +20,13 @@ class UpworkProposal(models.Model):
     # Generated content
     proposal_content = models.TextField(blank=True, null=True)
     
+    # Clerk user data (consistent with other apps)
+    user_id = models.IntegerField(default=0)
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
+    
     # Metadata
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
     # Status tracking
@@ -40,6 +42,10 @@ class UpworkProposal(models.Model):
     class Meta:
         db_table = 'upwork_proposals'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user_id', 'created_at']),
+            models.Index(fields=['status']),
+        ]
     
     def __str__(self):
         company_part = self.company_name if self.company_name else "Unknown Company"

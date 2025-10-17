@@ -65,7 +65,6 @@ class ProjectChatbot:
             # Step 1: Search Pinecone via PineconeService
             search_result = self.pinecone_service.search_documents(
                 query=query,
-                user_id=user_id,
                 top_k=top_k
             )
 

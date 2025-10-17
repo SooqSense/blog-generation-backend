@@ -1,5 +1,5 @@
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -49,7 +49,6 @@ from .service.trending_queries import fetch_trending_queries
     description="Fetch trending queries related to a given topic using Serper API and save to database. Fetches 30 trending queries worldwide related to the topic from the past 30 days.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def fetch_and_save_related_topics(request):
     """Fetch trending queries related to a given topic using Serper API and save to database."""
     try:
@@ -82,6 +81,9 @@ def fetch_and_save_related_topics(request):
             keyword=topic,
             rising_topics=result.get("rising_queries", []),
             top_topics=result.get("top_queries", []),
+            user_id=request.user.id,
+            username=request.user.username,
+            email=request.user.email,
             created_at=timezone.now(),
         )
         trending_topics.save()

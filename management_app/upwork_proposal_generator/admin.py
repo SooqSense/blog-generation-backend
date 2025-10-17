@@ -12,7 +12,8 @@ class UpworkProposalAdmin(admin.ModelAdmin):
         'client_name',
         'title',
         'status',
-        'user',
+        'user_id',
+        'username',
         'created_at'
     ]
     
@@ -26,13 +27,18 @@ class UpworkProposalAdmin(admin.ModelAdmin):
         'company_name',
         'client_name', 
         'title',
-        'requirements'
+        'requirements',
+        'username',
+        'email'
     ]
     
     readonly_fields = [
         'created_at',
         'updated_at',
-        'proposal_content'
+        'proposal_content',
+        'user_id',
+        'username',
+        'email'
     ]
     
     fieldsets = [
@@ -51,7 +57,7 @@ class UpworkProposalAdmin(admin.ModelAdmin):
             'fields': ['proposal_content']
         }),
         ('Status & Metadata', {
-            'fields': ['status', 'error_message', 'user', 'created_at', 'updated_at']
+            'fields': ['status', 'error_message', 'user_id', 'username', 'email', 'created_at', 'updated_at']
         }),
     ]
     
@@ -60,4 +66,4 @@ class UpworkProposalAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         if request.user.is_superuser:
             return qs
-        return qs.filter(user=request.user)
+        return qs.filter(user_id=request.user.id)

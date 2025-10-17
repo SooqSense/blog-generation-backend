@@ -2,7 +2,7 @@ import json
 import requests
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -50,7 +50,6 @@ from .service.linkedin_post_generator import LinkedInPostGenerator
     description="Generate a professional LinkedIn post based on the given topic.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def generate_linkedin_post_api(request):
     """Generate a professional LinkedIn post based on the given topic."""
     try:
@@ -143,7 +142,6 @@ def generate_linkedin_post_api(request):
     description="Post content to LinkedIn using the user's stored LinkedIn access token.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def post_on_linkedin_api(request):
     """Post content to LinkedIn using the user's stored LinkedIn access token."""
     try:
@@ -231,7 +229,6 @@ def post_on_linkedin_api(request):
     description="Fetch LinkedIn profile analytics using stored LinkedIn access token.",
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def fetch_linkedin_analytics_api(request):
     """Fetch LinkedIn profile analytics using stored LinkedIn access token."""
     try:
@@ -325,7 +322,6 @@ def fetch_linkedin_analytics_api(request):
     description="Validate the user's stored LinkedIn access token and check available permissions.",
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def validate_linkedin_token_api(request):
     """Validate the user's stored LinkedIn access token and check available permissions."""
     try:
@@ -373,7 +369,6 @@ def validate_linkedin_token_api(request):
     description="Generate a LinkedIn re-authentication URL with enhanced permissions.",
 )
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
 def linkedin_reauth_url_api(request):
     """Generate a LinkedIn re-authentication URL with enhanced permissions."""
     try:

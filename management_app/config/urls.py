@@ -9,21 +9,19 @@ from drf_spectacular.views import (
 urlpatterns = [
     path("admin/", admin.site.urls),
     
-    # Modular app URLs
-    path("auth/", include("authentication.urls")),  # Include authentication URLs
-
-    path("Blogs/", include("blog_generator.urls")),
-    path("News/", include("ai_news.urls")),
-    path("Image Generation/", include("image_generator.urls")),
-    path("Linkedin/", include("linkedin_post_generator.urls")),
-    path("Schedule/", include("schedule_linkedin_post.urls")),
-    path("Trends/", include("ai_trends.urls")),
-    path("Knowledge Base/", include("knowledge_base.urls")),
-    path("Chat/", include("chatbot.urls")),
+    # Authentication URLs
+    path("auth/", include("management_app.authentication.urls")),
     
-    # Authentication and other apps
-     # Include authentication URLs
-    path("Upwork/", include("upwork_proposal_generator.urls")),  # Include Upwork proposal generator URLs
+    # Modular app URLs
+    path("blogs/", include("management_app.blog_generator.urls")),
+    path("news/", include("management_app.ai_news.urls")),
+    path("image-generation/", include("management_app.image_generator.urls")),
+    path("linkedin/", include("management_app.linkedin_post_generator.urls")),
+    path("schedule/", include("management_app.schedule_linkedin_post.urls")),
+    path("trends/", include("management_app.ai_trends.urls")),
+    path("knowledge-base/", include("management_app.knowledge_base.urls")),
+    path("chat/", include("management_app.chatbot.urls")),
+    path("upwork/", include("management_app.upwork_proposal_generator.urls")),
     
     # drf-spectacular URLs
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
