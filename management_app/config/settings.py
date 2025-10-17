@@ -1,7 +1,6 @@
 from pathlib import Path
 import os
 from dotenv import load_dotenv
-import sys
 
 # Django Setup Guard - Prevent premature setup during configuration
 # This prevents conflicts when Django configuration is being read
@@ -13,13 +12,7 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Add the project root directory to Python path for tools module imports
-PROJECT_ROOT = BASE_DIR.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-    print(f"📁 Added project root to Python path: {PROJECT_ROOT}")
-
-SECRET_KEY = "django-insecure-dummy-key"  # Replace with a real secret key
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dummy-key")
 
 DEBUG = True
 
@@ -36,24 +29,22 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # Modular apps
-    "blog_generator",
-    "ai_news",
-    "image_generator",
-    "linkedin_post_generator",
-    "schedule_linkedin_post",
-    "ai_trends",
-    "knowledge_base",
-    "chatbot",
-    "authentication",  # Authentication app
-    "upwork_proposal_generator",  # Upwork proposal generator app
+    "management_app.blog_generator",
+    "management_app.ai_news",
+    "management_app.image_generator",
+    "management_app.linkedin_post_generator",
+    "management_app.schedule_linkedin_post",
+    "management_app.ai_trends",
+    "management_app.knowledge_base",
+    "management_app.chatbot",
+    "management_app.authentication",  # Authentication app
+    "management_app.upwork_proposal_generator",  # Upwork proposal generator app
     # Integration apps
-    "langsmith_integration",  # LangSmith integration for AI cost tracking
-    "pinecone_integration",  # Pinecone integration for vector search
+    "management_app.langsmith_integration",  # LangSmith integration for AI cost tracking
+    "management_app.pinecone_integration",  # Pinecone integration for vector search
     # Third-party apps
     "rest_framework",
     "drf_spectacular",
-    "rest_framework_simplejwt",  # JWT token authentication
-    "social_django",  # Social auth
     "corsheaders",  # CORS headers
     "django_celery_beat",  # Celery beat for scheduled tasks
 ]
@@ -65,11 +56,12 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "management_app.authentication.middleware.ClerkJWTAuthenticationMiddleware",  # Clerk JWT authentication
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "config.urls"
+ROOT_URLCONF = "management_app.config.urls"
 
 TEMPLATES = [
     {
@@ -87,7 +79,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "config.wsgi.application"
+WSGI_APPLICATION = "management_app.config.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -148,8 +140,11 @@ GENERATED_BLOGS_DIR = os.path.join(BASE_DIR, "generated_blogs")
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "management_app.authentication.authentication.ClerkJWTAuthentication",
     ),
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
 }
 
 SPECTACULAR_SETTINGS = {
@@ -256,51 +251,20 @@ LOGGING = {
     },
 }
 
-# JWT Settings
-from datetime import timedelta
+# Clerk Authentication Configuration
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
+CLERK_API_URL = os.getenv("CLERK_API_URL", "https://api.clerk.com")
+CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL")
+CLERK_FRONTEND_URL = os.getenv("CLERK_FRONTEND_URL")
 
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": False,
-    "BLACKLIST_AFTER_ROTATION": True,
-    "UPDATE_LAST_LOGIN": False,
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
-    "VERIFYING_KEY": None,
-    "AUDIENCE": None,
-    "ISSUER": None,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
-    "USER_ID_FIELD": "id",
-    "USER_ID_CLAIM": "user_id",
-    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
-    "TOKEN_TYPE_CLAIM": "token_type",
-    "JTI_CLAIM": "jti",
-    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
-    "SLIDING_TOKEN_LIFETIME": timedelta(days=1),
-    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=7),
-}
-
-# Social Authentication Settings
-AUTHENTICATION_BACKENDS = (
-    "social_core.backends.google.GoogleOAuth2",
-    "social_core.backends.linkedin.LinkedinOAuth2",
-    "django.contrib.auth.backends.ModelBackend",
-)
-
-# Define which fields to get from the user's profile after authentication
-SOCIAL_AUTH_PIPELINE = (
-    "social_core.pipeline.social_auth.social_details",
-    "social_core.pipeline.social_auth.social_uid",
-    "social_core.pipeline.social_auth.auth_allowed",
-    "social_core.pipeline.social_auth.social_user",
-    "social_core.pipeline.user.get_username",
-    "social_core.pipeline.user.create_user",
-    "social_core.pipeline.social_auth.associate_user",
-    "social_core.pipeline.social_auth.load_extra_data",
-    "social_core.pipeline.user.user_details",
-)
+# Development SSL settings
+if DEBUG:
+    import ssl
+    import urllib3
+    # Disable SSL verification for development
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    ssl._create_default_https_context = ssl._create_unverified_context
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins
@@ -352,7 +316,6 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Environment Configuration (needed for other configs below)
-DJANGO_ENVIRONMENT = os.getenv("DJANGO_ENVIRONMENT", "development")
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -360,10 +323,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Pinecone Configuration
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 # Set Pinecone index name based on environment, with explicit override capability
-_default_index = (
-    "artilence-staging" if DJANGO_ENVIRONMENT == "staging" else "artilence-development"
-)
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", _default_index)
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 
 # Serper API Configuration (for web search)
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
@@ -391,11 +351,6 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-# Clerk Authentication Configuration
-CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
-CLERK_BACKEND_AVAILABLE = os.getenv("CLERK_BACKEND_AVAILABLE", "https://api.clerk.com")
-
 # Streamlit App Configuration
 STREAMLIT_APP_URL = os.getenv("STREAMLIT_APP_URL", "http://localhost:8501")
 
@@ -406,16 +361,4 @@ LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "sooqsense-blog-generation")
 LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
 LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
 
-# Set environment variables for langchain/langsmith integration
-if LANGSMITH_TRACING and LANGSMITH_API_KEY:
-    os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGCHAIN_API_KEY"] = LANGSMITH_API_KEY
-    os.environ["LANGCHAIN_PROJECT"] = LANGSMITH_PROJECT
-    os.environ["LANGCHAIN_ENDPOINT"] = LANGSMITH_ENDPOINT
-
-# Social Auth Keys - Use consistent variable names with credentials defined above
-SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = GOOGLE_CLIENT_ID
-SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = GOOGLE_CLIENT_SECRET
-
-SOCIAL_AUTH_LINKEDIN_OAUTH2_KEY = LINKEDIN_CLIENT_ID
-SOCIAL_AUTH_LINKEDIN_OAUTH2_SECRET = LINKEDIN_CLIENT_SECRET
+BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")

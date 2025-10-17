@@ -1,80 +1,72 @@
+import os
+import re
+import logging
 import requests
 from bs4 import BeautifulSoup
-import re
 from urllib.parse import urlparse
-import logging
 from typing import Dict, List, Optional, Tuple
 from langchain_openai import ChatOpenAI
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 class BlogAnalyzer:
     """
-    Analyzes blog content from URLs to extract structure, style, and patterns
-    for replicating similar blog posts without plagiarism
+    Analyzes blog content from URLs to extract structure, tone, and writing patterns
+    for replicating similar posts without plagiarism.
     """
-    
+
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-    
+        """Initialize the OpenAI language model using Django settings"""
+        openai_api_key = getattr(settings, "OPENAI_API_KEY", None)
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY not found in Django settings")
+
+        self.llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            api_key=openai_api_key
+        )
+
+    # ---------------------------------------------------------------------- #
+    # SCRAPING LOGIC
+    # ---------------------------------------------------------------------- #
     def scrape_blog_content(self, url: str) -> Dict[str, str]:
         """
-        Scrape blog content from a given URL
-        
-        Args:
-            url (str): The URL of the blog to analyze
-            
-        Returns:
-            Dict containing scraped content and metadata
+        Scrape blog content from a given URL.
+        Returns cleaned text, title, metadata, and heading structure.
         """
         try:
-            # Validate URL
             parsed_url = urlparse(url)
             if not parsed_url.scheme or not parsed_url.netloc:
                 raise ValueError("Invalid URL provided")
-            
-            # Set headers to mimic a real browser
+
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'User-Agent': (
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/91.0.4472.124 Safari/537.36'
+                ),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
+                'Accept-Language': 'en-US,en;q=0.5'
             }
-            
-            # Make request with timeout
+
             response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
-            
-            # Parse HTML content
             soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Extract title
-            title = ""
-            title_tag = soup.find('title')
-            if title_tag:
-                title = title_tag.get_text().strip()
-            
-            # Try to find the main content area
-            content = self._extract_main_content(soup)
-            
-            # Extract meta description
+
+            # Extract title and metadata
+            title = soup.title.get_text().strip() if soup.title else ""
             meta_description = ""
-            meta_desc = soup.find('meta', attrs={'name': 'description'})
-            if meta_desc:
-                meta_description = meta_desc.get('content', '').strip()
-            
-            # Extract headings structure
-            headings = self._extract_headings(soup)
-            
-            # Clean and format content
+            meta_tag = soup.find('meta', attrs={'name': 'description'})
+            if meta_tag:
+                meta_description = meta_tag.get('content', '').strip()
+
+            # Extract content and structure
+            content = self._extract_main_content(soup)
             cleaned_content = self._clean_content(content)
-            
+            headings = self._extract_headings(soup)
+
             return {
                 'url': url,
                 'title': title,
@@ -84,150 +76,95 @@ class BlogAnalyzer:
                 'word_count': len(cleaned_content.split()),
                 'status': 'success'
             }
-            
-        except requests.RequestException as e:
-            logger.error(f"Error fetching URL {url}: {str(e)}")
-            return {
-                'url': url,
-                'error': f"Failed to fetch content: {str(e)}",
-                'status': 'error'
-            }
+
         except Exception as e:
-            logger.error(f"Error analyzing blog from {url}: {str(e)}")
-            return {
-                'url': url,
-                'error': f"Analysis failed: {str(e)}",
-                'status': 'error'
-            }
-    
+            logger.error(f"Error scraping blog {url}: {str(e)}")
+            return {'url': url, 'error': str(e), 'status': 'error'}
+
+    # ---------------------------------------------------------------------- #
+    # CONTENT EXTRACTION UTILITIES
+    # ---------------------------------------------------------------------- #
     def _extract_main_content(self, soup: BeautifulSoup) -> str:
-        """Extract the main content from the webpage"""
-        # Common content selectors (in order of preference)
-        content_selectors = [
-            'article',
-            '[role="main"]',
-            '.post-content',
-            '.entry-content',
-            '.content',
-            '.post-body',
-            '.article-content',
-            '.blog-content',
-            'main',
-            '.main-content'
+        """Extract the main textual content from a webpage"""
+        selectors = [
+            'article', '[role="main"]', '.post-content', '.entry-content',
+            '.content', '.post-body', '.article-content', '.blog-content',
+            'main', '.main-content'
         ]
-        
-        content = ""
-        
-        # Try each selector
-        for selector in content_selectors:
+        for selector in selectors:
             elements = soup.select(selector)
             if elements:
-                # Get the largest element (most likely to be main content)
-                main_element = max(elements, key=lambda x: len(x.get_text()))
-                content = main_element.get_text()
-                break
-        
-        # Fallback: get body content if no specific content area found
-        if not content:
-            body = soup.find('body')
-            if body:
-                content = body.get_text()
-        
-        return content
-    
+                largest = max(elements, key=lambda x: len(x.get_text()))
+                return largest.get_text()
+
+        body = soup.find('body')
+        return body.get_text() if body else ""
+
     def _extract_headings(self, soup: BeautifulSoup) -> List[Dict[str, str]]:
-        """Extract heading structure from the webpage"""
-        headings = []
-        
-        for level in range(1, 7):  # h1 to h6
-            heading_tags = soup.find_all(f'h{level}')
-            for tag in heading_tags:
-                headings.append({
-                    'level': level,
-                    'text': tag.get_text().strip(),
-                    'tag': f'h{level}'
-                })
-        
-        return headings
-    
-    def _clean_content(self, content: str) -> str:
-        """Clean and format the extracted content"""
-        # Remove extra whitespace and newlines
-        content = re.sub(r'\s+', ' ', content)
-        
-        # Remove common navigation and footer text
-        unwanted_patterns = [
-            r'Home\s+About\s+Contact',
-            r'Privacy Policy',
-            r'Terms of Service',
-            r'Copyright.*\d{4}',
-            r'All rights reserved',
-            r'Subscribe to.*newsletter',
-            r'Follow us on',
-            r'Share this.*',
-            r'Related Posts?',
-            r'Comments?.*'
+        """Extract headings (h1–h6) structure"""
+        return [
+            {'level': i, 'text': tag.get_text(strip=True), 'tag': f'h{i}'}
+            for i in range(1, 7)
+            for tag in soup.find_all(f'h{i}')
         ]
-        
+
+    def _clean_content(self, content: str) -> str:
+        """Remove noise, whitespace, and repetitive site text"""
+        content = re.sub(r'\s+', ' ', content)
+
+        unwanted_patterns = [
+            r'Privacy Policy', r'Terms of Service', r'All rights reserved',
+            r'Copyright.*\d{4}', r'Subscribe to.*newsletter', r'Follow us on',
+            r'Share this.*', r'Related Posts?', r'Comments?.*'
+        ]
         for pattern in unwanted_patterns:
             content = re.sub(pattern, '', content, flags=re.IGNORECASE)
-        
+
         return content.strip()
-    
+
+    # ---------------------------------------------------------------------- #
+    # ANALYSIS USING LLM
+    # ---------------------------------------------------------------------- #
     def analyze_blog_structure(self, scraped_data: Dict) -> Dict[str, any]:
         """
-        Analyze the blog structure and extract patterns using AI
-        
-        Args:
-            scraped_data (Dict): The scraped blog data
-            
-        Returns:
-            Dict containing analysis results and style patterns
+        Analyze a scraped blog using LLM to extract structural and stylistic patterns.
         """
         if scraped_data.get('status') != 'success':
-            return {
-                'error': scraped_data.get('error', 'Failed to analyze blog structure'),
-                'status': 'error'
-            }
-        
+            return {'status': 'error', 'error': scraped_data.get('error', 'Invalid data')}
+
         try:
-            # Prepare content for analysis
+            title = scraped_data.get('title', '')
             content = scraped_data.get('content', '')
             headings = scraped_data.get('headings', [])
-            title = scraped_data.get('title', '')
-            
-            # Create analysis prompt
+
             analysis_prompt = f"""
-Analyze this blog post and extract its structural and stylistic patterns:
+Analyze the following blog for structural and stylistic patterns.
 
 Title: {title}
-Content Length: {len(content.split())} words
+Word Count: {len(content.split())}
 
-Headings Structure:
-{self._format_headings_for_analysis(headings)}
+Headings:
+{self._format_headings(headings)}
 
-Content Sample (first 1000 characters):
+Excerpt (first 1000 characters):
 {content[:1000]}...
 
-Please analyze and provide:
-1. Writing tone and style (professional, casual, conversational, etc.)
-2. Content structure pattern (introduction style, main sections, conclusion approach)
-3. Heading hierarchy and organization
-4. Paragraph length and style
-5. Use of lists, examples, or special formatting
-6. Call-to-action patterns
-7. Overall content flow and organization
+Provide:
+1. Writing tone (e.g., professional, conversational)
+2. Structure pattern (intro, body, conclusion)
+3. Heading organization
+4. Paragraph style (length, transitions)
+5. Use of lists or examples
+6. Presence of CTAs (call-to-actions)
+7. General flow and readability characteristics
 
-Provide your analysis in a structured format that can be used to replicate the style without copying content.
+Output as clear bullet points for reuse.
 """
 
-            # Get AI analysis
             response = self.llm.invoke(analysis_prompt)
-            analysis_text = response.content
-            
-            # Extract specific patterns
-            patterns = self._extract_patterns_from_analysis(analysis_text, scraped_data)
-            
+            analysis_text = response.content.strip()
+            patterns = self._extract_patterns(analysis_text, scraped_data)
+
             return {
                 'url': scraped_data['url'],
                 'analysis': analysis_text,
@@ -240,151 +177,97 @@ Provide your analysis in a structured format that can be used to replicate the s
                 },
                 'status': 'success'
             }
-            
+
         except Exception as e:
-            logger.error(f"Error in blog structure analysis: {str(e)}")
-            return {
-                'error': f"Analysis failed: {str(e)}",
-                'status': 'error'
-            }
-    
-    def _format_headings_for_analysis(self, headings: List[Dict]) -> str:
-        """Format headings for AI analysis"""
+            logger.error(f"Blog analysis failed: {str(e)}")
+            return {'status': 'error', 'error': str(e)}
+
+    def _format_headings(self, headings: List[Dict]) -> str:
+        """Format headings nicely for AI analysis"""
         if not headings:
-            return "No clear heading structure found"
-        
-        formatted = []
-        for heading in headings:
-            level_indicator = "#" * heading['level']
-            formatted.append(f"{level_indicator} {heading['text']}")
-        
-        return "\n".join(formatted)
-    
-    def _extract_patterns_from_analysis(self, analysis_text: str, scraped_data: Dict) -> Dict:
-        """Extract actionable patterns from the AI analysis"""
+            return "No headings found"
+        return "\n".join(f"{'#' * h['level']} {h['text']}" for h in headings)
+
+    def _extract_patterns(self, analysis_text: str, scraped_data: Dict) -> Dict:
+        """Parse patterns from AI output into structured metadata"""
+        text = analysis_text.lower()
         patterns = {
-            'tone': 'professional',  # default
+            'tone': 'professional',
             'structure_type': 'standard',
-            'avg_paragraph_length': 'medium',
-            'uses_lists': False,
-            'uses_examples': False,
-            'has_introduction': True,
-            'has_conclusion': True,
-            'has_cta': False,
+            'uses_lists': any(w in text for w in ['list', 'bullet', 'numbered']),
+            'uses_examples': any(w in text for w in ['example', 'case study']),
+            'has_cta': any(w in text for w in ['call to action', 'subscribe', 'contact']),
             'heading_style': 'descriptive'
         }
-        
-        # Simple pattern extraction based on analysis text
-        analysis_lower = analysis_text.lower()
-        
-        # Detect tone
-        if any(word in analysis_lower for word in ['casual', 'informal', 'conversational']):
+
+        if 'casual' in text or 'conversational' in text:
             patterns['tone'] = 'casual'
-        elif any(word in analysis_lower for word in ['creative', 'engaging', 'storytelling']):
+        elif 'creative' in text:
             patterns['tone'] = 'creative'
-        elif any(word in analysis_lower for word in ['informative', 'educational']):
+        elif 'educational' in text:
             patterns['tone'] = 'informative'
-        
-        # Detect structure elements
-        if any(phrase in analysis_lower for phrase in ['bullet points', 'numbered list', 'list format']):
-            patterns['uses_lists'] = True
-        
-        if any(phrase in analysis_lower for phrase in ['examples', 'case studies', 'illustrations']):
-            patterns['uses_examples'] = True
-        
-        if any(phrase in analysis_lower for phrase in ['call to action', 'cta', 'subscribe', 'contact']):
-            patterns['has_cta'] = True
-        
-        # Analyze heading count and structure
-        headings = scraped_data.get('headings', [])
-        if len(headings) > 5:
+
+        headings_count = len(scraped_data.get('headings', []))
+        if headings_count > 6:
             patterns['structure_type'] = 'detailed'
-        elif len(headings) < 3:
+        elif headings_count < 3:
             patterns['structure_type'] = 'simple'
-        
+
         return patterns
-    
+
+    # ---------------------------------------------------------------------- #
+    # STYLE REPLICATION INSTRUCTIONS
+    # ---------------------------------------------------------------------- #
     def generate_style_instructions(self, analysis_result: Dict) -> str:
-        """
-        Generate instructions for replicating the blog style
-        
-        Args:
-            analysis_result (Dict): The blog analysis result
-            
-        Returns:
-            str: Detailed instructions for style replication
-        """
+        """Generate clear, actionable style guidelines from analysis."""
         if analysis_result.get('status') != 'success':
             return "Unable to generate style instructions due to analysis failure."
-        
-        patterns = analysis_result.get('patterns', {})
-        original_structure = analysis_result.get('original_structure', {})
-        
-        instructions = []
-        
-        # Tone instructions
-        tone = patterns.get('tone', 'professional')
-        instructions.append(f"- Use a {tone} tone throughout the blog post")
-        
-        # Structure instructions
-        structure_type = patterns.get('structure_type', 'standard')
-        if structure_type == 'detailed':
-            instructions.append("- Create a detailed structure with multiple subsections")
-        elif structure_type == 'simple':
-            instructions.append("- Keep the structure simple with fewer main sections")
-        
-        # Content formatting
-        if patterns.get('uses_lists'):
+
+        p = analysis_result['patterns']
+        s = analysis_result['original_structure']
+        instructions = [f"- Write in a {p.get('tone', 'professional')} tone"]
+
+        if p['structure_type'] == 'detailed':
+            instructions.append("- Use multiple structured sections with descriptive subheadings")
+        elif p['structure_type'] == 'simple':
+            instructions.append("- Keep structure minimal with concise main sections")
+
+        if p.get('uses_lists'):
             instructions.append("- Include bullet points or numbered lists where appropriate")
-        
-        if patterns.get('uses_examples'):
-            instructions.append("- Provide concrete examples and illustrations")
-        
-        if patterns.get('has_cta'):
-            instructions.append("- Include a clear call-to-action section")
-        
-        # Length guidance
-        word_count = original_structure.get('word_count', 0)
-        if word_count > 0:
-            instructions.append(f"- Target approximately {word_count} words (±200 words)")
-        
-        # Heading structure
-        headings = original_structure.get('headings', [])
-        if headings:
-            instructions.append(f"- Use {len(headings)} main sections similar to the reference structure")
-        
+        if p.get('uses_examples'):
+            instructions.append("- Use examples or case studies to illustrate key ideas")
+        if p.get('has_cta'):
+            instructions.append("- End with a strong call-to-action")
+
+        if s.get('word_count'):
+            instructions.append(f"- Aim for around {s['word_count']} words (+/- 200)")
+
+        if len(s.get('headings', [])) > 0:
+            instructions.append(f"- Use about {len(s['headings'])} key sections following a similar hierarchy")
+
         return "\n".join(instructions)
 
+
+# ---------------------------------------------------------------------- #
+# HIGH-LEVEL UTILITY FUNCTION
+# ---------------------------------------------------------------------- #
 def analyze_sample_blog(url: str) -> Tuple[Optional[Dict], Optional[str]]:
     """
-    Main function to analyze a sample blog and return style instructions
-    
-    Args:
-        url (str): URL of the blog to analyze
-        
-    Returns:
-        Tuple of (analysis_result, style_instructions)
+    Convenience function: scrape → analyze → generate style guide
     """
     try:
         analyzer = BlogAnalyzer()
-        
-        # Scrape the blog content
-        scraped_data = analyzer.scrape_blog_content(url)
-        
-        if scraped_data.get('status') != 'success':
-            return None, f"Failed to scrape blog: {scraped_data.get('error', 'Unknown error')}"
-        
-        # Analyze the structure
-        analysis_result = analyzer.analyze_blog_structure(scraped_data)
-        
-        if analysis_result.get('status') != 'success':
-            return None, f"Failed to analyze blog: {analysis_result.get('error', 'Unknown error')}"
-        
-        # Generate style instructions
-        style_instructions = analyzer.generate_style_instructions(analysis_result)
-        
-        return analysis_result, style_instructions
-        
+        scraped = analyzer.scrape_blog_content(url)
+        if scraped.get('status') != 'success':
+            return None, f"Scraping failed: {scraped.get('error')}"
+
+        analyzed = analyzer.analyze_blog_structure(scraped)
+        if analyzed.get('status') != 'success':
+            return None, f"Analysis failed: {analyzed.get('error')}"
+
+        style_guide = analyzer.generate_style_instructions(analyzed)
+        return analyzed, style_guide
+
     except Exception as e:
-        logger.error(f"Error in analyze_sample_blog: {str(e)}")
-        return None, f"Analysis failed: {str(e)}" 
+        logger.error(f"Fatal error in analyze_sample_blog: {str(e)}")
+        return None, f"Analysis failed: {str(e)}"

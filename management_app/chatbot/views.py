@@ -1,6 +1,6 @@
 import uuid
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -46,7 +46,6 @@ from .service.agent.agent import project_chatbot
     description="Chat with AI about uploaded documents. Provide a query and optionally a session_id. If no session_id is provided, a new chat session will be created. The AI will search through your uploaded documents and provide relevant answers with source citations.",
 )
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def chat_api(request):
     """Chat with AI about uploaded documents."""
     try:
@@ -61,31 +60,45 @@ def chat_api(request):
 
         logger.info(f"Starting chat for user: {request.user.username}, query: {query[:50]}...")
 
-        # Get or create chat session
+        # Get or create chat session with proper user isolation
         if session_id:
             try:
-                chat_session = ChatSession.objects.get(session_id=session_id, user_id=request.user.id)
-            except ChatSession.DoesNotExist:
-                return Response(
-                    {"error": "Invalid session ID."},
-                    status=status.HTTP_400_BAD_REQUEST,
+                # Try to find existing session
+                chat_session = ChatSession.objects.get(
+                    session_id=session_id, 
+                    user_id=request.user.id,
+                    is_active=True
                 )
+                logger.info(f"Using existing chat session: {session_id} for user: {request.user.username}")
+            except ChatSession.DoesNotExist:
+                # Create new session with the provided session_id
+                chat_session = ChatSession(
+                    session_id=session_id,
+                    user_id=request.user.id,
+                    username=request.user.username,
+                    email=request.user.email,
+                    is_active=True,
+                    created_at=timezone.now(),
+                )
+                chat_session.save()
+                logger.info(f"Created new chat session with provided ID: {session_id} for user: {request.user.username}")
         else:
-            # Create new session
+            # Create new session for the authenticated user
             session_id = str(uuid.uuid4())
             chat_session = ChatSession(
                 session_id=session_id,
                 user_id=request.user.id,
                 username=request.user.username,
                 email=request.user.email,
+                is_active=True,
                 created_at=timezone.now(),
             )
             chat_session.save()
-            logger.info(f"Created new chat session: {session_id}")
+            logger.info(f"Created new chat session: {session_id} for user: {request.user.username}")
 
         # Save user message
         user_message = ChatMessage(
-            session=chat_session,
+            session_id=chat_session,
             message_type="user",
             content=query,
             created_at=timezone.now(),
@@ -93,7 +106,7 @@ def chat_api(request):
         user_message.save()
 
         # Get AI response using the service
-        result = project_chatbot.chat_with_documents(query, request.user)
+        result = project_chatbot.ask(query)
         
         if not result["success"]:
             logger.error(f"Chat failed: {result['message']}")
@@ -106,14 +119,12 @@ def chat_api(request):
 
         # Save assistant message
         assistant_message = ChatMessage(
-            session=chat_session,
+            session_id=chat_session,
             message_type="assistant",
             content=result["response"],
-            relevant_documents=result.get("relevant_documents", []),
-            sources_used=result.get("sources_used", []),
+            created_at=timezone.now(),
             processing_time=result.get("processing_time", 0),
             tokens_used=result.get("tokens_used", 0),
-            created_at=timezone.now(),
         )
         assistant_message.save()
 
@@ -139,6 +150,58 @@ def chat_api(request):
         logger.error(f"Unexpected error in chat: {type(e).__name__} - {e}")
         import traceback
         traceback.print_exc()
+        return Response(
+            {"error": f"An unexpected error occurred: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="User chat sessions retrieved successfully.",
+        ),
+        401: OpenApiResponse(
+            description="Unauthorized - Invalid or missing token."
+        ),
+    },
+    description="Get all chat sessions for the authenticated user.",
+)
+@api_view(["GET"])
+def get_user_sessions_api(request):
+    """Get all chat sessions for the authenticated user"""
+    try:
+        # Get all active sessions for the user
+        sessions = ChatSession.objects.filter(
+            user_id=request.user.id,
+            is_active=True
+        ).order_by('-updated_at')
+        
+        sessions_data = []
+        for session in sessions:
+            # Get message count for each session using the ForeignKey relationship
+            message_count = ChatMessage.objects.filter(session_id=session).count()
+            
+            sessions_data.append({
+                'session_id': session.session_id,
+                'title': f"Chat Session {session.session_id[:8]}...",
+                'created_at': session.created_at.isoformat(),
+                'updated_at': session.updated_at.isoformat(),
+                'message_count': message_count,
+                'total_messages': session.total_messages,
+            })
+        
+        logger.info(f"Retrieved {len(sessions_data)} sessions for user: {request.user.username}")
+        
+        return Response({
+            "status": "success",
+            "message": f"Retrieved {len(sessions_data)} chat sessions",
+            "sessions": sessions_data,
+            "total_sessions": len(sessions_data),
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving user sessions: {type(e).__name__} - {e}")
         return Response(
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
