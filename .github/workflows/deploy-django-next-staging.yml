@@ -15,7 +15,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Required for Workload Identity Federation
     permissions:
       contents: read
       id-token: write
@@ -24,33 +23,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Authenticate using Workload Identity Federation
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/798090991303/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: github-actions-deployer@artilence.iam.gserviceaccount.com
 
-      # Set up gcloud CLI
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      # Configure Docker to use gcloud as credential helper
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-      # Build and push Docker image to Artifact Registry
       - name: Build & Push Docker Image
         run: |
-          echo "🔨 Building Django Next-Staging Docker image..."
-          docker build --target staging -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          echo "🔨 Building Django production Docker image..."
+          docker build --platform linux/amd64 --target production -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
 
           echo "📤 Pushing to Artifact Registry..."
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      # Deploy to Cloud Run
       - name: Deploy to Cloud Run
         run: |
           echo "🚀 Deploying Django to Cloud Run Production..."
@@ -59,6 +53,7 @@ jobs:
             --region=${{ env.REGION }} \
             --platform=managed \
             --allow-unauthenticated \
+            --port=8080 \
             --memory=2Gi \
             --cpu=2 \
             --timeout=3000 \
@@ -67,6 +62,7 @@ jobs:
             --concurrency=100 \
             --set-env-vars="DJANGO_ENVIRONMENT=production" \
             --set-env-vars="DEBUG=False" \
+            --set-env-vars="DJANGO_SECRET_KEY=django-insecure-dummy-key" \
             --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \
             --set-env-vars="DB_PORT=5432" \
             --set-env-vars="DB_NAME=neondb" \
@@ -90,8 +86,12 @@ jobs:
             --set-env-vars="CLERK_JWKS_URL=https://climbing-rooster-60.clerk.accounts.dev/.well-known/jwks.json" \
             --set-env-vars="GOOGLE_CLIENT_ID=229772932214-hil3ggbh30c83ag635c6ao6a4h91dvfo.apps.googleusercontent.com" \
             --set-env-vars="GOOGLE_CLIENT_SECRET=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" \
+            --set-env-vars="GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback" \
             --set-env-vars="LINKEDIN_CLIENT_ID=77bbsr8z46dzgg" \
             --set-env-vars="LINKEDIN_CLIENT_SECRET=WPL_AP1.cPzBTYa3NNJXpstR.a2D98w==" \
+            --set-env-vars="LINKEDIN_REDIRECT_URI=http://localhost:8000/auth/linkedin/callback" \
+            --set-env-vars="BACKEND_API_BASE_URL=https://sooqsense-django-production-798090991303.asia-south2.run.app" \
+            --set-env-vars="STREAMLIT_APP_URL=http://localhost:8501" \
             --set-env-vars="LANGSMITH_TRACING=true" \
             --set-env-vars="LANGSMITH_API_KEY=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" \
             --set-env-vars="LANGSMITH_PROJECT=sooqsense-blog-generation" \
@@ -99,7 +99,6 @@ jobs:
             --set-env-vars="LANGSMITH_WORKSPACE_ID=2979498f-fb22-57f7-a758-9cbbe3d40dca" \
             --set-env-vars="FAL_KEY=e59e15f3-ee4e-4847-9650-8e1bf514b772:c9aec65bceac24694cd7dff0ddba0533"
 
-      # Get the service URL
       - name: Get Service URL
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
@@ -108,15 +107,12 @@ jobs:
           echo "📚 API Documentation: $SERVICE_URL/docs/"
           echo "🔧 Admin Panel: $SERVICE_URL/admin/"
 
-      # Health check
       - name: Health Check
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
           echo "🔍 Performing production health check..."
-          sleep 30  # Wait for service to be ready
-
-          # Test basic endpoint
-          if curl -f "$SERVICE_URL/admin/" > /dev/null 2>&1; then
+          sleep 30
+          if curl -f "$SERVICE_URL/docs/" > /dev/null 2>&1; then
             echo "✅ Django Production service is healthy!"
           else
             echo "⚠️ Health check failed, but deployment completed"

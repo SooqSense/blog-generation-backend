@@ -3,7 +3,7 @@ FROM python:3.12.8-slim AS base
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV DJANGO_SETTINGS_MODULE=config.settings
+ENV DJANGO_SETTINGS_MODULE=management_app.config.settings
 
 # Set work directory
 WORKDIR /app
@@ -49,12 +49,8 @@ USER django
 # Set working directory for Django app
 WORKDIR /app
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health/ || exit 1
-
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300"]
 
 # Streamlit stage for Cloud Run deployment
 FROM base AS streamlit
@@ -111,12 +107,11 @@ RUN chown -R django:django /app /home/django
 # Switch to non-root user
 USER django
 
-# Set working directory for Django app
-WORKDIR /app/management_app
+# Set working directory for Django app (project root contains manage.py)
+WORKDIR /app
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health/ || exit 1
+# Note: Removed health check as there's no /health/ endpoint defined
+# If you need health checks, add a simple health endpoint to your Django app
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"] 
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300"]
