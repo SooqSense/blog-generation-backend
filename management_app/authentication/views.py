@@ -104,7 +104,10 @@ def login_view(request):
                         'id': 1,
                         'username': 'user123',
                         'email': 'user@example.com',
-                        'clerk_user_id': 'clerk_123'
+                        'clerk_user_id': 'clerk_123',
+                        'organization_id': 'org_123',
+                        'organization_name': 'My Company',
+                        'organization_role': 'admin'
                     }
                 }
             }
@@ -138,20 +141,35 @@ def verify_token_view(request):
         user = clerk_auth.authenticate_user(token)
         
         if not user:
+            logger.warning("Token verification failed - no user returned")
             return Response({
                 'success': False,
                 'message': 'Invalid or expired token'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        user_data = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'clerk_user_id': user.clerk_user_id,
+            'organization_id': user.organization_id,
+            'organization_name': user.organization_name,
+            'organization_role': user.organization_role
+        }
+        
+        logger.info("=" * 80)
+        logger.info("VERIFY TOKEN VIEW - Returning user data to frontend:")
+        logger.info("=" * 80)
+        for key, value in user_data.items():
+            logger.info(f"  {key}: {value}")
+        logger.info("=" * 80)
+        
         return Response({
             'success': True,
             'message': 'Token is valid',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'clerk_user_id': user.clerk_user_id
-            }
+            'user': user_data
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -174,6 +192,9 @@ def verify_token_view(request):
                         'username': 'user123',
                         'email': 'user@example.com',
                         'clerk_user_id': 'clerk_123',
+                        'organization_id': 'org_123',
+                        'organization_name': 'My Company',
+                        'organization_role': 'admin',
                         'created_at': '2024-01-01T00:00:00Z'
                     }
                 }
@@ -197,7 +218,12 @@ def profile_view(request):
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
                 'clerk_user_id': user.clerk_user_id,
+                'organization_id': user.organization_id,
+                'organization_name': user.organization_name,
+                'organization_role': user.organization_role,
                 'created_at': user.created_at.isoformat()
             }
         }, status=status.HTTP_200_OK)

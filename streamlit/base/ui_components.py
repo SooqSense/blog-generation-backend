@@ -28,6 +28,20 @@ class UIComponents:
         # Show API status
         st.success(f"✅ Connected to Django API at {api_base_url}")
         st.info(f"📡 {len(API_ENDPOINTS)} API endpoints available")
+        
+        # Render organization selector if user is authenticated
+        try:
+            from authentication.ui_components import SidebarAuth
+            sidebar_auth = SidebarAuth()
+            if sidebar_auth.auth_manager.is_authenticated():
+                from authentication.ui_components import AuthUI
+                auth_ui = AuthUI()
+                org_info = auth_ui.render_organization_selector()
+                if org_info:
+                    st.markdown("---")
+        except Exception as e:
+            # Silently handle if authentication components are not available
+            pass
     
     @staticmethod
     def render_sidebar(auth_handler, api_endpoints_count: int):

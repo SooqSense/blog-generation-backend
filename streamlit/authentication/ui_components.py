@@ -61,9 +61,19 @@ class AuthUI:
         if user:
             st.sidebar.markdown("---")
             st.sidebar.markdown("### 👤 User Info")
-            st.sidebar.write(f"**Username:** {user.get('username', 'N/A')}")
+            username = user.get('username', 'Unknown User')
+            st.sidebar.write(f"**Username:** {username}")
             st.sidebar.write(f"**Email:** {user.get('email', 'N/A')}")
             st.sidebar.write(f"**ID:** {user.get('id', 'N/A')}")
+            
+            # Display organization information if available
+            org_name = user.get('organization_name')
+            org_role = user.get('organization_role')
+            if org_name:
+                st.sidebar.markdown("### 🏢 Organization")
+                st.sidebar.write(f"**Organization:** {org_name}")
+                if org_role:
+                    st.sidebar.write(f"**Role:** {org_role}")
     
     def render_logout_button(self):
         """Render logout button in sidebar"""
@@ -74,7 +84,12 @@ class AuthUI:
         """Render authentication status"""
         if self.auth_manager.is_authenticated():
             user = self.auth_manager.get_user()
-            st.success(f"✅ Authenticated as {user.get('username', 'Unknown')}")
+            username = user.get('username', 'Unknown User')
+            org_name = user.get('organization_name')
+            if org_name:
+                st.success(f"✅ Authenticated as {username} ({org_name})")
+            else:
+                st.success(f"✅ Authenticated as {username}")
         else:
             st.warning("⚠️ Not authenticated")
     
@@ -123,16 +138,70 @@ class SidebarAuth:
         """Render authenticated user section"""
         user = self.auth_manager.get_user()
         
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("=" * 80)
+        logger.info("SIDEBAR AUTH - Rendering authenticated section")
+        logger.info("User data from session state:")
+        logger.info("=" * 80)
+        if user:
+            for key, value in user.items():
+                logger.info(f"  {key}: {value}")
+        else:
+            logger.warning("  User is None!")
+        logger.info("=" * 80)
+        
         st.sidebar.markdown("### 🔐 Authentication")
-        st.sidebar.success(f"✅ Logged in as {user.get('username', 'Unknown')}")
+        username = user.get('username', 'Unknown User')
+        org_name = user.get('organization_name')
+        
+        logger.info(f"Displaying username: {username}")
+        logger.info(f"Organization name: {org_name}")
+        
+        if org_name:
+            st.sidebar.success(f"✅ Logged in as {username}")
+            st.sidebar.info(f"🏢 Organization: {org_name}")
+        else:
+            st.sidebar.success(f"✅ Logged in as {username}")
+        
+        # Organization dropdown if user has organization
+        if org_name:
+            st.sidebar.markdown("### 🏢 Organization")
+            st.sidebar.success(f"**{org_name}**")
+            org_role = user.get('organization_role')
+            if org_role:
+                st.sidebar.info(f"Role: {org_role}")
+            org_id = user.get('organization_id')
+            if org_id:
+                st.sidebar.caption(f"ID: {org_id}")
+            
+            # Add organization actions
+            with st.sidebar.expander("🏢 Organization Actions", expanded=False):
+                if st.button("🔄 Refresh Org", use_container_width=True):
+                    st.rerun()
+                if st.button("📊 Org Stats", use_container_width=True):
+                    st.info("Organization statistics feature coming soon!")
         
         # User info
         with st.sidebar.expander("👤 User Details", expanded=False):
-            st.write(f"**Username:** {user.get('username', 'N/A')}")
-            st.write(f"**Email:** {user.get('email', 'N/A')}")
+            st.write(f"**Username:** {username}")
+            email = user.get('email', 'N/A')
+            if email and email != 'N/A':
+                st.write(f"**Email:** {email}")
+            else:
+                st.warning("⚠️ Email not available")
+            
             st.write(f"**User ID:** {user.get('id', 'N/A')}")
             if user.get('clerk_user_id'):
                 st.write(f"**Clerk ID:** {user.get('clerk_user_id')}")
+            
+            # Show additional user info if available
+            first_name = user.get('first_name')
+            last_name = user.get('last_name')
+            if first_name or last_name:
+                full_name = f"{first_name or ''} {last_name or ''}".strip()
+                if full_name:
+                    st.write(f"**Full Name:** {full_name}")
         
         # Logout button
         if st.sidebar.button("🚪 Logout", use_container_width=True):
@@ -164,3 +233,41 @@ class SidebarAuth:
         
         st.sidebar.markdown("---")
         st.sidebar.markdown("**Need an account?** Contact your administrator.")
+    
+    def render_organization_selector(self):
+        """Render organization selector for main page"""
+        if not self.auth_manager.is_authenticated():
+            return None
+        
+        user = self.auth_manager.get_user()
+        org_name = user.get('organization_name')
+        org_role = user.get('organization_role')
+        org_id = user.get('organization_id')
+        
+        if org_name:
+            # Create a more prominent organization display
+            st.markdown("### 🏢 Organization")
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                # Display organization info in a more visible way
+                st.info(f"**Organization:** {org_name}")
+                if org_role:
+                    st.info(f"**Your Role:** {org_role}")
+                if org_id:
+                    st.caption(f"ID: {org_id}")
+            
+            with col2:
+                # Add a refresh button for organization info
+                if st.button("🔄 Refresh Org Info", help="Refresh organization information"):
+                    st.rerun()
+            
+            return {
+                'organization_id': org_id,
+                'organization_name': org_name,
+                'organization_role': org_role
+            }
+        else:
+            st.warning("⚠️ No organization associated with your account")
+            st.info("Contact your administrator to be added to an organization.")
+            return None
