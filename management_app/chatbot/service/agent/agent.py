@@ -11,6 +11,8 @@ from langchain.schema import Document
 
 # Import your PineconeService
 from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
+# Import prompts
+from ..prompts.prompts import ChatbotPrompts
 
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,8 @@ class ProjectChatbot:
                     "file_type": res.get("file_type"),
                     "file_url": res.get("file_url"),
                     "chunk_index": res.get("chunk_index"),
-                    "score": res.get("score")
+                    "score": res.get("score"),
+                    "links": res.get("links", [])
                 }
             ))
         return docs
@@ -72,48 +75,41 @@ class ProjectChatbot:
                 return {
                     "success": True,
                     "response": "I could not find any relevant information for your query.",
-                    "sources": [],
+                    "documents_found": 0,
                 }
 
             docs = self._results_to_documents(search_result["results"])
 
             # Step 2: Build context prompt for the LLM
-            context_text = "\n\n".join([d.page_content for d in docs[:top_k]])
-            prompt = f"""
-You are an AI assistant helping sales teams explore project portfolios.
-
-User question: {query}
-
-Relevant project information (from company documents):
-{context_text}
-
-Answer the question based on the information above.
-- Be clear and professional.
-- Highlight project names, technologies, challenges, or results if available.
-- If there are multiple projects, summarize them.
-- At the end, list the sources used (file names).
-"""
+            context_parts = []
+            all_links = []
+            for d in docs[:top_k]:
+                context_parts.append(d.page_content)
+                # Collect unique links from all documents
+                doc_links = d.metadata.get("links", [])
+                if doc_links:
+                    all_links.extend([link for link in doc_links if link not in all_links])
+            
+            context_text = "\n\n".join(context_parts)
+            
+            # Add links section to context if available
+            links_section = ""
+            if all_links:
+                links_section = f"\n\nRelevant Links from Documents:\n" + "\n".join([f"- {link}" for link in all_links])
+            
+            # Use prompt from prompts.py
+            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
 
             # Step 3: Generate response
             llm_response = self.llm.invoke(prompt)
 
-            # Step 4: Build structured return
-            sources = [
-                {
-                    "file_name": d.metadata.get("file_name", "Unknown"),
-                    "file_type": d.metadata.get("file_type", "Unknown"),
-                    "file_url": d.metadata.get("file_url", ""),
-                    "score": d.metadata.get("score", 0)
-                }
-                for d in docs
-            ]
-
+            # Step 4: Build structured return (no sources, links are integrated in response)
             return {
                 "success": True,
                 "response": llm_response.content,
-                "sources": sources,
                 "processing_time": round(time.time() - start, 2),
-                "query": query
+                "query": query,
+                "documents_found": len(docs)
             }
 
         except Exception as e:
@@ -122,7 +118,7 @@ Answer the question based on the information above.
                 "success": False,
                 "response": "Something went wrong while processing your request.",
                 "error": str(e),
-                "sources": []
+                "documents_found": 0
             }
 
 

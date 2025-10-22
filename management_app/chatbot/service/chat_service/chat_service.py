@@ -10,7 +10,7 @@ User = get_user_model()
 from django.db import transaction
 from django.utils import timezone
 
-from .models import ChatSession, ChatMessage, ChatConversationContext
+from ...models import ChatSession, ChatMessage, ChatConversationContext
 
 logger = logging.getLogger(__name__)
 

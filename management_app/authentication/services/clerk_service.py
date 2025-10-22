@@ -91,6 +91,47 @@ class ClerkJWTAuthService:
                 logger.info(f"Token EXP datetime: {datetime.fromtimestamp(exp_time, timezone.utc).isoformat()}")
                 logger.info(f"Current datetime: {datetime.now(timezone.utc).isoformat()}")
                 
+                # Log ALL payload data for debugging
+                logger.info("=" * 80)
+                logger.info("FULL JWT TOKEN PAYLOAD (unverified):")
+                logger.info("=" * 80)
+                for key, value in unverified_payload.items():
+                    logger.info(f"  {key}: {value}")
+                logger.info("=" * 80)
+                
+                # Extract organization information from Clerk's actual token format
+                # Clerk stores organization data in the 'o' field as a nested object
+                org_data = unverified_payload.get('o')  # Clerk uses 'o' for organization
+                
+                if org_data and isinstance(org_data, dict):
+                    org_id = org_data.get('id')
+                    org_role = org_data.get('rol')  # Clerk uses 'rol' not 'role'
+                    org_slug = org_data.get('slg')  # Clerk uses 'slg' not 'slug'
+                    
+                    logger.info(f"✅ Token contains organization data in 'o' field:")
+                    logger.info(f"   - Organization ID: {org_id}")
+                    logger.info(f"   - Organization Role: {org_role}")
+                    logger.info(f"   - Organization Slug: {org_slug}")
+                    logger.info(f"   - Full org object: {org_data}")
+                else:
+                    logger.warning("⚠️  Token does NOT contain organization data ('o' field is missing or invalid)")
+                    logger.warning("   This user may not be part of any organization in Clerk")
+                
+                # Log user information - check multiple possible fields
+                user_id = unverified_payload.get('sub')
+                email = unverified_payload.get('email') or unverified_payload.get('email_address')
+                username = unverified_payload.get('username') or unverified_payload.get('preferred_username')
+                
+                # Also check for other common user fields
+                first_name = unverified_payload.get('given_name') or unverified_payload.get('first_name')
+                last_name = unverified_payload.get('family_name') or unverified_payload.get('last_name')
+                
+                logger.info(f"📧 User Info - ID: {user_id}")
+                logger.info(f"   - Email: {email}")
+                logger.info(f"   - Username: {username}")
+                logger.info(f"   - First Name: {first_name}")
+                logger.info(f"   - Last Name: {last_name}")
+                
                 # Calculate time differences
                 iat_diff = current_time - iat_time
                 exp_diff = exp_time - current_time
@@ -173,51 +214,209 @@ class ClerkJWTAuthService:
         """Get or create Django user from Clerk payload"""
         try:
             clerk_user_id = clerk_payload.get('sub')
-            email = clerk_payload.get('email')
+            email = clerk_payload.get('email') or clerk_payload.get('email_address')
+            username = clerk_payload.get('username') or clerk_payload.get('preferred_username')
+            
+            # Extract organization information from JWT payload - Clerk format
+            org_data = clerk_payload.get('o')  # Clerk uses 'o' for organization
+            org_id = None
+            org_role = None
+            org_slug = None
+            
+            if org_data and isinstance(org_data, dict):
+                org_id = org_data.get('id')
+                org_role = org_data.get('rol')  # Clerk uses 'rol' not 'role'
+                org_slug = org_data.get('slg')  # Clerk uses 'slg' not 'slug'
+            
+            # Initialize first_name and last_name
+            first_name = None
+            last_name = None
+            
+            # If user info is missing from JWT, fetch from Clerk API
+            if not email or not username:
+                logger.info("User info missing from JWT, fetching from Clerk API...")
+                api_service = ClerkAPIService()
+                user_info = api_service.get_user_info(clerk_user_id)
+                
+                if user_info:
+                    # Extract email addresses
+                    email_addresses = user_info.get('email_addresses', [])
+                    if email_addresses and not email:
+                        email = email_addresses[0].get('email_address')
+                    
+                    # Extract username
+                    if not username:
+                        username = user_info.get('username')
+                    
+                    # Extract first and last name
+                    first_name = user_info.get('first_name')
+                    last_name = user_info.get('last_name')
+                    
+                    logger.info(f"Fetched from Clerk API:")
+                    logger.info(f"  - Email: {email}")
+                    logger.info(f"  - Username: {username}")
+                    logger.info(f"  - First Name: {first_name}")
+                    logger.info(f"  - Last Name: {last_name}")
+            
+            logger.info("=" * 80)
+            logger.info("GET_OR_CREATE_USER - Processing JWT payload")
+            logger.info("=" * 80)
+            logger.info(f"Clerk User ID: {clerk_user_id}")
+            logger.info(f"Email: {email}")
+            logger.info(f"Username: {username}")
+            logger.info(f"Organization ID: {org_id}")
+            logger.info(f"Organization Role: {org_role}")
+            logger.info(f"Organization Slug: {org_slug}")
+            logger.info("=" * 80)
             
             if not clerk_user_id:
                 logger.error("No clerk_user_id in JWT payload")
                 return None
             
-            # First, try to get existing user by email (most reliable)
-            if email:
-                user = User.objects.filter(email=email).first()
-                if user:
-                    # Update clerk_user_id if it's different or missing
-                    if not user.clerk_user_id or user.clerk_user_id != clerk_user_id:
-                        user.clerk_user_id = clerk_user_id
-                        user.save()
-                        logger.info(f"Updated clerk_user_id for existing user: {user.email}")
-                    return user
-            
-            # Try to get existing user by clerk_user_id
+            # Try to get existing user by clerk_user_id first (most reliable)
             user = User.objects.filter(clerk_user_id=clerk_user_id).first()
             
+            # If not found by clerk_user_id, try by email (but be careful about duplicates)
+            if not user and email:
+                user_by_email = User.objects.filter(email=email).first()
+                if user_by_email:
+                    # Found user by email but not by clerk_user_id
+                    # This might be an old user without clerk_user_id, so we'll update it
+                    logger.info(f"Found user by email but not clerk_user_id - this may be a legacy user")
+                    user = user_by_email
+            
             if user:
-                # Update email if it has changed
+                logger.info(f"Found existing user: {user.username} (ID: {user.id})")
+                # Update user information
+                updated = False
+                
+                # Update clerk_user_id if missing
+                if not user.clerk_user_id or user.clerk_user_id != clerk_user_id:
+                    logger.info(f"Updating clerk_user_id: {user.clerk_user_id} -> {clerk_user_id}")
+                    user.clerk_user_id = clerk_user_id
+                    updated = True
+                
+                # Update email - force update from Clerk if we have the real email
                 if email and user.email != email:
-                    user.email = email
-                    user.save()
+                    # Check if email is already taken by another user
+                    email_exists = User.objects.filter(email=email).exclude(id=user.id).exists()
+                    if email_exists:
+                        # Find and update the conflicting user
+                        conflicting_user = User.objects.filter(email=email).exclude(id=user.id).first()
+                        if conflicting_user and not conflicting_user.clerk_user_id:
+                            # This is likely a duplicate/old user without Clerk ID - make email unique
+                            logger.warning(f"⚠️  Found duplicate user with email {email} - updating conflicting user")
+                            conflicting_user.email = f"old-{conflicting_user.id}-{email}"
+                            conflicting_user.save()
+                            logger.info(f"✅ Updated conflicting user email to: {conflicting_user.email}")
+                            # Now we can update this user's email
+                            logger.info(f"Updating email: {user.email} -> {email}")
+                            user.email = email
+                            updated = True
+                        else:
+                            logger.warning(f"⚠️  Cannot update email from {user.email} to {email} - email already exists for another Clerk user")
+                            logger.warning(f"    Keeping existing email: {user.email}")
+                    else:
+                        logger.info(f"Updating email: {user.email} -> {email}")
+                        user.email = email
+                        updated = True
+                    
+                # Update username only if available
+                if username and user.username != username:
+                    # Check if username is available
+                    if not User.objects.filter(username=username).exclude(id=user.id).exists():
+                        logger.info(f"Updating username: {user.username} -> {username}")
+                        user.username = username
+                        updated = True
+                    else:
+                        logger.warning(f"⚠️  Username {username} already exists - keeping {user.username}")
+                
+                # Update first and last name (handle None values gracefully)
+                if first_name is not None and user.first_name != first_name:
+                    logger.info(f"Updating first_name: '{user.first_name}' -> '{first_name}'")
+                    user.first_name = first_name
+                    updated = True
+                if last_name is not None and user.last_name != last_name:
+                    logger.info(f"Updating last_name: '{user.last_name}' -> '{last_name}'")
+                    user.last_name = last_name
+                    updated = True
+                
+                # Update organization information
+                if org_id and user.organization_id != org_id:
+                    logger.info(f"Updating organization_id: {user.organization_id} -> {org_id}")
+                    user.organization_id = org_id
+                    updated = True
+                if org_role and user.organization_role != org_role:
+                    logger.info(f"Updating organization_role: {user.organization_role} -> {org_role}")
+                    user.organization_role = org_role
+                    updated = True
+                if org_slug and user.organization_name != org_slug:
+                    logger.info(f"Updating organization_name: {user.organization_name} -> {org_slug}")
+                    user.organization_name = org_slug
+                    updated = True
+                
+                if updated:
+                    try:
+                        user.save()
+                        logger.info(f"✅ Updated existing user: {user.username}")
+                        logger.info(f"   - Email: {user.email}")
+                        logger.info(f"   - First Name: {user.first_name}")
+                        logger.info(f"   - Last Name: {user.last_name}")
+                        logger.info(f"   - Organization ID: {user.organization_id}")
+                        logger.info(f"   - Organization Name: {user.organization_name}")
+                        logger.info(f"   - Organization Role: {user.organization_role}")
+                    except Exception as save_error:
+                        logger.error(f"❌ Error saving user updates: {save_error}")
+                        # Don't raise - return the user with old data rather than failing
+                        logger.warning("Returning user without updates due to save error")
+                        # Refresh from database to ensure we have clean state
+                        user.refresh_from_db()
+                        return user
+                else:
+                    logger.info(f"ℹ️  No updates needed for user: {user.username}")
+                
                 return user
             
             # Create new user only if no existing user found
-            username = clerk_payload.get('username', email.split('@')[0] if email else clerk_user_id)
+            logger.info("No existing user found - creating new user")
+            display_username = username or (email.split('@')[0] if email else clerk_user_id)
             
             # Ensure username is unique
-            original_username = username
+            original_username = display_username
             counter = 1
-            while User.objects.filter(username=username).exists():
-                username = f"{original_username}_{counter}"
+            while User.objects.filter(username=display_username).exists():
+                display_username = f"{original_username}_{counter}"
                 counter += 1
             
+            logger.info(f"Creating new user with:")
+            logger.info(f"   - Username: {display_username}")
+            logger.info(f"   - Email: {email}")
+            logger.info(f"   - First Name: {first_name}")
+            logger.info(f"   - Last Name: {last_name}")
+            logger.info(f"   - Clerk User ID: {clerk_user_id}")
+            logger.info(f"   - Organization ID: {org_id}")
+            logger.info(f"   - Organization Name: {org_slug}")
+            logger.info(f"   - Organization Role: {org_role}")
+            
             user = User.objects.create_user(
-                username=username,
+                username=display_username,
                 email=email or '',
                 clerk_user_id=clerk_user_id,
+                first_name=first_name or '',
+                last_name=last_name or '',
+                organization_id=org_id,
+                organization_name=org_slug,
+                organization_role=org_role,
                 is_active=True
             )
             
-            logger.info(f"Created new user: {user.username} ({clerk_user_id})")
+            logger.info(f"✅ Created new user: {user.username} ({clerk_user_id})")
+            logger.info(f"   - Email: {user.email}")
+            logger.info(f"   - First Name: {user.first_name}")
+            logger.info(f"   - Last Name: {user.last_name}")
+            logger.info(f"   - Organization ID: {user.organization_id}")
+            logger.info(f"   - Organization Name: {user.organization_name}")
+            logger.info(f"   - Organization Role: {user.organization_role}")
             return user
             
         except Exception as e:
@@ -428,7 +627,13 @@ class ClerkAPIService:
             )
             
             if response.status_code == 200:
-                return response.json()
+                user_data = response.json()
+                logger.info("=" * 80)
+                logger.info("CLERK API USER DATA:")
+                logger.info("=" * 80)
+                logger.info(f"Full response: {user_data}")
+                logger.info("=" * 80)
+                return user_data
             else:
                 logger.error(f"Failed to get user info: {response.status_code} - {response.text}")
                 return None

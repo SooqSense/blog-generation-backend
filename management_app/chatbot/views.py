@@ -143,7 +143,7 @@ def chat_api(request):
             "tokens_used": result.get("tokens_used", 0),
             "model_used": result.get("model_used", "unknown"),
             "total_messages": chat_session.total_messages,
-            "relevant_documents_found": len(result.get("relevant_documents", [])),
+            "documents_found": result.get("documents_found", 0),
         }, status=status.HTTP_200_OK)
 
     except Exception as e:

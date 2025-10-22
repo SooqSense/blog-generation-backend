@@ -34,7 +34,7 @@ class StreamlitApp:
 
     def render_header(self):
         """Render the main application header"""
-        self.ui_components.render_header(self.api_base_url)
+        self.ui_components.render_header(self.api_base_url, self.auth_handler)
         
     def render_sidebar(self):
         """Render the sidebar navigation"""
