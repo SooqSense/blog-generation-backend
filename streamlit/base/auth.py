@@ -119,3 +119,33 @@ class AuthHandler:
         """Check authentication for a specific feature"""
         if self.auth_available and not is_authenticated():
             require_auth(feature_name)
+    
+    def is_admin(self) -> bool:
+        """Check if the current user has admin role in their organization"""
+        if not self.auth_available or not self.auth_manager:
+            return False
+        
+        user = self.auth_manager.get_user()
+        if not user:
+            return False
+        
+        org_role = user.get('organization_role', '').lower()
+        return org_role == 'admin'
+    
+    def require_admin(self, feature_name: str = "this feature"):
+        """Require admin role for a feature"""
+        if not self.auth_available:
+            st.error(f"⚠️ Authentication service not available for {feature_name}")
+            st.stop()
+        
+        if not is_authenticated():
+            st.error(f"🔐 Please login to access {feature_name}")
+            st.stop()
+        
+        if not self.is_admin():
+            user = self.auth_manager.get_user() if self.auth_manager else {}
+            org_name = user.get('organization_name', 'your organization')
+            st.error(f"🚫 Access Denied: Admin privileges required")
+            st.warning(f"Only administrators of **{org_name}** can access {feature_name}.")
+            st.info("💡 Please contact your organization administrator to request admin access.")
+            st.stop()

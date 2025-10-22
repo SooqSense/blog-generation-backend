@@ -10,6 +10,9 @@ import logging
 from .models import TrendingTopics
 
 # Set up logging
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 logger = logging.getLogger(__name__)
 
 # Import local services
@@ -49,6 +52,7 @@ from .service.trending_queries import fetch_trending_queries
     description="Fetch trending queries related to a given topic using Serper API and save to database. Fetches 30 trending queries worldwide related to the topic from the past 30 days.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def fetch_and_save_related_topics(request):
     """Fetch trending queries related to a given topic using Serper API and save to database."""
     try:

@@ -2,7 +2,7 @@ import logging
 from django.utils.deprecation import MiddlewareMixin
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
-from .services.clerk_service import ClerkJWTAuthService
+from .services.clerk_services import ClerkUserService
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ class ClerkJWTAuthenticationMiddleware(MiddlewareMixin):
     
     def __init__(self, get_response):
         self.get_response = get_response
-        self.clerk_auth = ClerkJWTAuthService()
+        self.clerk_user_service = ClerkUserService()
         super().__init__(get_response)
     
     def process_request(self, request):
@@ -44,7 +44,7 @@ class ClerkJWTAuthenticationMiddleware(MiddlewareMixin):
         token = auth_header.split(' ')[1]
         
         # Authenticate user
-        user = self.clerk_auth.authenticate_user(token)
+        user = self.clerk_user_service.authenticate_user(token)
         
         if not user:
             return JsonResponse(

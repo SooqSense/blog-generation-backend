@@ -21,6 +21,9 @@ from .serializers import (
 )
 
 # Set up logging
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 logger = logging.getLogger(__name__)
 
 # Import local services
@@ -46,6 +49,7 @@ from .service.edit_images import edit_image_with_flux, convert_image_to_base64
     description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def generate_image_api(request):
     """
     Generate one or more professional images using FLUX AI generation models.
@@ -192,6 +196,7 @@ def generate_image_api(request):
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
+@require_sooqsense_organization
 def edit_image_api(request):
     """Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords."""
     try:

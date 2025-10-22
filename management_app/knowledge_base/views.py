@@ -10,6 +10,9 @@ import logging
 # Import models
 from .models import PDFDocument
 
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,7 @@ except Exception as e:
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
+@require_sooqsense_organization
 def upload_pdf_api(request):
     """Upload and process document files (PDF, DOCX, MD, TXT)."""
     try:

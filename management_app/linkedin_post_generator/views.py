@@ -14,6 +14,9 @@ import logging
 from .models import LinkedinPost, LinkedinPostingContent, LinkedinAnalytics
 
 # Set up logging
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 logger = logging.getLogger(__name__)
 
 # Import local services
@@ -50,6 +53,7 @@ from .service.linkedin_post_generator import LinkedInPostGenerator
     description="Generate a professional LinkedIn post based on the given topic.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def generate_linkedin_post_api(request):
     """Generate a professional LinkedIn post based on the given topic."""
     try:
@@ -142,6 +146,7 @@ def generate_linkedin_post_api(request):
     description="Post content to LinkedIn using the user's stored LinkedIn access token.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def post_on_linkedin_api(request):
     """Post content to LinkedIn using the user's stored LinkedIn access token."""
     try:
@@ -229,6 +234,7 @@ def post_on_linkedin_api(request):
     description="Fetch LinkedIn profile analytics using stored LinkedIn access token.",
 )
 @api_view(["GET"])
+@require_sooqsense_organization
 def fetch_linkedin_analytics_api(request):
     """Fetch LinkedIn profile analytics using stored LinkedIn access token."""
     try:
@@ -322,6 +328,7 @@ def fetch_linkedin_analytics_api(request):
     description="Validate the user's stored LinkedIn access token and check available permissions.",
 )
 @api_view(["GET"])
+@require_sooqsense_organization
 def validate_linkedin_token_api(request):
     """Validate the user's stored LinkedIn access token and check available permissions."""
     try:
@@ -369,6 +376,7 @@ def validate_linkedin_token_api(request):
     description="Generate a LinkedIn re-authentication URL with enhanced permissions.",
 )
 @api_view(["GET"])
+@require_sooqsense_organization
 def linkedin_reauth_url_api(request):
     """Generate a LinkedIn re-authentication URL with enhanced permissions."""
     try:
