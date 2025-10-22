@@ -2,7 +2,7 @@ import logging
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth import get_user_model
-from .services.clerk_service import ClerkJWTAuthService
+from .services.clerk_services import ClerkUserService
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -21,9 +21,9 @@ class ClerkJWTAuthentication(BaseAuthentication):
         
         token = auth_header.split(' ')[1]
         
-        # Use the ClerkJWTAuthService
-        clerk_auth_service = ClerkJWTAuthService()
-        user = clerk_auth_service.authenticate_user(token)
+        # Use the ClerkUserService for authentication
+        clerk_user_service = ClerkUserService()
+        user = clerk_user_service.authenticate_user(token)
         
         if not user:
             raise AuthenticationFailed('Invalid or expired token')

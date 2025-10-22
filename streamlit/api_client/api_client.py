@@ -15,12 +15,16 @@ class APIClient:
         self.timeout = 300  # Increased to 5 minutes for AI content generation
     
     def _get_auth_headers(self) -> Dict[str, str]:
-        """Get authentication headers from Streamlit session state"""
+        """Get authentication headers from Streamlit session state including selected organization"""
         headers = {"Content-Type": "application/json"}
         
         # Try to get auth token from session state
         if hasattr(st.session_state, 'token') and st.session_state.token:
             headers['Authorization'] = f'Bearer {st.session_state.token}'
+        
+        # Add selected organization header
+        if hasattr(st.session_state, 'selected_organization') and st.session_state.selected_organization:
+            headers['X-Selected-Organization'] = st.session_state.selected_organization
         
         return headers
     

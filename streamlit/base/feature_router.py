@@ -36,6 +36,14 @@ class FeatureRouter:
             # Check authentication
             self.auth_handler.check_auth_for_feature(auth_feature_name)
             
+            # Check organization access (sooqsense required)
+            if not self._check_organization_access():
+                return "access_denied"
+            
+            # Knowledge Base requires admin role
+            if feature_class_name == "KnowledgeBaseFeature":
+                self.auth_handler.require_admin(auth_feature_name)
+            
             # Load and render feature
             feature_instance = self.feature_loader.load_feature(feature_class_name)
             
@@ -48,6 +56,44 @@ class FeatureRouter:
             return "feature"
         
         return "unknown"
+    
+    def _check_organization_access(self) -> bool:
+        """Check if user has access via sooqsense organization"""
+        if not st.session_state.get('authenticated', False):
+            return True  # Auth check handles this
+        
+        selected_org = st.session_state.get('selected_organization', '')
+        user_orgs = st.session_state.get('user_organizations', [])
+        
+        # Check if user is member of sooqsense
+        has_sooqsense = 'sooqsense' in [org.lower() for org in user_orgs]
+        
+        if not has_sooqsense:
+            st.error("🚫 Access Denied")
+            st.warning("You need to be a member of the **sooqsense** organization to access this feature.")
+            st.info("💡 Please contact your administrator to request access to the sooqsense organization.")
+            
+            with st.expander("👥 Your Organizations"):
+                if user_orgs:
+                    for org in user_orgs:
+                        st.write(f"• {org}")
+                else:
+                    st.write("You are not a member of any organizations.")
+            return False
+        
+        # Check if sooqsense is currently selected
+        if selected_org.lower() != 'sooqsense':
+            st.warning("⚠️ Organization Switch Required")
+            st.info("Please switch to the **sooqsense** organization in the sidebar to access this feature.")
+            st.markdown("---")
+            st.markdown("**Current Status:**")
+            st.write(f"✓ You are a member of **sooqsense**")
+            st.write(f"✗ Currently viewing: **{selected_org}**")
+            st.markdown("---")
+            st.info("👈 Use the organization selector in the sidebar to switch to **sooqsense**")
+            return False
+        
+        return True
     
     def get_feature_info(self, feature_name: str):
         """Get information about a feature"""
@@ -77,8 +123,9 @@ class FeatureRouter:
                 "requires_auth": True
             },
             "📚 Knowledge Base": {
-                "description": "Upload and manage documents",
-                "requires_auth": True
+                "description": "Upload and manage documents (Admin only)",
+                "requires_auth": True,
+                "requires_admin": True
             },
             "🤖 AI Chat": {
                 "description": "Chat with your documents using AI",

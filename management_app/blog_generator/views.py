@@ -15,6 +15,9 @@ import logging
 from .models import BlogGeneral
 from .serializers import BlogRequestSerializer, BlogResponseSerializer, ErrorResponseSerializer
 
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -119,6 +122,7 @@ def convert_markdown_to_json(markdown_content):
     description="Generate a detailed blog post based on the given topic and optional parameters for customization. Set 'generate_image_prompts' to true (default) to include 5 section-specific images, or false for text-only blog content.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def generate_blog_api(request):
     """
     Generate a detailed blog post from a given topic and optional parameters.

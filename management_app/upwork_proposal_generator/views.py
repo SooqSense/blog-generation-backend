@@ -20,6 +20,9 @@ from .serializers import (
 )
 from .services.agent.agent import upwork_proposal_agent
 
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization, RequireOrganizationMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +44,7 @@ logger = logging.getLogger(__name__)
         tags=["Upwork Proposals"]
     )
 )
-class UpworkProposalListCreateView(generics.ListCreateAPIView):
+class UpworkProposalListCreateView(RequireOrganizationMixin, generics.ListCreateAPIView):
     """List user's proposals and create new proposal generation requests."""
     
     permission_classes = [IsAuthenticated]
@@ -154,7 +157,7 @@ class UpworkProposalListCreateView(generics.ListCreateAPIView):
         tags=["Upwork Proposals"]
     )
 )
-class UpworkProposalDetailView(generics.RetrieveUpdateDestroyAPIView):
+class UpworkProposalDetailView(RequireOrganizationMixin, generics.RetrieveUpdateDestroyAPIView):
     """Retrieve, update, or delete a specific proposal."""
     
     permission_classes = [IsAuthenticated]
@@ -180,6 +183,7 @@ class UpworkProposalDetailView(generics.RetrieveUpdateDestroyAPIView):
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
+@require_sooqsense_organization
 def generate_proposal_direct(request):
     """
     Generate proposal directly without saving to database.
@@ -254,6 +258,7 @@ def generate_proposal_direct(request):
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
+@require_sooqsense_organization
 def regenerate_proposal(request, proposal_id):
     """Regenerate proposal content for an existing proposal."""
     try:
@@ -337,6 +342,7 @@ def regenerate_proposal(request, proposal_id):
     tags=["Upwork Proposals"]
 )
 @api_view(['GET'])
+@require_sooqsense_organization
 def proposal_status(request, proposal_id):
     """Get the current status of a proposal generation."""
     try:
