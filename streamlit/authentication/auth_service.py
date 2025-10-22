@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import os
 from dotenv import load_dotenv
 
@@ -272,15 +272,38 @@ class StreamlitAuthManager:
             st.session_state.user = None
         if 'token' not in st.session_state:
             st.session_state.token = None
+        if 'selected_organization' not in st.session_state:
+            st.session_state.selected_organization = None
+        if 'user_organizations' not in st.session_state:
+            st.session_state.user_organizations = []
     
     def login(self, email: str, password: str) -> bool:
         """Perform login using Clerk authentication and update session state"""
         result = self.auth_service.authenticate_with_clerk_credentials(email, password)
         
         if result['success']:
+            user = result['user']
             st.session_state.authenticated = True
-            st.session_state.user = result['user']
+            st.session_state.user = user
             st.session_state.token = result['token']
+            
+            # Store user organizations
+            user_orgs = user.get('organization_names', [])
+            st.session_state.user_organizations = user_orgs
+            
+            # Auto-select 'sooqsense' organization if user is a member
+            if 'sooqsense' in [org.lower() for org in user_orgs]:
+                # Find the exact case-sensitive name
+                sooqsense_org = next((org for org in user_orgs if org.lower() == 'sooqsense'), None)
+                st.session_state.selected_organization = sooqsense_org
+                logger.info(f"✅ Auto-selected 'sooqsense' organization")
+            elif user_orgs:
+                # Select first organization if sooqsense not available
+                st.session_state.selected_organization = user_orgs[0]
+                logger.warning(f"⚠️ User is not a member of 'sooqsense', selected: {user_orgs[0]}")
+            else:
+                st.session_state.selected_organization = None
+                logger.warning("⚠️ User has no organizations")
             
             logger.info("=" * 80)
             logger.info(f"LOGIN SUCCESS - User {email} logged in")
@@ -289,6 +312,9 @@ class StreamlitAuthManager:
             if result.get('user'):
                 for key, value in result['user'].items():
                     logger.info(f"  {key}: {value}")
+            logger.info("=" * 80)
+            logger.info(f"User Organizations: {user_orgs}")
+            logger.info(f"Selected Organization: {st.session_state.selected_organization}")
             logger.info("=" * 80)
             
             return True
@@ -303,6 +329,9 @@ class StreamlitAuthManager:
         st.session_state.authenticated = False
         st.session_state.user = None
         st.session_state.token = None
+        st.session_state.selected_organization = None
+        st.session_state.user_organizations = []
+        logger.info("User logged out successfully")
         st.rerun()
     
     def is_authenticated(self) -> bool:
@@ -338,20 +367,71 @@ class StreamlitAuthManager:
             st.stop()
     
     def get_auth_headers(self) -> Dict[str, str]:
-        """Get authentication headers for API calls"""
+        """Get authentication headers for API calls including selected organization"""
+        headers = {}
         token = self.get_token()
         if token:
-            return {'Authorization': f'Bearer {token}'}
-        return {}
+            headers['Authorization'] = f'Bearer {token}'
+        
+        # Add selected organization header
+        selected_org = st.session_state.get('selected_organization')
+        if selected_org:
+            headers['X-Selected-Organization'] = selected_org
+        
+        return headers
+    
+    def has_sooqsense_access(self) -> bool:
+        """Check if user has access to sooqsense organization"""
+        user_orgs = st.session_state.get('user_organizations', [])
+        return 'sooqsense' in [org.lower() for org in user_orgs]
+    
+    def is_sooqsense_selected(self) -> bool:
+        """Check if sooqsense organization is currently selected"""
+        selected_org = st.session_state.get('selected_organization', '')
+        return selected_org.lower() == 'sooqsense' if selected_org else False
+    
+    def get_selected_organization(self) -> Optional[str]:
+        """Get the currently selected organization"""
+        return st.session_state.get('selected_organization')
+    
+    def get_user_organizations(self) -> List[str]:
+        """Get list of organizations user belongs to"""
+        return st.session_state.get('user_organizations', [])
     
     def login_with_clerk_token(self, clerk_jwt_token: str) -> bool:
         """Login using a Clerk JWT token"""
         result = self.auth_service.verify_token(clerk_jwt_token)
         
         if result['success']:
+            user = result['user']
             st.session_state.authenticated = True
-            st.session_state.user = result['user']
+            st.session_state.user = user
             st.session_state.token = result['token']
+            
+            # Store user organizations
+            user_orgs = user.get('organization_names', [])
+            st.session_state.user_organizations = user_orgs
+            
+            # Auto-select 'sooqsense' organization if user is a member
+            if 'sooqsense' in [org.lower() for org in user_orgs]:
+                # Find the exact case-sensitive name
+                sooqsense_org = next((org for org in user_orgs if org.lower() == 'sooqsense'), None)
+                st.session_state.selected_organization = sooqsense_org
+                logger.info(f"✅ Auto-selected 'sooqsense' organization")
+            elif user_orgs:
+                # Select first organization if sooqsense not available
+                st.session_state.selected_organization = user_orgs[0]
+                logger.warning(f"⚠️ User is not a member of 'sooqsense', selected: {user_orgs[0]}")
+            else:
+                st.session_state.selected_organization = None
+                logger.warning("⚠️ User has no organizations")
+            
+            logger.info("=" * 80)
+            logger.info(f"LOGIN WITH CLERK TOKEN - User logged in")
+            logger.info(f"User Organizations: {user_orgs}")
+            logger.info(f"Selected Organization: {st.session_state.selected_organization}")
+            logger.info("=" * 80)
+            
             return True
         else:
             st.error(result['message'])

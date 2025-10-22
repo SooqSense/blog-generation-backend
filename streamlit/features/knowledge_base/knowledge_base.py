@@ -15,6 +15,9 @@ class KnowledgeBaseFeature:
         st.title("📚 Knowledge Base")
         st.markdown("Upload and manage documents for AI-powered queries.")
         
+        # Show admin-only notice
+        st.info("🛡️ **Admin Access**: This feature is only available to organization administrators.")
+        
         # Render document upload directly without tabs
         self.render_document_upload()
     

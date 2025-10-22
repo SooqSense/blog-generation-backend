@@ -13,6 +13,9 @@ from .models import BlogAiNews
 from .serializers import DailyAINewsRequestSerializer, DailyAINewsResponseSerializer, ErrorResponseSerializer
 
 # Set up logging
+# Import organization access control
+from management_app.authentication.services.access_control import require_sooqsense_organization
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,6 +117,7 @@ def convert_markdown_to_json(markdown_content):
     description="Fetch and generate daily AI news from specified country and keywords using Serper API.",
 )
 @api_view(["POST"])
+@require_sooqsense_organization
 def generate_daily_ai_news(request):
     """
     Generate daily AI news based on country and keywords.

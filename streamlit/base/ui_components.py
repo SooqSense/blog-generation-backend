@@ -25,39 +25,116 @@ class UIComponents:
         </div>
         """, unsafe_allow_html=True)
         
-        # User info bar with organization and logout
+        # User info bar with combined user and organization information
         if auth_handler and auth_handler.auth_manager.is_authenticated():
             user = auth_handler.auth_manager.get_user()
+            username = user.get('username', 'Unknown User')
+            email = user.get('email', 'N/A')
+            selected_org = st.session_state.get('selected_organization', 'No organization')
             
-            # Create top bar with user info and logout
-            col1, col2, col3 = st.columns([2, 2, 1])
+            # Create columns for layout: combined info | logout button
+            col_info, col_logout = st.columns([4, 1])
             
-            with col1:
-                username = user.get('username', 'Unknown User')
-                email = user.get('email', 'N/A')
-                st.markdown(f"**👤 User:** {username}")
-                if email and email != 'N/A':
-                    st.caption(f"📧 {email}")
+            with col_info:
+                # Combined user and organization info section
+                st.markdown(f"""
+                <div style='display: flex; align-items: center; padding: 15px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 10px;'>
+                    <div style='flex: 1; text-align: left;'>
+                        <div style='color: #ffffff; font-weight: 600; font-size: 14px; margin-bottom: 4px;'>👤 {username}</div>
+                        <div style='color: rgba(255, 255, 255, 0.7); font-size: 12px;'>📧 {email if email != "N/A" else ""}</div>
+                    </div>
+                    <div style='flex: 1; text-align: center;'>
+                        <div style='color: rgba(255, 255, 255, 0.8); font-size: 11px; margin-bottom: 6px; letter-spacing: 1px;'>🏢 ORGANIZATION</div>
+                        <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%); padding: 8px 20px; border-radius: 20px; border: 1.5px solid rgba(255, 255, 255, 0.3); font-weight: 700; font-size: 15px; color: #ffffff; white-space: nowrap; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); display: inline-block;'>🏛️ {selected_org}</div>
+                    </div>
+                    <div style='flex: 1;'></div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            with col2:
-                org_name = user.get('organization_name')
-                org_role = user.get('organization_role')
-                if org_name:
-                    st.markdown(f"**🏢 Organization:** {org_name}")
-                    if org_role:
-                        st.caption(f"Role: {org_role}")
-                else:
-                    st.info("⚠️ No organization")
-            
-            with col3:
-                if st.button("🚪 Logout", use_container_width=True, type="primary"):
+            with col_logout:
+                # Logout button aligned to the right
+                st.markdown("<div style='padding-top: 15px;'></div>", unsafe_allow_html=True)
+                if st.button("🚪 Logout", type="primary", key="logout_btn", use_container_width=True):
                     auth_handler.auth_manager.logout()
             
-            st.markdown("---")
+            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         
         # Show API status
         st.success(f"✅ Connected to Django API at {api_base_url}")
         st.info(f"📡 {len(API_ENDPOINTS)} API endpoints available")
+    
+    @staticmethod
+    def _render_organization_selector():
+        """Render organization selector if user has multiple organizations"""
+        if not st.session_state.get('authenticated', False):
+            return
+        
+        user_orgs = st.session_state.get('user_organizations', [])
+        user = st.session_state.get('user', {})
+        
+        if not user_orgs:
+            return
+        
+        # Show organization info
+        st.markdown("### 🏢 Organizations")
+        
+        selected_org = st.session_state.get('selected_organization')
+        org_ids = user.get('organization_ids', [])
+        org_roles = user.get('organization_roles', [])
+        
+        if len(user_orgs) > 1:
+            # Show selector for multiple organizations with role info
+            current_index = 0
+            if selected_org and selected_org in user_orgs:
+                current_index = user_orgs.index(selected_org)
+            
+            # Create display options with role info
+            display_options = []
+            for i, org in enumerate(user_orgs):
+                role = org_roles[i] if i < len(org_roles) else 'member'
+                # Extract just the role name after 'org:' if present
+                role_display = role.split(':')[-1] if ':' in role else role
+                display_options.append(f"{org} ({role_display})")
+            
+            selected_display = st.selectbox(
+                "Select Active Organization:",
+                display_options,
+                index=current_index,
+                key="sidebar_org_selector"
+            )
+            
+            # Extract the org name from the display option
+            new_org = user_orgs[display_options.index(selected_display)]
+            
+            if new_org != selected_org:
+                st.session_state.selected_organization = new_org
+                # Update user's current org info for backward compatibility
+                idx = user_orgs.index(new_org)
+                if idx < len(org_ids):
+                    st.session_state.user['organization_id'] = org_ids[idx]
+                    st.session_state.user['organization_name'] = new_org
+                if idx < len(org_roles):
+                    st.session_state.user['organization_role'] = org_roles[idx]
+                st.rerun()
+            
+            # Show total organizations
+            st.caption(f"You belong to {len(user_orgs)} organization(s)")
+        else:
+            # Show single organization with role
+            org_name = user_orgs[0]
+            org_role = org_roles[0] if org_roles else user.get('organization_role', 'member')
+            role_display = org_role.split(':')[-1] if ':' in org_role else org_role
+            st.info(f"📍 {org_name}")
+            st.caption(f"Role: {role_display}")
+        
+        # Check if sooqsense is selected
+        if selected_org and selected_org.lower() == 'sooqsense':
+            st.success("✅ Full Feature Access")
+        elif selected_org:
+            st.warning("⚠️ Limited Access")
+            st.caption("Switch to 'sooqsense' for full access")
+        
+        st.markdown("---")
     
     @staticmethod
     def render_sidebar(auth_handler, api_endpoints_count: int):
@@ -65,6 +142,9 @@ class UIComponents:
         with st.sidebar:
             # Authentication section
             auth_handler.render_auth_section()
+            
+            # Organization selector
+            UIComponents._render_organization_selector()
             
             st.markdown("### 🚀 Navigation")
             
@@ -181,12 +261,13 @@ class UIComponents:
             """)
             
             st.markdown("""
-            ### 📚 Knowledge Base
-            Upload and manage your project documents and portfolio files.
+            ### 📚 Knowledge Base 🔐
+            Upload and manage your project documents and portfolio files. **[Admin Only]**
             - PDF, Word, Markdown, and text file support
             - Automatic content extraction and indexing
             - S3 cloud storage integration
             - Vector database for AI-powered search
+            - 🛡️ Requires administrator privileges
             """)
             
             st.markdown("""
