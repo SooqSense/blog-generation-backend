@@ -24,14 +24,8 @@ class ChatbotFeature:
         if "session_id" not in st.session_state:
             st.session_state.session_id = str(uuid.uuid4())
         
-        # Create tabs for different features
-        tab1, tab2 = st.tabs(["Chat", "Chat History"])
-        
-        with tab1:
-            self.render_chat_interface()
-        
-        with tab2:
-            self.render_chat_history()
+        # Render chat interface directly without tabs
+        self.render_chat_interface()
     
     def render_chat_interface(self):
         """Render chat interface"""
@@ -40,26 +34,21 @@ class ChatbotFeature:
         # Display chat messages
         self.display_chat_messages()
         
-        # Chat input
-        with st.form("chat_form"):
-            user_query = st.text_area(
-                "Ask a question about your documents",
-                placeholder="What projects have I worked on?",
-                help="Ask questions about your uploaded documents"
-            )
-            
-            col1, col2 = st.columns([1, 4])
-            
-            with col1:
-                submit_button = st.form_submit_button("💬 Send", use_container_width=True)
-            
-            with col2:
-                if st.form_submit_button("🗑️ Clear Chat", use_container_width=True):
-                    st.session_state.chat_messages = []
-                    st.rerun()
-            
-            if submit_button and user_query:
-                self.process_chat_query(user_query)
+        # Chat input - supports Enter key to send
+        user_query = st.chat_input(
+            placeholder="Ask a question about your documents... (Press Enter to send)",
+            key="chat_input"
+        )
+        
+        # Clear chat button positioned under the input
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
+                st.session_state.chat_messages = []
+                st.rerun()
+        
+        if user_query:
+            self.process_chat_query(user_query)
     
     def display_chat_messages(self):
         """Display chat messages"""
@@ -72,13 +61,7 @@ class ChatbotFeature:
                         st.write(message["content"])
                 else:
                     with st.chat_message("assistant"):
-                        st.write(message["content"])
-                        
-                        # Display sources if available
-                        if "sources" in message and message["sources"]:
-                            with st.expander("📚 Sources"):
-                                for source in message["sources"]:
-                                    st.markdown(f"- {source}")
+                        st.markdown(message["content"])
         else:
             st.info("💬 Start a conversation by asking a question about your documents!")
     
@@ -99,16 +82,12 @@ class ChatbotFeature:
                 )
                 
                 if response and response.get("status") == "success":
-                    # Add assistant response to chat
+                    # Add assistant response to chat (links are now integrated in the response content)
                     assistant_message = {
                         "type": "assistant",
                         "content": response.get("response", "No response received"),
                         "timestamp": datetime.now()
                     }
-                    
-                    # Add sources if available
-                    if "sources" in response:
-                        assistant_message["sources"] = response["sources"]
                     
                     st.session_state.chat_messages.append(assistant_message)
                     st.rerun()
@@ -119,8 +98,3 @@ class ChatbotFeature:
             except Exception as e:
                 st.error(f"❌ Error processing chat query: {str(e)}")
     
-    def render_chat_history(self):
-        """Render chat history"""
-        st.subheader("📚 Chat History")
-        st.info("Chat history feature coming soon!")
-        st.write("This will show your previous chat sessions and conversations.")

@@ -61,9 +61,19 @@ class AuthUI:
         if user:
             st.sidebar.markdown("---")
             st.sidebar.markdown("### 👤 User Info")
-            st.sidebar.write(f"**Username:** {user.get('username', 'N/A')}")
+            username = user.get('username', 'Unknown User')
+            st.sidebar.write(f"**Username:** {username}")
             st.sidebar.write(f"**Email:** {user.get('email', 'N/A')}")
             st.sidebar.write(f"**ID:** {user.get('id', 'N/A')}")
+            
+            # Display organization information if available
+            org_name = user.get('organization_name')
+            org_role = user.get('organization_role')
+            if org_name:
+                st.sidebar.markdown("### 🏢 Organization")
+                st.sidebar.write(f"**Organization:** {org_name}")
+                if org_role:
+                    st.sidebar.write(f"**Role:** {org_role}")
     
     def render_logout_button(self):
         """Render logout button in sidebar"""
@@ -74,7 +84,12 @@ class AuthUI:
         """Render authentication status"""
         if self.auth_manager.is_authenticated():
             user = self.auth_manager.get_user()
-            st.success(f"✅ Authenticated as {user.get('username', 'Unknown')}")
+            username = user.get('username', 'Unknown User')
+            org_name = user.get('organization_name')
+            if org_name:
+                st.success(f"✅ Authenticated as {username} ({org_name})")
+            else:
+                st.success(f"✅ Authenticated as {username}")
         else:
             st.warning("⚠️ Not authenticated")
     
@@ -123,20 +138,61 @@ class SidebarAuth:
         """Render authenticated user section"""
         user = self.auth_manager.get_user()
         
-        st.sidebar.markdown("### 🔐 Authentication")
-        st.sidebar.success(f"✅ Logged in as {user.get('username', 'Unknown')}")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("=" * 80)
+        logger.info("SIDEBAR AUTH - Rendering authenticated section")
+        logger.info("User data from session state:")
+        logger.info("=" * 80)
+        if user:
+            for key, value in user.items():
+                logger.info(f"  {key}: {value}")
+        else:
+            logger.warning("  User is None!")
+        logger.info("=" * 80)
         
-        # User info
-        with st.sidebar.expander("👤 User Details", expanded=False):
-            st.write(f"**Username:** {user.get('username', 'N/A')}")
-            st.write(f"**Email:** {user.get('email', 'N/A')}")
+        st.sidebar.markdown("### 🔐 Authentication")
+        username = user.get('username', 'Unknown User')
+        email = user.get('email', 'N/A')
+        org_name = user.get('organization_name')
+        org_role = user.get('organization_role')
+        
+        logger.info(f"Displaying username: {username}")
+        logger.info(f"Organization name: {org_name}")
+        
+        # Show authenticated status
+        st.sidebar.success(f"✅ Logged in")
+        
+        # Show user info in compact format
+        st.sidebar.markdown(f"**👤** {username}")
+        if email and email != 'N/A':
+            st.sidebar.caption(f"📧 {email}")
+        
+        # Organization info if available
+        if org_name:
+            st.sidebar.markdown(f"**🏢** {org_name}")
+            if org_role:
+                st.sidebar.caption(f"Role: {org_role.title()}")
+        
+        # User info expandable
+        with st.sidebar.expander("👤 More Details", expanded=False):
             st.write(f"**User ID:** {user.get('id', 'N/A')}")
             if user.get('clerk_user_id'):
-                st.write(f"**Clerk ID:** {user.get('clerk_user_id')}")
-        
-        # Logout button
-        if st.sidebar.button("🚪 Logout", use_container_width=True):
-            self.auth_manager.logout()
+                st.caption(f"Clerk ID: {user.get('clerk_user_id')}")
+            
+            # Show additional user info if available
+            first_name = user.get('first_name')
+            last_name = user.get('last_name')
+            if first_name or last_name:
+                full_name = f"{first_name or ''} {last_name or ''}".strip()
+                if full_name:
+                    st.write(f"**Full Name:** {full_name}")
+            
+            # Organization details if available
+            if org_name:
+                org_id = user.get('organization_id')
+                if org_id:
+                    st.caption(f"Org ID: {org_id}")
     
     def _render_unauthenticated_section(self):
         """Render unauthenticated user section"""
@@ -164,3 +220,23 @@ class SidebarAuth:
         
         st.sidebar.markdown("---")
         st.sidebar.markdown("**Need an account?** Contact your administrator.")
+    
+    def render_organization_selector(self):
+        """Render organization selector for main page - DEPRECATED, now shown in header"""
+        # This method is deprecated - organization info is now shown in the header
+        # Kept for backward compatibility
+        if not self.auth_manager.is_authenticated():
+            return None
+        
+        user = self.auth_manager.get_user()
+        org_id = user.get('organization_id')
+        org_name = user.get('organization_name')
+        org_role = user.get('organization_role')
+        
+        if org_name:
+            return {
+                'organization_id': org_id,
+                'organization_name': org_name,
+                'organization_role': org_role
+            }
+        return None

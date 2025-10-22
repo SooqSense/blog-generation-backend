@@ -49,9 +49,18 @@ class ClerkAuthService:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('success'):
+                    user_data = data.get('user')
+                    logger.info("=" * 80)
+                    logger.info("VERIFY TOKEN - Received user data from backend:")
+                    logger.info("=" * 80)
+                    if user_data:
+                        for key, value in user_data.items():
+                            logger.info(f"  {key}: {value}")
+                    logger.info("=" * 80)
+                    
                     return {
                         'success': True,
-                        'user': data.get('user'),
+                        'user': user_data,
                         'message': data.get('message'),
                         'token': token  # Return the original Clerk token
                     }
@@ -272,7 +281,16 @@ class StreamlitAuthManager:
             st.session_state.authenticated = True
             st.session_state.user = result['user']
             st.session_state.token = result['token']
-            logger.info(f"User {email} logged in successfully")
+            
+            logger.info("=" * 80)
+            logger.info(f"LOGIN SUCCESS - User {email} logged in")
+            logger.info("Session state user data:")
+            logger.info("=" * 80)
+            if result.get('user'):
+                for key, value in result['user'].items():
+                    logger.info(f"  {key}: {value}")
+            logger.info("=" * 80)
+            
             return True
         else:
             st.error(result['message'])
