@@ -11,8 +11,8 @@ class UIComponents:
     """Reusable UI components for the Streamlit application"""
     
     @staticmethod
-    def render_header(api_base_url: str):
-        """Render the main application header"""
+    def render_header(api_base_url: str, auth_handler=None):
+        """Render the main application header with organization selector and logout"""
         st.markdown(f"""
         <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); 
                     padding: 1rem; margin: -1rem -1rem 2rem -1rem; border-radius: 0px;">
@@ -25,23 +25,39 @@ class UIComponents:
         </div>
         """, unsafe_allow_html=True)
         
+        # User info bar with organization and logout
+        if auth_handler and auth_handler.auth_manager.is_authenticated():
+            user = auth_handler.auth_manager.get_user()
+            
+            # Create top bar with user info and logout
+            col1, col2, col3 = st.columns([2, 2, 1])
+            
+            with col1:
+                username = user.get('username', 'Unknown User')
+                email = user.get('email', 'N/A')
+                st.markdown(f"**👤 User:** {username}")
+                if email and email != 'N/A':
+                    st.caption(f"📧 {email}")
+            
+            with col2:
+                org_name = user.get('organization_name')
+                org_role = user.get('organization_role')
+                if org_name:
+                    st.markdown(f"**🏢 Organization:** {org_name}")
+                    if org_role:
+                        st.caption(f"Role: {org_role}")
+                else:
+                    st.info("⚠️ No organization")
+            
+            with col3:
+                if st.button("🚪 Logout", use_container_width=True, type="primary"):
+                    auth_handler.auth_manager.logout()
+            
+            st.markdown("---")
+        
         # Show API status
         st.success(f"✅ Connected to Django API at {api_base_url}")
         st.info(f"📡 {len(API_ENDPOINTS)} API endpoints available")
-        
-        # Render organization selector if user is authenticated
-        try:
-            from authentication.ui_components import SidebarAuth
-            sidebar_auth = SidebarAuth()
-            if sidebar_auth.auth_manager.is_authenticated():
-                from authentication.ui_components import AuthUI
-                auth_ui = AuthUI()
-                org_info = auth_ui.render_organization_selector()
-                if org_info:
-                    st.markdown("---")
-        except Exception as e:
-            # Silently handle if authentication components are not available
-            pass
     
     @staticmethod
     def render_sidebar(auth_handler, api_endpoints_count: int):

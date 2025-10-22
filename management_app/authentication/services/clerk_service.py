@@ -296,13 +296,26 @@ class ClerkJWTAuthService:
                     user.clerk_user_id = clerk_user_id
                     updated = True
                 
-                # Update email only if it's different AND not already taken by another user
+                # Update email - force update from Clerk if we have the real email
                 if email and user.email != email:
                     # Check if email is already taken by another user
                     email_exists = User.objects.filter(email=email).exclude(id=user.id).exists()
                     if email_exists:
-                        logger.warning(f"⚠️  Cannot update email from {user.email} to {email} - email already exists for another user")
-                        logger.warning(f"    Keeping existing email: {user.email}")
+                        # Find and update the conflicting user
+                        conflicting_user = User.objects.filter(email=email).exclude(id=user.id).first()
+                        if conflicting_user and not conflicting_user.clerk_user_id:
+                            # This is likely a duplicate/old user without Clerk ID - make email unique
+                            logger.warning(f"⚠️  Found duplicate user with email {email} - updating conflicting user")
+                            conflicting_user.email = f"old-{conflicting_user.id}-{email}"
+                            conflicting_user.save()
+                            logger.info(f"✅ Updated conflicting user email to: {conflicting_user.email}")
+                            # Now we can update this user's email
+                            logger.info(f"Updating email: {user.email} -> {email}")
+                            user.email = email
+                            updated = True
+                        else:
+                            logger.warning(f"⚠️  Cannot update email from {user.email} to {email} - email already exists for another Clerk user")
+                            logger.warning(f"    Keeping existing email: {user.email}")
                     else:
                         logger.info(f"Updating email: {user.email} -> {email}")
                         user.email = email

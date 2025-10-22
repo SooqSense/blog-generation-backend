@@ -109,14 +109,32 @@ class FeatureUIComponents:
             return
         
         st.subheader(title)
-        for source in sources:
-            title_text = source.get('title', 'Untitled')
-            url = source.get('url', source.get('link', '#'))
-            source_name = source.get('source', 'Unknown')
-            
-            st.markdown(f"- [{title_text}]({url})")
-            if source_name != 'Unknown':
-                st.caption(f"Source: {source_name}")
+        
+        # Create a container for better formatting
+        with st.container():
+            for i, source in enumerate(sources, 1):
+                # Handle different possible field names for title
+                title_text = source.get('title', source.get('name', source.get('headline', f'Source {i}')))
+                
+                # Handle different possible field names for URL
+                url = source.get('url', source.get('link', source.get('href', '#')))
+                
+                # Handle source name
+                source_name = source.get('source', source.get('publisher', source.get('site_name', 'Unknown')))
+                
+                # Display the source with better formatting
+                if url and url != '#':
+                    # Create a clean display with proper spacing
+                    st.markdown(f"**{i}.** [{title_text}]({url})")
+                    if source_name and source_name != 'Unknown':
+                        st.caption(f"   📰 Source: {source_name}")
+                    st.markdown("")  # Add spacing between sources
+                else:
+                    # If no valid URL, just show the title
+                    st.markdown(f"**{i}.** {title_text}")
+                    if source_name and source_name != 'Unknown':
+                        st.caption(f"   📰 Source: {source_name}")
+                    st.markdown("")  # Add spacing between sources
     
     @staticmethod
     def display_images_grid(image_urls: List[str], 

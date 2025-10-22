@@ -153,47 +153,32 @@ class SidebarAuth:
         
         st.sidebar.markdown("### 🔐 Authentication")
         username = user.get('username', 'Unknown User')
+        email = user.get('email', 'N/A')
         org_name = user.get('organization_name')
+        org_role = user.get('organization_role')
         
         logger.info(f"Displaying username: {username}")
         logger.info(f"Organization name: {org_name}")
         
-        if org_name:
-            st.sidebar.success(f"✅ Logged in as {username}")
-            st.sidebar.info(f"🏢 Organization: {org_name}")
-        else:
-            st.sidebar.success(f"✅ Logged in as {username}")
+        # Show authenticated status
+        st.sidebar.success(f"✅ Logged in")
         
-        # Organization dropdown if user has organization
+        # Show user info in compact format
+        st.sidebar.markdown(f"**👤** {username}")
+        if email and email != 'N/A':
+            st.sidebar.caption(f"📧 {email}")
+        
+        # Organization info if available
         if org_name:
-            st.sidebar.markdown("### 🏢 Organization")
-            st.sidebar.success(f"**{org_name}**")
-            org_role = user.get('organization_role')
+            st.sidebar.markdown(f"**🏢** {org_name}")
             if org_role:
-                st.sidebar.info(f"Role: {org_role}")
-            org_id = user.get('organization_id')
-            if org_id:
-                st.sidebar.caption(f"ID: {org_id}")
-            
-            # Add organization actions
-            with st.sidebar.expander("🏢 Organization Actions", expanded=False):
-                if st.button("🔄 Refresh Org", use_container_width=True):
-                    st.rerun()
-                if st.button("📊 Org Stats", use_container_width=True):
-                    st.info("Organization statistics feature coming soon!")
+                st.sidebar.caption(f"Role: {org_role.title()}")
         
-        # User info
-        with st.sidebar.expander("👤 User Details", expanded=False):
-            st.write(f"**Username:** {username}")
-            email = user.get('email', 'N/A')
-            if email and email != 'N/A':
-                st.write(f"**Email:** {email}")
-            else:
-                st.warning("⚠️ Email not available")
-            
+        # User info expandable
+        with st.sidebar.expander("👤 More Details", expanded=False):
             st.write(f"**User ID:** {user.get('id', 'N/A')}")
             if user.get('clerk_user_id'):
-                st.write(f"**Clerk ID:** {user.get('clerk_user_id')}")
+                st.caption(f"Clerk ID: {user.get('clerk_user_id')}")
             
             # Show additional user info if available
             first_name = user.get('first_name')
@@ -202,10 +187,12 @@ class SidebarAuth:
                 full_name = f"{first_name or ''} {last_name or ''}".strip()
                 if full_name:
                     st.write(f"**Full Name:** {full_name}")
-        
-        # Logout button
-        if st.sidebar.button("🚪 Logout", use_container_width=True):
-            self.auth_manager.logout()
+            
+            # Organization details if available
+            if org_name:
+                org_id = user.get('organization_id')
+                if org_id:
+                    st.caption(f"Org ID: {org_id}")
     
     def _render_unauthenticated_section(self):
         """Render unauthenticated user section"""
@@ -235,39 +222,21 @@ class SidebarAuth:
         st.sidebar.markdown("**Need an account?** Contact your administrator.")
     
     def render_organization_selector(self):
-        """Render organization selector for main page"""
+        """Render organization selector for main page - DEPRECATED, now shown in header"""
+        # This method is deprecated - organization info is now shown in the header
+        # Kept for backward compatibility
         if not self.auth_manager.is_authenticated():
             return None
         
         user = self.auth_manager.get_user()
+        org_id = user.get('organization_id')
         org_name = user.get('organization_name')
         org_role = user.get('organization_role')
-        org_id = user.get('organization_id')
         
         if org_name:
-            # Create a more prominent organization display
-            st.markdown("### 🏢 Organization")
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                # Display organization info in a more visible way
-                st.info(f"**Organization:** {org_name}")
-                if org_role:
-                    st.info(f"**Your Role:** {org_role}")
-                if org_id:
-                    st.caption(f"ID: {org_id}")
-            
-            with col2:
-                # Add a refresh button for organization info
-                if st.button("🔄 Refresh Org Info", help="Refresh organization information"):
-                    st.rerun()
-            
             return {
                 'organization_id': org_id,
                 'organization_name': org_name,
                 'organization_role': org_role
             }
-        else:
-            st.warning("⚠️ No organization associated with your account")
-            st.info("Contact your administrator to be added to an organization.")
-            return None
+        return None

@@ -31,10 +31,12 @@ For project and document-specific queries, you retrieve exact information from a
 - Present the exact content from the document chunks in the order of relevance
 - Maintain the original formatting, structure, and wording from the source documents
 - If multiple document chunks contain relevant information, present all of them
+- **Include relevant links from documents when available** - these are URLs extracted from the source documents
 - **ALWAYS include source attribution at the end with:**
   - File name and type
   - Direct file URL for easy access
   - Relevance score from the vector search
+  - Relevant links from the document (if available)
 
 **What NOT to do for Document Queries:**
 - Do not add your own interpretations or summaries
@@ -62,11 +64,16 @@ Response: No relevant information found in the indexed documents for this query.
         # Build context from relevant document chunks
         context_parts = []
         for i, doc in enumerate(relevant_docs, 1):
+            links_info = ""
+            if doc.get('links') and len(doc['links']) > 0:
+                links_list = "\n  ".join([f"- {link}" for link in doc['links']])
+                links_info = f"\n- Links: \n  {links_list}"
+            
             context_parts.append(f"""Document Chunk {i}:
 - File: {doc['file_name']} ({doc['file_type']})
 - Content: {doc['chunk_content']}
 - Relevance Score: {doc['score']:.2f}
-- File URL: {doc['file_url']}""")
+- File URL: {doc['file_url']}{links_info}""")
 
         context = "\n\n".join(context_parts)
 
@@ -80,10 +87,12 @@ Return ONLY the exact content from the document chunks above that answers the us
 
 Format your response as:
 1. Present the exact relevant content from the document chunks (verbatim)
-2. End with source attribution showing:
+2. Include any relevant links from the documents when applicable
+3. End with source attribution showing:
    - File name and type
    - File URL
    - Relevance score
+   - Relevant links (if available in the document)
 
 DO NOT:
 - Add interpretations or summaries
@@ -92,7 +101,7 @@ DO NOT:
 - Include any AI-generated introductions or conclusions
 - Use phrases like "Based on the documents..." or "According to..."
 
-Simply return the exact indexed content that matches the query."""
+Simply return the exact indexed content that matches the query, including any relevant links found in the source documents."""
 
 
     @staticmethod
@@ -115,6 +124,25 @@ Examples:
 - "Marketing Campaign Analysis"
 
 Title:"""
+
+    @staticmethod
+    def get_portfolio_query_prompt(query: str, context_text: str, links_section: str = ""):
+        """Get prompt for portfolio/project queries with RAG context."""
+        return f"""You are an AI assistant helping sales teams explore project portfolios.
+
+User question: {query}
+
+Relevant project information (from company documents):
+{context_text}{links_section}
+
+Answer the question based on the information above.
+- Be clear and professional.
+- Highlight project names, technologies, challenges, or results if available.
+- If there are multiple projects, summarize them.
+- When relevant links are available from the documents, naturally integrate them into your response where they add value (e.g., "You can view more details at [link]" or "For additional information, see [link]").
+- Provide a comprehensive response without mentioning sources or file names.
+- Focus on delivering the information in a natural, conversational way.
+"""
 
     @staticmethod
     def get_conversational_prompt(query: str, conversation_history: list = None):
