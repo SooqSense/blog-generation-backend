@@ -126,16 +126,20 @@ class PineconeService:
         user_id: int,
         username: str,
         file_url: str,
+        directory_name: str = None,
         document_links: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Index a document's content in Pinecone."""
+        """Index a document's content in Pinecone with directory support."""
         try:
             if not self.is_available():
                 raise Exception("Pinecone service not available")
 
-            logger.info(f"📄 Indexing document: {file_name}")
+            logger.info(f"📄 Indexing document: {file_name} (directory: {directory_name}) in single PDFS namespace")
             chunks = self.create_document_chunks(content)
             vectors = []
+
+            # Always use single PDFS namespace for all documents
+            namespace = self.config.PDFS_NAMESPACE
 
             for i, chunk in enumerate(chunks):
                 chunk_id = f"{document_id}_chunk_{i}"
@@ -150,15 +154,21 @@ class PineconeService:
                     "user_id": user_id,
                     "username": username,
                     "file_url": file_url,
+                    "directory_name": directory_name or "default",
                     "indexed_at": datetime.utcnow().isoformat(),
                     "links": document_links or [],
                 }
                 vectors.append({"id": chunk_id, "values": embeddings, "metadata": metadata})
 
-            self.index.upsert(vectors=vectors, namespace=self.config.PDFS_NAMESPACE)
-            logger.info(f"✅ Indexed {len(vectors)} chunks for {file_name}")
+            self.index.upsert(vectors=vectors, namespace=namespace)
+            logger.info(f"✅ Indexed {len(vectors)} chunks for {file_name} in single PDFS namespace")
 
-            return {"success": True, "chunks_indexed": len(vectors), "document_id": document_id}
+            return {
+                "success": True, 
+                "chunks_indexed": len(vectors), 
+                "document_id": document_id,
+                "namespace": namespace
+            }
 
         except Exception as e:
             logger.error(f"❌ Failed to index document {file_name}: {e}")
@@ -211,6 +221,166 @@ class PineconeService:
         except Exception as e:
             logger.error(f"❌ Search failed: {e}")
             return {"success": False, "error": str(e), "results": []}
+
+    def delete_document(self, document_id: str, namespace: str = None, file_name: str = None) -> Dict[str, Any]:
+        """
+        Delete all vectors for a document from Pinecone.
+        
+        This method safely deletes only the chunks belonging to a specific document,
+        NOT the entire namespace. It uses metadata filtering to ensure precise deletion.
+        
+        Args:
+            document_id: The document ID (primary filter)
+            namespace: The namespace where the document is indexed
+            file_name: Optional file name to filter by (for additional safety/verification)
+            
+        Returns:
+            Dict with success status and message
+        """
+        try:
+            if not self.is_available():
+                raise Exception("Pinecone service not available")
+            
+            # Use provided namespace or default
+            ns = namespace if namespace else self.config.PDFS_NAMESPACE
+            
+            # Build filter criteria - prioritize document_id, add file_name if provided
+            filter_criteria = {"document_id": document_id}
+            if file_name:
+                filter_criteria["file_name"] = file_name
+            
+            # Query to find all vectors with this document_id (and optionally file_name)
+            query_response = self.index.query(
+                vector=[0] * self.config.DIMENSION,  # Dummy vector
+                filter=filter_criteria,
+                top_k=10000,  # Large number to get all chunks
+                namespace=ns,
+                include_metadata=False
+            )
+            
+            if query_response and 'matches' in query_response:
+                vector_ids = [match['id'] for match in query_response['matches']]
+                
+                if vector_ids:
+                    # Delete the vectors
+                    self.index.delete(ids=vector_ids, namespace=ns)
+                    filter_info = f"document_id={document_id}"
+                    if file_name:
+                        filter_info += f", file_name={file_name}"
+                    logger.info(f"✅ Deleted {len(vector_ids)} vectors for {filter_info} from namespace: {ns}")
+                    
+                    return {
+                        "success": True,
+                        "vectors_deleted": len(vector_ids),
+                        "document_id": document_id,
+                        "file_name": file_name,
+                        "namespace": ns
+                    }
+                else:
+                    filter_info = f"document_id={document_id}"
+                    if file_name:
+                        filter_info += f", file_name={file_name}"
+                    logger.warning(f"⚠️ No vectors found for {filter_info} in namespace: {ns}")
+                    return {
+                        "success": True,
+                        "vectors_deleted": 0,
+                        "document_id": document_id,
+                        "file_name": file_name,
+                        "namespace": ns,
+                        "message": "No vectors found to delete"
+                    }
+            else:
+                filter_info = f"document_id={document_id}"
+                if file_name:
+                    filter_info += f", file_name={file_name}"
+                logger.warning(f"⚠️ No vectors found for {filter_info}")
+                return {
+                    "success": True,
+                    "vectors_deleted": 0,
+                    "document_id": document_id,
+                    "file_name": file_name,
+                    "namespace": ns,
+                    "message": "No vectors found to delete"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to delete document {document_id} from Pinecone: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "vectors_deleted": 0,
+                "document_id": document_id
+            }
+
+    def delete_document_by_filename(self, file_name: str, namespace: str = None) -> Dict[str, Any]:
+        """
+        Delete all vectors for a document by file name from Pinecone.
+        This is an alternative method that filters only by file_name.
+        
+        Args:
+            file_name: The file name to delete
+            namespace: The namespace where the document is indexed
+            
+        Returns:
+            Dict with success status and message
+        """
+        try:
+            if not self.is_available():
+                raise Exception("Pinecone service not available")
+            
+            # Use provided namespace or default
+            ns = namespace if namespace else self.config.PDFS_NAMESPACE
+            
+            # Query to find all vectors with this file_name
+            query_response = self.index.query(
+                vector=[0] * self.config.DIMENSION,  # Dummy vector
+                filter={"file_name": file_name},
+                top_k=10000,  # Large number to get all chunks
+                namespace=ns,
+                include_metadata=False
+            )
+            
+            if query_response and 'matches' in query_response:
+                vector_ids = [match['id'] for match in query_response['matches']]
+                
+                if vector_ids:
+                    # Delete the vectors
+                    self.index.delete(ids=vector_ids, namespace=ns)
+                    logger.info(f"✅ Deleted {len(vector_ids)} vectors for file_name={file_name} from namespace: {ns}")
+                    
+                    return {
+                        "success": True,
+                        "vectors_deleted": len(vector_ids),
+                        "file_name": file_name,
+                        "namespace": ns
+                    }
+                else:
+                    logger.warning(f"⚠️ No vectors found for file_name={file_name} in namespace: {ns}")
+                    return {
+                        "success": True,
+                        "vectors_deleted": 0,
+                        "file_name": file_name,
+                        "namespace": ns,
+                        "message": "No vectors found to delete"
+                    }
+            else:
+                logger.warning(f"⚠️ No vectors found for file_name={file_name}")
+                return {
+                    "success": True,
+                    "vectors_deleted": 0,
+                    "file_name": file_name,
+                    "namespace": ns,
+                    "message": "No vectors found to delete"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to delete document by filename {file_name} from Pinecone: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "vectors_deleted": 0,
+                "file_name": file_name
+            }
 
     # -------------------------------------------------------------------------
     # Maintenance

@@ -187,11 +187,68 @@ class KnowledgeBaseAPI:
     def __init__(self):
         self.client = APIClient()
     
-    def upload_document(self, file, **kwargs) -> Optional[Dict[str, Any]]:
-        """Upload document to knowledge base"""
+    def list_directories(self) -> Optional[Dict[str, Any]]:
+        """Get list of directories"""
+        return self.client.get("knowledge-base/directories/")
+    
+    def create_directory(self, name: str, description: str = "") -> Optional[Dict[str, Any]]:
+        """Create a new directory"""
+        return self.client.post("knowledge-base/directories/create/", data={
+            "name": name,
+            "description": description
+        })
+    
+    def delete_directory(self, directory_id: int) -> Optional[Dict[str, Any]]:
+        """Delete a directory"""
+        return self.client.delete(f"knowledge-base/directories/{directory_id}/delete/")
+    
+    def upload_document(self, file, directory_id: int, **kwargs) -> Optional[Dict[str, Any]]:
+        """Upload document to knowledge base in a specific directory"""
         files = {'file': file}
-        # For file uploads, don't pass any additional data to avoid content-type conflicts
-        return self.client.post("knowledge-base/upload-pdf/", files=files)
+        
+        # Add directory_id as form data
+        # We need to send it as multipart form data along with the file
+        url = f"{self.client.base_url.rstrip('/')}/knowledge-base/upload-document/"
+        headers = self.client._get_auth_headers()
+        
+        # Remove Content-Type to let requests set it for multipart
+        if 'Content-Type' in headers:
+            del headers['Content-Type']
+        
+        try:
+            import requests
+            response = requests.post(
+                url=url,
+                files=files,
+                data={'directory_id': directory_id},  # Send directory_id as form data
+                headers=headers,
+                timeout=self.client.timeout
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            st.error("⏰ Request timeout. Please try again.")
+            return None
+        except requests.exceptions.ConnectionError:
+            st.error("🔌 Connection error. Please check if the backend server is running.")
+            return None
+        except requests.exceptions.HTTPError as e:
+            st.error(f"❌ API request failed: {e.response.status_code} - {e.response.text}")
+            return None
+        except Exception as e:
+            st.error(f"❌ Unexpected error: {str(e)}")
+            return None
+    
+    def list_documents(self, directory_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """List documents, optionally filtered by directory"""
+        params = {}
+        if directory_id:
+            params['directory_id'] = directory_id
+        return self.client.get("knowledge-base/documents/", params=params)
+    
+    def delete_document(self, document_id: int) -> Optional[Dict[str, Any]]:
+        """Delete a document (from DB, S3, and Pinecone)"""
+        return self.client.delete(f"knowledge-base/documents/{document_id}/delete/")
 
 # Chatbot API
 class ChatbotAPI:
