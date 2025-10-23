@@ -22,7 +22,7 @@ from .serializers import (
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ from .service.edit_images import edit_image_with_flux, convert_image_to_base64
     description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_image_api(request):
     """
     Generate one or more professional images using FLUX AI generation models.
@@ -100,6 +100,11 @@ def generate_image_api(request):
 
         logger.info(f"Successfully generated {total_generated} images")
 
+        # Get organization information
+        from management_app.authentication.services.access_control import get_user_selected_organization
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         image_generation = ImageGeneration(
             user_id=request.user.id,
@@ -112,6 +117,8 @@ def generate_image_api(request):
             enhanced_prompts=[img["enhanced_prompt"] for img in images_data],
             generation_method=generation_method,
             image_style=model,
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         image_generation.save()
@@ -196,7 +203,7 @@ def generate_image_api(request):
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
-@require_sooqsense_organization
+@require_organization_access()
 def edit_image_api(request):
     """Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords."""
     try:
@@ -231,6 +238,11 @@ def edit_image_api(request):
 
         logger.info("Successfully edited image")
 
+        # Get organization information
+        from management_app.authentication.services.access_control import get_user_selected_organization
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         image_editing = ImageEditing(
             user_id=request.user.id,
@@ -242,6 +254,8 @@ def edit_image_api(request):
             image_url=edited_image_url,
             enhanced_prompt=enhanced_prompt,
             edit_status="success",
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         image_editing.save()

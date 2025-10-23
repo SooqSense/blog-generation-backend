@@ -14,6 +14,8 @@ from .managers.state_manager import UpworkProposalStateManager
 
 # Import API client
 from api_client.api_client import upwork_api
+# Import data management
+from .upwork_data_management import UpworkDataManagement
 
 
 class UpworkProposalGeneratorFeature:
@@ -24,6 +26,7 @@ class UpworkProposalGeneratorFeature:
         self.api = upwork_api
         self.service = UpworkProposalService()
         self.state_manager = UpworkProposalStateManager()
+        self.data_management = UpworkDataManagement(upwork_api)
         
         # Initialize session state
         self.state_manager.init_session_state()
@@ -63,11 +66,12 @@ class UpworkProposalGeneratorFeature:
         st.markdown("Generate tailored proposals for Upwork projects using AI and your knowledge base.")
         
         # Create tabs for different features
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "🚀 Generate Proposal", 
             "📚 Proposal History", 
             "✏️ Edit Proposal",
-            "📊 Proposal Analytics"
+            "📊 Proposal Analytics",
+            "🗂️ Data Management"
         ])
         
         with tab1:
@@ -86,6 +90,9 @@ class UpworkProposalGeneratorFeature:
         
         with tab4:
             self.proposal_analytics.render()
+        
+        with tab5:
+            self.data_management.render_data_management_tab()
     
     # Callback handlers for component interactions
     def _handle_generate_proposal(self, **kwargs):

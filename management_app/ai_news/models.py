@@ -12,6 +12,11 @@ class BlogAiNews(models.Model):
     summary = models.TextField()
     content = models.TextField()  # Markdown content
     sources = models.JSONField(default=list, blank=True)  # Source articles with title, link, source, etc.
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

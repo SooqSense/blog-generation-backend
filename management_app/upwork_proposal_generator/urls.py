@@ -38,4 +38,9 @@ urlpatterns = [
         views.regenerate_proposal, 
         name='proposal-regenerate'
     ),
+    
+    # Additional Management endpoints
+    path('list/', views.list_upwork_proposals_api, name='list_upwork_proposals_api'),
+    path('delete/', views.delete_upwork_proposals_api, name='delete_upwork_proposals_api'),
+    path('download-pdf/<int:proposal_id>/', views.download_upwork_proposal_pdf_api, name='download_upwork_proposal_pdf_api'),
 ]

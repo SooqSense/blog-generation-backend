@@ -238,3 +238,36 @@ class GenerateProposalDirectSerializer(serializers.Serializer):
                     link = f'https://{link}'
                 valid_links.append(link)
         return valid_links
+
+
+# Additional Management Serializers for Upwork Proposals
+class UpworkProposalListSerializer(serializers.ModelSerializer):
+    """Serializer for listing Upwork proposals with basic information."""
+    
+    class Meta:
+        model = UpworkProposal
+        fields = [
+            'id', 'client_name', 'company_name', 'title', 'status', 'username', 'email',
+            'organization_id', 'organization_name', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class UpworkProposalDeleteSerializer(serializers.Serializer):
+    """Serializer for Upwork proposal deletion response."""
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    deleted_count = serializers.IntegerField(required=False)
+
+
+class UpworkProposalDownloadSerializer(serializers.Serializer):
+    """Serializer for Upwork proposal download response."""
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    download_url = serializers.URLField(required=False)
+    file_name = serializers.CharField(required=False)
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Serializer for error responses."""
+    error = serializers.CharField()

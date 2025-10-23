@@ -15,7 +15,14 @@ from .models import LinkedinPost, LinkedinPostingContent, LinkedinAnalytics
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access, get_user_selected_organization
+
+# Import serializers
+from .serializers import (
+    LinkedinPostListSerializer, LinkedinPostDetailSerializer, LinkedinPostDeleteSerializer,
+    LinkedinPostDownloadSerializer, LinkedinPostingContentListSerializer,
+    LinkedinPostingContentDeleteSerializer, ErrorResponseSerializer
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +60,7 @@ from .service.linkedin_post_generator import LinkedInPostGenerator
     description="Generate a professional LinkedIn post based on the given topic.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_linkedin_post_api(request):
     """Generate a professional LinkedIn post based on the given topic."""
     try:
@@ -83,6 +90,10 @@ def generate_linkedin_post_api(request):
 
         logger.info(f"Successfully generated LinkedIn post for topic: '{topic}'")
 
+        # Get organization information
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         linkedin_post = LinkedinPost(
             user_id=request.user.id,
@@ -90,6 +101,8 @@ def generate_linkedin_post_api(request):
             email=request.user.email,
             topic=topic,
             content=post_content,
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         linkedin_post.save()
@@ -146,7 +159,7 @@ def generate_linkedin_post_api(request):
     description="Post content to LinkedIn using the user's stored LinkedIn access token.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def post_on_linkedin_api(request):
     """Post content to LinkedIn using the user's stored LinkedIn access token."""
     try:
@@ -234,7 +247,7 @@ def post_on_linkedin_api(request):
     description="Fetch LinkedIn profile analytics using stored LinkedIn access token.",
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_access()
 def fetch_linkedin_analytics_api(request):
     """Fetch LinkedIn profile analytics using stored LinkedIn access token."""
     try:
@@ -328,7 +341,7 @@ def fetch_linkedin_analytics_api(request):
     description="Validate the user's stored LinkedIn access token and check available permissions.",
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_access()
 def validate_linkedin_token_api(request):
     """Validate the user's stored LinkedIn access token and check available permissions."""
     try:
@@ -376,7 +389,7 @@ def validate_linkedin_token_api(request):
     description="Generate a LinkedIn re-authentication URL with enhanced permissions.",
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_access()
 def linkedin_reauth_url_api(request):
     """Generate a LinkedIn re-authentication URL with enhanced permissions."""
     try:
@@ -403,3 +416,306 @@ def linkedin_reauth_url_api(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+# List and Management Views for LinkedIn Posts
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostListSerializer(many=True),
+            description="LinkedIn posts retrieved successfully."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get list of all LinkedIn posts for the authenticated user's organization.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def list_linkedin_posts_api(request):
+    """List all LinkedIn posts for the user's organization."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Filter by organization
+        linkedin_posts = LinkedinPost.objects.filter(
+            organization_name=organization_name
+        ).order_by('-created_at')
+        
+        serializer = LinkedinPostListSerializer(linkedin_posts, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Retrieved {len(linkedin_posts)} LinkedIn posts',
+            'data': serializer.data,
+            'count': len(linkedin_posts)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing LinkedIn posts: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve LinkedIn posts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostDetailSerializer,
+            description="LinkedIn post details retrieved successfully."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="LinkedIn post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get detailed information about a specific LinkedIn post.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def get_linkedin_post_api(request, post_id):
+    """Get detailed information about a specific LinkedIn post."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get LinkedIn post with organization filter
+        try:
+            linkedin_post = LinkedinPost.objects.get(
+                id=post_id,
+                organization_name=organization_name
+            )
+        except LinkedinPost.DoesNotExist:
+            return Response({
+                'error': 'LinkedIn post not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = LinkedinPostDetailSerializer(linkedin_post)
+        
+        return Response({
+            'success': True,
+            'message': 'LinkedIn post retrieved successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving LinkedIn post {post_id}: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve LinkedIn post'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostDeleteSerializer,
+            description="LinkedIn post(s) deleted successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Delete one or more LinkedIn posts. Provide post_id for single deletion or post_ids array for bulk deletion.",
+)
+@api_view(["DELETE"])
+@require_organization_access()
+def delete_linkedin_posts_api(request):
+    """Delete one or more LinkedIn posts."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get post IDs from request
+        post_id = request.data.get('post_id')
+        post_ids = request.data.get('post_ids', [])
+        
+        if post_id:
+            post_ids = [post_id]
+        elif not post_ids:
+            return Response({
+                'error': 'Either post_id or post_ids must be provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by organization and delete
+        deleted_count = 0
+        for post_id in post_ids:
+            try:
+                linkedin_post = LinkedinPost.objects.get(
+                    id=post_id,
+                    organization_name=organization_name
+                )
+                linkedin_post.delete()
+                deleted_count += 1
+            except LinkedinPost.DoesNotExist:
+                continue
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} LinkedIn post(s)',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting LinkedIn posts: {str(e)}")
+        return Response({
+            'error': 'Failed to delete LinkedIn posts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostDownloadSerializer,
+            description="LinkedIn post PDF generated successfully."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="LinkedIn post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Generate and download a LinkedIn post as PDF.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def download_linkedin_post_pdf_api(request, post_id):
+    """Download LinkedIn post as PDF."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get LinkedIn post with organization filter
+        try:
+            linkedin_post = LinkedinPost.objects.get(
+                id=post_id,
+                organization_name=organization_name
+            )
+        except LinkedinPost.DoesNotExist:
+            return Response({
+                'error': 'LinkedIn post not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Generate PDF (you'll need to implement PDF generation logic)
+        # For now, return a placeholder response
+        return Response({
+            'success': True,
+            'message': 'PDF generation not yet implemented',
+            'download_url': None,
+            'file_name': f"{linkedin_post.topic.replace(' ', '_')}_linkedin_post.pdf"
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF for LinkedIn post {post_id}: {str(e)}")
+        return Response({
+            'error': 'Failed to generate PDF'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# List and Management Views for LinkedIn Posting Content
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostingContentListSerializer(many=True),
+            description="LinkedIn posting content retrieved successfully."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get list of all LinkedIn posting content for the authenticated user's organization.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def list_linkedin_posting_content_api(request):
+    """List all LinkedIn posting content for the user's organization."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Filter by organization
+        posting_content = LinkedinPostingContent.objects.filter(
+            organization_name=organization_name
+        ).order_by('-created_at')
+        
+        serializer = LinkedinPostingContentListSerializer(posting_content, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Retrieved {len(posting_content)} LinkedIn posting content',
+            'data': serializer.data,
+            'count': len(posting_content)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing LinkedIn posting content: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve LinkedIn posting content'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=LinkedinPostingContentDeleteSerializer,
+            description="LinkedIn posting content deleted successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Delete one or more LinkedIn posting content. Provide content_id for single deletion or content_ids array for bulk deletion.",
+)
+@api_view(["DELETE"])
+@require_organization_access()
+def delete_linkedin_posting_content_api(request):
+    """Delete one or more LinkedIn posting content."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get content IDs from request
+        content_id = request.data.get('content_id')
+        content_ids = request.data.get('content_ids', [])
+        
+        if content_id:
+            content_ids = [content_id]
+        elif not content_ids:
+            return Response({
+                'error': 'Either content_id or content_ids must be provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by organization and delete
+        deleted_count = 0
+        for content_id in content_ids:
+            try:
+                posting_content = LinkedinPostingContent.objects.get(
+                    id=content_id,
+                    organization_name=organization_name
+                )
+                posting_content.delete()
+                deleted_count += 1
+            except LinkedinPostingContent.DoesNotExist:
+                continue
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} LinkedIn posting content',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting LinkedIn posting content: {str(e)}")
+        return Response({
+            'error': 'Failed to delete LinkedIn posting content'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

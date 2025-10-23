@@ -13,6 +13,11 @@ class ImageGeneration(models.Model):
     enhanced_prompts = models.JSONField(default=list, blank=True)  # Store enhanced prompts for each image
     generation_method = models.CharField(max_length=50, default='flux')  # Generation method used
     image_style = models.CharField(max_length=50, default='professional_cinematic')  # Style of images
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -32,6 +37,11 @@ class ImageEditing(models.Model):
     image_url = models.URLField(max_length=500)  # URL of the edited result image
     enhanced_prompt = models.TextField(blank=True, default='')  # AI-optimized prompt used
     edit_status = models.CharField(max_length=50, default='success')  # success, failed, processing
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

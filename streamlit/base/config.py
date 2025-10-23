@@ -14,25 +14,66 @@ API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
 # Available API endpoints based on management_app structure
 API_ENDPOINTS = {
-    'blog_generation': f"{API_BASE_URL}/blogs/generate/",
+    # Blog Generation
+    'blog_generation': f"{API_BASE_URL}/blogs/generate-blog/",
     'blog_list': f"{API_BASE_URL}/blogs/list/",
+    'blog_delete': f"{API_BASE_URL}/blogs/delete/",
+    'blog_download_pdf': f"{API_BASE_URL}/blogs/download-pdf/",
+    'blog_download_images': f"{API_BASE_URL}/blogs/download-images/",
+    
+    # Image Generation
     'image_generation': f"{API_BASE_URL}/image-generation/generate/",
     'image_editing': f"{API_BASE_URL}/image-generation/edit/",
-    'linkedin_post': f"{API_BASE_URL}/linkedin/generate/",
-    'linkedin_post_direct': f"{API_BASE_URL}/linkedin/post/",
-    'linkedin_analytics': f"{API_BASE_URL}/linkedin/analytics/",
-    'linkedin_token_validation': f"{API_BASE_URL}/linkedin/validate-token/",
+    
+    # LinkedIn Posts
+    'linkedin_post': f"{API_BASE_URL}/linkedin/generate-linkedin-post/",
+    'linkedin_post_direct': f"{API_BASE_URL}/linkedin/post-on-linkedin/",
+    'linkedin_list': f"{API_BASE_URL}/linkedin/list-posts/",
+    'linkedin_delete': f"{API_BASE_URL}/linkedin/delete-posts/",
+    'linkedin_download_pdf': f"{API_BASE_URL}/linkedin/download-pdf/",
+    'linkedin_analytics': f"{API_BASE_URL}/linkedin/linkedin-analytics/",
+    'linkedin_token_validation': f"{API_BASE_URL}/linkedin/validate-linkedin-token/",
+    
+    # LinkedIn Posting Content
+    'linkedin_posting_content_list': f"{API_BASE_URL}/linkedin/list-posting-content/",
+    'linkedin_posting_content_delete': f"{API_BASE_URL}/linkedin/delete-posting-content/",
+    
+    # Schedule LinkedIn Posts
     'schedule_linkedin_post': f"{API_BASE_URL}/schedule/schedule/",
     'scheduled_posts': f"{API_BASE_URL}/schedule/scheduled-posts/",
     'cancel_scheduled_post': f"{API_BASE_URL}/schedule/cancel/",
-    'ai_news': f"{API_BASE_URL}/news/generate/",
-    'trending_topics': f"{API_BASE_URL}/trends/fetch/",
+    
+    # AI News
+    'ai_news': f"{API_BASE_URL}/news/daily-ai-news/",
+    'ai_news_list': f"{API_BASE_URL}/news/list/",
+    'ai_news_delete': f"{API_BASE_URL}/news/delete/",
+    'ai_news_download_pdf': f"{API_BASE_URL}/news/download-pdf/",
+    
+    # AI Trends
+    'trending_topics': f"{API_BASE_URL}/trends/fetch-related-topics/",
+    'ai_trends_list': f"{API_BASE_URL}/trends/list/",
+    'ai_trends_delete': f"{API_BASE_URL}/trends/delete/",
+    
+    # Knowledge Base
     'knowledge_base_upload': f"{API_BASE_URL}/knowledge-base/upload/",
     'knowledge_base_documents': f"{API_BASE_URL}/knowledge-base/documents/",
+    'knowledge_base_directories': f"{API_BASE_URL}/knowledge-base/directories/",
+    'knowledge_base_create_directory': f"{API_BASE_URL}/knowledge-base/directories/create/",
+    'knowledge_base_delete_directory': f"{API_BASE_URL}/knowledge-base/directories/",
+    'knowledge_base_delete_document': f"{API_BASE_URL}/knowledge-base/documents/",
+    
+    # Chatbot
     'chatbot': f"{API_BASE_URL}/chat/chat/",
     'chatbot_sessions': f"{API_BASE_URL}/chat/sessions/",
+    
+    # Upwork Proposals
     'upwork_proposals': f"{API_BASE_URL}/upwork/proposals/",
     'upwork_generate': f"{API_BASE_URL}/upwork/generate/",
+    'upwork_list': f"{API_BASE_URL}/upwork/list/",
+    'upwork_delete': f"{API_BASE_URL}/upwork/delete/",
+    'upwork_download_pdf': f"{API_BASE_URL}/upwork/download-pdf/",
+    
+    # Authentication
     'auth_verify': f"{API_BASE_URL}/auth/verify/",
     'auth_profile': f"{API_BASE_URL}/auth/profile/"
 }

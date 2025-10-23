@@ -3,12 +3,15 @@ from typing import Dict, Any, Optional
 
 # Import API client
 from api_client.api_client import image_api
+# Import data management
+from .image_data_management import ImageDataManagement
 
 class ImageGenerationFeature:
     """Image Generation feature for Streamlit UI - API-based"""
     
     def __init__(self):
         self.api = image_api
+        self.data_management = ImageDataManagement(image_api)
     
     def render(self):
         """Main render method"""
@@ -16,13 +19,20 @@ class ImageGenerationFeature:
         st.markdown("Generate stunning images for your content using AI.")
         
         # Create tabs for different features
-        tab1, tab2 = st.tabs(["Generate Images", "Edit Images"])
+        tab1, tab2, tab3 = st.tabs([
+            "🚀 Generate Images", 
+            "✏️ Edit Images",
+            "📊 Data Management"
+        ])
         
         with tab1:
             self.render_image_generation()
         
         with tab2:
             self.render_image_editing()
+        
+        with tab3:
+            self.data_management.render_data_management_tab()
     
     def render_image_generation(self):
         """Render image generation form"""

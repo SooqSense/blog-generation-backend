@@ -19,6 +19,8 @@ class DirectorySerializer(serializers.ModelSerializer):
             'description', 
             'is_default', 
             'created_by_user_id',
+            'organization_id',
+            'organization_name',
             'document_count',
             'created_at', 
             'updated_at'
@@ -44,6 +46,8 @@ class PDFDocumentSerializer(serializers.ModelSerializer):
             'user_id',
             'username',
             'email',
+            'organization_id',
+            'organization_name',
             'file_name',
             'file_type',
             'content',
@@ -60,6 +64,8 @@ class PDFDocumentSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'directory_name',
+            'organization_id',
+            'organization_name',
             'processing_status',
             'pinecone_indexed',
             'pinecone_index_id',
@@ -82,6 +88,8 @@ class PDFDocumentListSerializer(serializers.ModelSerializer):
             'directory_name',
             'user_id',
             'username',
+            'organization_id',
+            'organization_name',
             'file_name',
             'file_type',
             'uploaded_url',
@@ -92,5 +100,5 @@ class PDFDocumentListSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at'
         ]
-        read_only_fields = ['id', 'directory_name', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'directory_name', 'organization_id', 'organization_name', 'created_at', 'updated_at']
 

@@ -26,7 +26,7 @@ class KnowledgeBaseFeature:
         st.markdown("Upload and manage documents for AI-powered queries with directory organization.")
         
         # Show admin-only notice
-        st.info("🛡️ **Admin Access**: This feature is only available to **sooqsense** organization administrators.")
+        st.info("🛡️ **Admin Access**: This feature is only available to organization administrators.")
         
         # Create tabs for different features
         tab1, tab2, tab3, tab4 = st.tabs([

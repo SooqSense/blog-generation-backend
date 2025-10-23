@@ -16,12 +16,15 @@ from .serializers import (
     UpworkProposalResponseSerializer,
     UpworkProposalListSerializer,
     ProposalGenerationStatusSerializer,
-    GenerateProposalDirectSerializer
+    GenerateProposalDirectSerializer,
+    UpworkProposalDeleteSerializer,
+    UpworkProposalDownloadSerializer,
+    ErrorResponseSerializer
 )
 from .services.agent.agent import upwork_proposal_agent
 
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization, RequireOrganizationMixin
+from management_app.authentication.services.access_control import require_organization_access, RequireOrganizationMixin, get_user_selected_organization
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +53,12 @@ class UpworkProposalListCreateView(RequireOrganizationMixin, generics.ListCreate
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Return proposals for the current user."""
-        return UpworkProposal.objects.filter(user_id=self.request.user.id)
+        """Return proposals for the current user's organization."""
+        organization_name = get_user_selected_organization(self.request)
+        return UpworkProposal.objects.filter(
+            user_id=self.request.user.id,
+            organization_name=organization_name
+        )
     
     def get_serializer_class(self):
         """Return appropriate serializer based on request method."""
@@ -62,10 +69,14 @@ class UpworkProposalListCreateView(RequireOrganizationMixin, generics.ListCreate
     def perform_create(self, serializer):
         """Create proposal and trigger generation."""
         # Save the proposal with Clerk user data and initial status
+        organization_name = get_user_selected_organization(self.request)
+        organization_id = getattr(self.request.user, 'organization_id', None)
         proposal = serializer.save(
             user_id=self.request.user.id,
             username=self.request.user.username,
             email=self.request.user.email,
+            organization_id=organization_id,
+            organization_name=organization_name,
             status='generating'
         )
         
@@ -164,8 +175,12 @@ class UpworkProposalDetailView(RequireOrganizationMixin, generics.RetrieveUpdate
     serializer_class = UpworkProposalResponseSerializer
     
     def get_queryset(self):
-        """Return proposals for the current user."""
-        return UpworkProposal.objects.filter(user_id=self.request.user.id)
+        """Return proposals for the current user's organization."""
+        organization_name = get_user_selected_organization(self.request)
+        return UpworkProposal.objects.filter(
+            user_id=self.request.user.id,
+            organization_name=organization_name
+        )
 
 
 @extend_schema(
@@ -183,7 +198,7 @@ class UpworkProposalDetailView(RequireOrganizationMixin, generics.RetrieveUpdate
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_proposal_direct(request):
     """
     Generate proposal directly without saving to database.
@@ -258,7 +273,7 @@ def generate_proposal_direct(request):
     tags=["Upwork Proposals"]
 )
 @api_view(['POST'])
-@require_sooqsense_organization
+@require_organization_access()
 def regenerate_proposal(request, proposal_id):
     """Regenerate proposal content for an existing proposal."""
     try:
@@ -342,7 +357,7 @@ def regenerate_proposal(request, proposal_id):
     tags=["Upwork Proposals"]
 )
 @api_view(['GET'])
-@require_sooqsense_organization
+@require_organization_access()
 def proposal_status(request, proposal_id):
     """Get the current status of a proposal generation."""
     try:
@@ -371,3 +386,155 @@ def proposal_status(request, proposal_id):
             },
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+# Additional Management Views for Upwork Proposals
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=UpworkProposalListSerializer(many=True),
+            description="Upwork proposals retrieved successfully."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get list of all Upwork proposals for the authenticated user's organization.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def list_upwork_proposals_api(request):
+    """List all Upwork proposals for the user's organization."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Filter by organization
+        proposals = UpworkProposal.objects.filter(
+            organization_name=organization_name
+        ).order_by('-created_at')
+        
+        serializer = UpworkProposalListSerializer(proposals, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Retrieved {len(proposals)} Upwork proposals',
+            'data': serializer.data,
+            'count': len(proposals)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing Upwork proposals: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve Upwork proposals'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=UpworkProposalDeleteSerializer,
+            description="Upwork proposals deleted successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Delete one or more Upwork proposals. Provide proposal_id for single deletion or proposal_ids array for bulk deletion.",
+)
+@api_view(["DELETE"])
+@require_organization_access()
+def delete_upwork_proposals_api(request):
+    """Delete one or more Upwork proposals."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get proposal IDs from request
+        proposal_id = request.data.get('proposal_id')
+        proposal_ids = request.data.get('proposal_ids', [])
+        
+        if proposal_id:
+            proposal_ids = [proposal_id]
+        elif not proposal_ids:
+            return Response({
+                'error': 'Either proposal_id or proposal_ids must be provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by organization and delete
+        deleted_count = 0
+        for proposal_id in proposal_ids:
+            try:
+                proposal = UpworkProposal.objects.get(
+                    id=proposal_id,
+                    organization_name=organization_name
+                )
+                proposal.delete()
+                deleted_count += 1
+            except UpworkProposal.DoesNotExist:
+                continue
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} Upwork proposal(s)',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting Upwork proposals: {str(e)}")
+        return Response({
+            'error': 'Failed to delete Upwork proposals'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=UpworkProposalDownloadSerializer,
+            description="Upwork proposal PDF generated successfully."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Upwork proposal not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Generate and download an Upwork proposal as PDF.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def download_upwork_proposal_pdf_api(request, proposal_id):
+    """Download Upwork proposal as PDF."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get proposal with organization filter
+        try:
+            proposal = UpworkProposal.objects.get(
+                id=proposal_id,
+                organization_name=organization_name
+            )
+        except UpworkProposal.DoesNotExist:
+            return Response({
+                'error': 'Upwork proposal not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Generate PDF (you'll need to implement PDF generation logic)
+        # For now, return a placeholder response
+        return Response({
+            'success': True,
+            'message': 'PDF generation not yet implemented',
+            'download_url': None,
+            'file_name': f"Upwork_Proposal_{proposal.company_name or 'Unknown'}_{proposal.title[:30]}.pdf"
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF for Upwork proposal {proposal_id}: {str(e)}")
+        return Response({
+            'error': 'Failed to generate PDF'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

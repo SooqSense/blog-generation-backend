@@ -25,6 +25,10 @@ class UpworkProposal(models.Model):
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
     
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     # Metadata
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
