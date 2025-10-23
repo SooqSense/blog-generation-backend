@@ -142,10 +142,51 @@ class AuthHandler:
             st.error(f"🔐 Please login to access {feature_name}")
             st.stop()
         
-        if not self.is_admin():
+        # Check if user is admin of sooqsense organization specifically
+        if not self.is_sooqsense_admin():
             user = self.auth_manager.get_user() if self.auth_manager else {}
-            org_name = user.get('organization_name', 'your organization')
+            current_org = user.get('organization_name', 'your organization')
             st.error(f"🚫 Access Denied: Admin privileges required")
-            st.warning(f"Only administrators of **{org_name}** can access {feature_name}.")
-            st.info("💡 Please contact your organization administrator to request admin access.")
+            st.warning(f"Only administrators of **sooqsense** organization can access {feature_name}.")
+            st.info(f"💡 You are currently in **{current_org}** organization. Please switch to **sooqsense** organization and ensure you have admin role.")
             st.stop()
+    
+    def is_sooqsense_admin(self) -> bool:
+        """Check if the current user is admin of sooqsense organization"""
+        if not self.auth_available or not self.auth_manager:
+            return False
+        
+        user = self.auth_manager.get_user()
+        if not user:
+            return False
+        
+        # Check new multi-organization structure first
+        org_names = user.get('organization_names', [])
+        org_roles = user.get('organization_roles', [])
+        
+        if org_names and org_roles:
+            # Find sooqsense organization index
+            try:
+                sooqsense_index = None
+                for i, org_name in enumerate(org_names):
+                    if org_name.lower() == 'sooqsense':
+                        sooqsense_index = i
+                        break
+                
+                if sooqsense_index is not None and sooqsense_index < len(org_roles):
+                    role = org_roles[sooqsense_index].lower().strip()
+                    # Handle both 'admin' and 'org:admin' formats
+                    is_admin = role == 'admin' or role == 'org:admin' or role.endswith(':admin')
+                    return is_admin
+            except (IndexError, TypeError) as e:
+                pass
+        
+        # Fallback to legacy single organization structure
+        current_org = user.get('organization_name', '').lower()
+        if current_org == 'sooqsense':
+            org_role = user.get('organization_role', '').lower().strip()
+            # Handle both 'admin' and 'org:admin' formats
+            is_admin = org_role == 'admin' or org_role == 'org:admin' or org_role.endswith(':admin')
+            return is_admin
+        
+        return False
