@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .models import BlogAiNews
 
 
 class DailyAINewsRequestSerializer(serializers.Serializer):
@@ -47,3 +48,37 @@ class DailyAINewsResponseSerializer(serializers.Serializer):
 
 class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
+
+
+# List and Management Serializers for AI News
+class AINewsListSerializer(serializers.ModelSerializer):
+    """Serializer for listing AI news with basic information."""
+    
+    class Meta:
+        model = BlogAiNews
+        fields = [
+            'id', 'news_date', 'country', 'username', 'email', 'organization_id', 'organization_name',
+            'keywords', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class AINewsDetailSerializer(serializers.ModelSerializer):
+    """Serializer for detailed AI news information."""
+    
+    class Meta:
+        model = BlogAiNews
+        fields = [
+            'id', 'user_id', 'username', 'email', 'news_date', 'country', 'keywords',
+            'summary', 'content', 'sources', 'organization_id', 'organization_name', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class AINewsDeleteSerializer(serializers.Serializer):
+    """Serializer for AI news deletion response."""
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    deleted_count = serializers.IntegerField(required=False)
+
+

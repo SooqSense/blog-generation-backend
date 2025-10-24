@@ -10,11 +10,14 @@ import logging
 
 # Import models
 from .models import BlogAiNews
-from .serializers import DailyAINewsRequestSerializer, DailyAINewsResponseSerializer, ErrorResponseSerializer
+from .serializers import (
+    DailyAINewsRequestSerializer, DailyAINewsResponseSerializer, ErrorResponseSerializer,
+    AINewsListSerializer, AINewsDetailSerializer, AINewsDeleteSerializer
+)
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access, get_user_selected_organization
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +120,7 @@ def convert_markdown_to_json(markdown_content):
     description="Fetch and generate daily AI news from specified country and keywords using Serper API.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_daily_ai_news(request):
     """
     Generate daily AI news based on country and keywords.
@@ -201,6 +204,10 @@ def generate_daily_ai_news(request):
         # Convert markdown content to JSON structure
         structured_content = convert_markdown_to_json(clean_news_content)
 
+        # Get organization information
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         news_blog = BlogAiNews(
             user_id=request.user.id,
@@ -212,6 +219,8 @@ def generate_daily_ai_news(request):
             summary=news_result["summary"],
             content=clean_news_content,
             sources=news_result.get("sources", []),
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         news_blog.save()
@@ -252,3 +261,155 @@ def generate_daily_ai_news(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+# List and Management Views for AI News
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=AINewsListSerializer(many=True),
+            description="AI news retrieved successfully."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get list of all AI news for the authenticated user's organization.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def list_ai_news_api(request):
+    """List all AI news for the user's organization."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Filter by organization
+        ai_news = BlogAiNews.objects.filter(
+            organization_name=organization_name
+        ).order_by('-created_at')
+        
+        serializer = AINewsListSerializer(ai_news, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Retrieved {len(ai_news)} AI news articles',
+            'data': serializer.data,
+            'count': len(ai_news)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing AI news: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve AI news'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=AINewsDetailSerializer,
+            description="AI news details retrieved successfully."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="AI news not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get detailed information about a specific AI news article.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def get_ai_news_api(request, news_id):
+    """Get detailed information about a specific AI news article."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get AI news with organization filter
+        try:
+            ai_news = BlogAiNews.objects.get(
+                id=news_id,
+                organization_name=organization_name
+            )
+        except BlogAiNews.DoesNotExist:
+            return Response({
+                'error': 'AI news not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = AINewsDetailSerializer(ai_news)
+        
+        return Response({
+            'success': True,
+            'message': 'AI news retrieved successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving AI news {news_id}: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve AI news'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=AINewsDeleteSerializer,
+            description="AI news deleted successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Delete one or more AI news articles. Provide news_id for single deletion or news_ids array for bulk deletion.",
+)
+@api_view(["DELETE"])
+@require_organization_access()
+def delete_ai_news_api(request):
+    """Delete one or more AI news articles."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get news IDs from request
+        news_id = request.data.get('news_id')
+        news_ids = request.data.get('news_ids', [])
+        
+        if news_id:
+            news_ids = [news_id]
+        elif not news_ids:
+            return Response({
+                'error': 'Either news_id or news_ids must be provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by organization and delete
+        deleted_count = 0
+        for news_id in news_ids:
+            try:
+                ai_news = BlogAiNews.objects.get(
+                    id=news_id,
+                    organization_name=organization_name
+                )
+                ai_news.delete()
+                deleted_count += 1
+            except BlogAiNews.DoesNotExist:
+                continue
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} AI news article(s)',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting AI news: {str(e)}")
+        return Response({
+            'error': 'Failed to delete AI news'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

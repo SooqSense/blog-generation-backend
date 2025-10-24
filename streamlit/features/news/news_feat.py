@@ -5,20 +5,32 @@ from typing import Dict, Any, Optional
 from api_client.api_client import news_api
 # Import markdown processor
 from base.markdown_processor import MarkdownProcessor
+# Import data management
+from .news_data_management import NewsDataManagement
 
 class NewsFeature:
     """AI News feature for Streamlit UI - API-based"""
     
     def __init__(self):
         self.api = news_api
+        self.data_management = NewsDataManagement(news_api)
     
     def render(self):
         """Main render method"""
         st.title("📰 AI News")
         st.markdown("Stay updated with the latest AI news and trends.")
         
-        # Render news generation directly without tabs
-        self.render_news_generation()
+        # Create tabs for different features
+        tab1, tab2 = st.tabs([
+            "🚀 Generate News", 
+            "📊 Data Management"
+        ])
+        
+        with tab1:
+            self.render_news_generation()
+        
+        with tab2:
+            self.data_management.render_data_management_tab()
     
     def render_news_generation(self):
         """Render news generation form"""

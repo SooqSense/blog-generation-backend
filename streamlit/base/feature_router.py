@@ -58,39 +58,24 @@ class FeatureRouter:
         return "unknown"
     
     def _check_organization_access(self) -> bool:
-        """Check if user has access via sooqsense organization"""
+        """Check if user has access via any organization"""
         if not st.session_state.get('authenticated', False):
             return True  # Auth check handles this
         
         selected_org = st.session_state.get('selected_organization', '')
         user_orgs = st.session_state.get('user_organizations', [])
         
-        # Check if user is member of sooqsense
-        has_sooqsense = 'sooqsense' in [org.lower() for org in user_orgs]
-        
-        if not has_sooqsense:
+        # Check if user is member of any organization
+        if not user_orgs:
             st.error("🚫 Access Denied")
-            st.warning("You need to be a member of the **sooqsense** organization to access this feature.")
-            st.info("💡 Please contact your administrator to request access to the sooqsense organization.")
-            
-            with st.expander("👥 Your Organizations"):
-                if user_orgs:
-                    for org in user_orgs:
-                        st.write(f"• {org}")
-                else:
-                    st.write("You are not a member of any organizations.")
+            st.warning("You need to be a member of an organization to access this feature.")
+            st.info("💡 Please contact your administrator to request access to an organization.")
             return False
         
-        # Check if sooqsense is currently selected
-        if selected_org.lower() != 'sooqsense':
-            st.warning("⚠️ Organization Switch Required")
-            st.info("Please switch to the **sooqsense** organization in the sidebar to access this feature.")
-            st.markdown("---")
-            st.markdown("**Current Status:**")
-            st.write(f"✓ You are a member of **sooqsense**")
-            st.write(f"✗ Currently viewing: **{selected_org}**")
-            st.markdown("---")
-            st.info("👈 Use the organization selector in the sidebar to switch to **sooqsense**")
+        # Check if an organization is currently selected
+        if not selected_org:
+            st.warning("⚠️ Organization Selection Required")
+            st.info("Please select an organization in the sidebar to access this feature.")
             return False
         
         return True

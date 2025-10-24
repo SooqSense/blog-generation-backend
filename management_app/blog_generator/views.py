@@ -13,10 +13,13 @@ import logging
 
 # Import models
 from .models import BlogGeneral
-from .serializers import BlogRequestSerializer, BlogResponseSerializer, ErrorResponseSerializer
+from .serializers import (
+    BlogRequestSerializer, BlogResponseSerializer, ErrorResponseSerializer,
+    BlogListSerializer, BlogDetailSerializer, BlogDeleteSerializer
+)
 
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access, get_user_selected_organization
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -122,7 +125,7 @@ def convert_markdown_to_json(markdown_content):
     description="Generate a detailed blog post based on the given topic and optional parameters for customization. Set 'generate_image_prompts' to true (default) to include 5 section-specific images, or false for text-only blog content.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_blog_api(request):
     """
     Generate a detailed blog post from a given topic and optional parameters.
@@ -248,6 +251,10 @@ def generate_blog_api(request):
                 # Final strip
                 clean_blog_content = clean_blog_content.strip()
             
+            # Get organization information
+            organization_name = get_user_selected_organization(request)
+            organization_id = getattr(request.user, 'organization_id', None)
+            
             # Save to database with section-specific image URLs
             blog = BlogGeneral(
                 user_id=request.user.id,
@@ -259,6 +266,8 @@ def generate_blog_api(request):
                 image_prompts=image_prompts,
                 prompts_count=prompts_count,
                 image_urls=image_urls,
+                organization_id=organization_id,
+                organization_name=organization_name,
                 created_at=timezone.now(),
             )
             blog.save()
@@ -322,3 +331,155 @@ def generate_blog_api(request):
         # If serializer validation fails
         logger.warning(f"Invalid input for blog generation: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# List and Management Views
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=BlogListSerializer(many=True),
+            description="Blog posts retrieved successfully."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get list of all blog posts for the authenticated user's organization.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def list_blog_posts_api(request):
+    """List all blog posts for the user's organization."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Filter by organization
+        blog_posts = BlogGeneral.objects.filter(
+            organization_name=organization_name
+        ).order_by('-created_at')
+        
+        serializer = BlogListSerializer(blog_posts, many=True)
+        
+        return Response({
+            'success': True,
+            'message': f'Retrieved {len(blog_posts)} blog posts',
+            'data': serializer.data,
+            'count': len(blog_posts)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing blog posts: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve blog posts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=BlogDetailSerializer,
+            description="Blog post details retrieved successfully."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Blog post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Get detailed information about a specific blog post.",
+)
+@api_view(["GET"])
+@require_organization_access()
+def get_blog_post_api(request, blog_id):
+    """Get detailed information about a specific blog post."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get blog post with organization filter
+        try:
+            blog_post = BlogGeneral.objects.get(
+                id=blog_id,
+                organization_name=organization_name
+            )
+        except BlogGeneral.DoesNotExist:
+            return Response({
+                'error': 'Blog post not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = BlogDetailSerializer(blog_post)
+        
+        return Response({
+            'success': True,
+            'message': 'Blog post retrieved successfully',
+            'data': serializer.data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error retrieving blog post {blog_id}: {str(e)}")
+        return Response({
+            'error': 'Failed to retrieve blog post'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            response=BlogDeleteSerializer,
+            description="Blog post(s) deleted successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Delete one or more blog posts. Provide blog_id for single deletion or blog_ids array for bulk deletion.",
+)
+@api_view(["DELETE"])
+@require_organization_access()
+def delete_blog_posts_api(request):
+    """Delete one or more blog posts."""
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get blog IDs from request
+        blog_id = request.data.get('blog_id')
+        blog_ids = request.data.get('blog_ids', [])
+        
+        if blog_id:
+            blog_ids = [blog_id]
+        elif not blog_ids:
+            return Response({
+                'error': 'Either blog_id or blog_ids must be provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter by organization and delete
+        deleted_count = 0
+        for blog_id in blog_ids:
+            try:
+                blog_post = BlogGeneral.objects.get(
+                    id=blog_id,
+                    organization_name=organization_name
+                )
+                blog_post.delete()
+                deleted_count += 1
+            except BlogGeneral.DoesNotExist:
+                continue
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} blog post(s)',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting blog posts: {str(e)}")
+        return Response({
+            'error': 'Failed to delete blog posts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

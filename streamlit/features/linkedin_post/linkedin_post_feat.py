@@ -3,20 +3,32 @@ from typing import Dict, Any, Optional
 
 # Import API client
 from api_client.api_client import linkedin_api
+# Import data management
+from .linkedin_data_management import LinkedInDataManagement
 
 class LinkedInPostFeature:
     """LinkedIn Post Generation feature for Streamlit UI - API-based"""
     
     def __init__(self):
         self.api = linkedin_api
+        self.data_management = LinkedInDataManagement(linkedin_api)
     
     def render(self):
         """Main render method"""
         st.title("💼 LinkedIn Posts")
         st.markdown("Create engaging LinkedIn posts for professional networking.")
         
-        # Render post generation directly without tabs
-        self.render_post_generation()
+        # Create tabs for different features
+        tab1, tab2 = st.tabs([
+            "🚀 Generate Post", 
+            "📊 Data Management"
+        ])
+        
+        with tab1:
+            self.render_post_generation()
+        
+        with tab2:
+            self.data_management.render_data_management_tab()
     
     def render_post_generation(self):
         """Render LinkedIn post generation form"""

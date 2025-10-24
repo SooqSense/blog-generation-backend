@@ -3,6 +3,7 @@ import re
 import os
 from urllib.parse import urlparse
 from drf_spectacular.utils import extend_schema_field
+from .models import BlogGeneral
 
 
 @extend_schema_field({
@@ -225,3 +226,38 @@ class BlogResponseSerializer(serializers.Serializer):
 
 class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
+
+
+# List and Management Serializers
+class BlogListSerializer(serializers.ModelSerializer):
+    """Serializer for listing blog posts with basic information."""
+    
+    class Meta:
+        model = BlogGeneral
+        fields = [
+            'id', 'topic', 'username', 'email', 'organization_id', 'organization_name',
+            'sample_blog_url', 'prompts_count', 'image_urls', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class BlogDetailSerializer(serializers.ModelSerializer):
+    """Serializer for detailed blog post information."""
+    
+    class Meta:
+        model = BlogGeneral
+        fields = [
+            'id', 'user_id', 'username', 'email', 'topic', 'content',
+            'sample_blog_url', 'image_prompts', 'prompts_count', 'image_urls',
+            'organization_id', 'organization_name', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class BlogDeleteSerializer(serializers.Serializer):
+    """Serializer for blog deletion response."""
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    deleted_count = serializers.IntegerField(required=False)
+
+

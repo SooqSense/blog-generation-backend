@@ -12,6 +12,11 @@ class BlogGeneral(models.Model):
     image_prompts = models.JSONField(default=list, blank=True)  # Store generated image prompts
     prompts_count = models.IntegerField(default=0)  # Number of generated prompts (deprecated - use image_urls length)
     image_urls = models.JSONField(default=list, blank=True)  # Store S3 bucket URLs for section-specific images
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

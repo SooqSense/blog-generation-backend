@@ -12,7 +12,7 @@ from .models import ChatSession, ChatMessage
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ from .service.agent.agent import project_chatbot
     description="Chat with AI about uploaded documents. Provide a query and optionally a session_id. If no session_id is provided, a new chat session will be created. The AI will search through your uploaded documents and provide relevant answers with source citations.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def chat_api(request):
     """Chat with AI about uploaded documents."""
     try:
@@ -172,7 +172,7 @@ def chat_api(request):
     description="Get all chat sessions for the authenticated user.",
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_access()
 def get_user_sessions_api(request):
     """Get all chat sessions for the authenticated user"""
     try:

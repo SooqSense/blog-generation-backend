@@ -4,10 +4,15 @@ from django.utils import timezone
 
 class Directory(models.Model):
     """Model for managing knowledge base directories"""
-    name = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     is_default = models.BooleanField(default=False)  # For default directories like artilence_projects, client_projects
     created_by_user_id = models.IntegerField(null=True, blank=True)  # User who created this directory
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -15,9 +20,15 @@ class Directory(models.Model):
         db_table = 'knowledge_base_directories'
         ordering = ['name']
         verbose_name_plural = 'Directories'
+        # Ensure unique directory names within each organization
+        unique_together = ['name', 'organization_id']
+        indexes = [
+            models.Index(fields=['organization_id', 'name']),
+            models.Index(fields=['organization_name', 'name']),
+        ]
     
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.organization_name or 'No Org'})"
 
 
 class PDFDocument(models.Model):
@@ -51,6 +62,10 @@ class PDFDocument(models.Model):
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
     
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     # File information
     file_name = models.CharField(max_length=255)
     file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
@@ -79,6 +94,9 @@ class PDFDocument(models.Model):
         indexes = [
             models.Index(fields=['directory', '-created_at']),
             models.Index(fields=['user_id', 'directory']),
+            models.Index(fields=['organization_id', 'directory']),
+            models.Index(fields=['organization_name', 'directory']),
+            models.Index(fields=['organization_id', '-created_at']),
         ]
 
     def __str__(self):
