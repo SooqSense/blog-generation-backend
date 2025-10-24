@@ -54,8 +54,8 @@ jobs:
             --platform=managed \
             --allow-unauthenticated \
             --port=8080 \
-            --memory=2Gi \
-            --cpu=2 \
+            --memory=4Gi \
+            --cpu=4 \
             --timeout=3000 \
             --max-instances=2 \
             --min-instances=0 \
