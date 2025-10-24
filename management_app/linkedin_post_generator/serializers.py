@@ -34,12 +34,6 @@ class LinkedinPostDeleteSerializer(serializers.Serializer):
     deleted_count = serializers.IntegerField(required=False)
 
 
-class LinkedinPostDownloadSerializer(serializers.Serializer):
-    """Serializer for LinkedIn post download response."""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    download_url = serializers.URLField(required=False)
-    file_name = serializers.CharField(required=False)
 
 
 # LinkedIn Posting Content Serializers
@@ -75,12 +69,6 @@ class LinkedinPostingContentDeleteSerializer(serializers.Serializer):
     deleted_count = serializers.IntegerField(required=False)
 
 
-class LinkedinPostingContentDownloadSerializer(serializers.Serializer):
-    """Serializer for LinkedIn posting content download response."""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    download_url = serializers.URLField(required=False)
-    file_name = serializers.CharField(required=False)
 
 
 # LinkedIn Analytics Serializers

@@ -18,8 +18,6 @@ API_ENDPOINTS = {
     'blog_generation': f"{API_BASE_URL}/blogs/generate-blog/",
     'blog_list': f"{API_BASE_URL}/blogs/list/",
     'blog_delete': f"{API_BASE_URL}/blogs/delete/",
-    'blog_download_pdf': f"{API_BASE_URL}/blogs/download-pdf/",
-    'blog_download_images': f"{API_BASE_URL}/blogs/download-images/",
     
     # Image Generation
     'image_generation': f"{API_BASE_URL}/image-generation/generate/",
@@ -30,7 +28,6 @@ API_ENDPOINTS = {
     'linkedin_post_direct': f"{API_BASE_URL}/linkedin/post-on-linkedin/",
     'linkedin_list': f"{API_BASE_URL}/linkedin/list-posts/",
     'linkedin_delete': f"{API_BASE_URL}/linkedin/delete-posts/",
-    'linkedin_download_pdf': f"{API_BASE_URL}/linkedin/download-pdf/",
     'linkedin_analytics': f"{API_BASE_URL}/linkedin/linkedin-analytics/",
     'linkedin_token_validation': f"{API_BASE_URL}/linkedin/validate-linkedin-token/",
     
@@ -47,7 +44,6 @@ API_ENDPOINTS = {
     'ai_news': f"{API_BASE_URL}/news/daily-ai-news/",
     'ai_news_list': f"{API_BASE_URL}/news/list/",
     'ai_news_delete': f"{API_BASE_URL}/news/delete/",
-    'ai_news_download_pdf': f"{API_BASE_URL}/news/download-pdf/",
     
     # AI Trends
     'trending_topics': f"{API_BASE_URL}/trends/fetch-related-topics/",
@@ -68,10 +64,10 @@ API_ENDPOINTS = {
     
     # Upwork Proposals
     'upwork_proposals': f"{API_BASE_URL}/upwork/proposals/",
+    'upwork_proposal_get': f"{API_BASE_URL}/upwork/proposals/",
     'upwork_generate': f"{API_BASE_URL}/upwork/generate/",
     'upwork_list': f"{API_BASE_URL}/upwork/list/",
     'upwork_delete': f"{API_BASE_URL}/upwork/delete/",
-    'upwork_download_pdf': f"{API_BASE_URL}/upwork/download-pdf/",
     
     # Authentication
     'auth_verify': f"{API_BASE_URL}/auth/verify/",

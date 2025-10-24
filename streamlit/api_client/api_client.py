@@ -74,6 +74,49 @@ class APIClient:
             st.error(f"❌ Unexpected error: {str(e)}")
             return None
     
+    def _make_pdf_request(self, method: str, endpoint: str, **kwargs):
+        """Make HTTP request for PDF downloads - returns raw response"""
+        # Check if endpoint is already a full URL
+        if endpoint.startswith('http://') or endpoint.startswith('https://'):
+            url = endpoint
+        else:
+            url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        headers = self._get_auth_headers()
+        
+        # Update headers if provided
+        if 'headers' in kwargs:
+            headers.update(kwargs.pop('headers'))
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                timeout=self.timeout,
+                **kwargs
+            )
+            response.raise_for_status()
+            return response
+        except requests.exceptions.Timeout:
+            st.error("⏰ Request timeout after 5 minutes. PDF generation can take time. Please try again.")
+            return None
+        except requests.exceptions.ConnectionError:
+            st.error("🔌 Connection error. Please check if the backend server is running.")
+            return None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                st.error("🔐 Authentication failed. Please login again.")
+                # Clear session state
+                if hasattr(st.session_state, 'authenticated'):
+                    st.session_state.authenticated = False
+                st.rerun()
+            else:
+                st.error(f"❌ API request failed: {e.response.status_code} - {e.response.text}")
+            return None
+        except Exception as e:
+            st.error(f"❌ Unexpected error: {str(e)}")
+            return None
+    
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Make GET request"""
         return self._make_request('GET', endpoint, params=params)
@@ -123,9 +166,9 @@ class APIClient:
         """Make PUT request"""
         return self._make_request('PUT', endpoint, json=data)
     
-    def delete(self, endpoint: str) -> Optional[Dict[str, Any]]:
+    def delete(self, endpoint: str, data: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Make DELETE request"""
-        return self._make_request('DELETE', endpoint)
+        return self._make_request('DELETE', endpoint, json=data)
 
 # Blog Generation API
 class BlogAPI:
@@ -147,16 +190,16 @@ class BlogAPI:
     def delete_blogs(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete blog posts"""
         endpoint = get_api_endpoint('blog_delete')
-        return self.client.delete(endpoint, data={'ids': ids})
+        if len(ids) == 1:
+            # Single deletion
+            return self.client.delete(endpoint, data={'blog_id': ids[0]})
+        else:
+            # Bulk deletion
+            return self.client.delete(endpoint, data={'blog_ids': ids})
     
-    def download_blog_pdf(self, blog_id: int) -> Optional[Dict[str, Any]]:
-        """Download blog PDF"""
-        endpoint = get_api_endpoint('blog_download_pdf') + f"{blog_id}/"
-        return self.client.get(endpoint)
-    
-    def download_blog_images(self, blog_id: int) -> Optional[Dict[str, Any]]:
-        """Download blog images"""
-        endpoint = get_api_endpoint('blog_download_images') + f"{blog_id}/"
+    def get_blog(self, blog_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific blog post by ID"""
+        endpoint = f"blogs/get/{blog_id}/"
         return self.client.get(endpoint)
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -185,6 +228,17 @@ class ImageAPI:
     def delete_images(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete images"""
         return self.client.delete("image-generation/delete/", data={'ids': ids})
+    
+    def get_image(self, image_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific image by ID"""
+        # Note: Django doesn't have a get individual image endpoint
+        # We'll need to get it from the list and filter
+        response = self.client.get("image-generation/images/")
+        if response and 'data' in response:
+            for image in response['data']:
+                if image.get('id') == image_id:
+                    return {'success': True, 'data': image}
+        return None
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Make GET request - generic method for data management compatibility"""
@@ -225,11 +279,16 @@ class LinkedInAPI:
     def delete_posts(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete LinkedIn posts"""
         endpoint = get_api_endpoint('linkedin_delete')
-        return self.client.delete(endpoint, data={'ids': ids})
+        if len(ids) == 1:
+            # Single deletion
+            return self.client.delete(endpoint, data={'post_id': ids[0]})
+        else:
+            # Bulk deletion
+            return self.client.delete(endpoint, data={'post_ids': ids})
     
-    def download_post_pdf(self, post_id: int) -> Optional[Dict[str, Any]]:
-        """Download LinkedIn post PDF"""
-        endpoint = get_api_endpoint('linkedin_download_pdf') + f"{post_id}/"
+    def get_post(self, post_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific LinkedIn post by ID"""
+        endpoint = f"linkedin/get-post/{post_id}/"
         return self.client.get(endpoint)
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -256,11 +315,16 @@ class NewsAPI:
     def delete_news(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete AI news"""
         endpoint = get_api_endpoint('ai_news_delete')
-        return self.client.delete(endpoint, data={'ids': ids})
+        if len(ids) == 1:
+            # Single deletion
+            return self.client.delete(endpoint, data={'news_id': ids[0]})
+        else:
+            # Bulk deletion
+            return self.client.delete(endpoint, data={'news_ids': ids})
     
-    def download_news_pdf(self, news_id: int) -> Optional[Dict[str, Any]]:
-        """Download AI news PDF"""
-        endpoint = get_api_endpoint('ai_news_download_pdf') + f"{news_id}/"
+    def get_news(self, news_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific AI news by ID"""
+        endpoint = f"news/get/{news_id}/"
         return self.client.get(endpoint)
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -367,10 +431,6 @@ class UpworkAPI:
     def __init__(self):
         self.client = APIClient()
     
-    def generate_proposal_direct(self, **kwargs) -> Optional[Dict[str, Any]]:
-        """Generate Upwork proposal directly (without saving to database)"""
-        return self.client.post("upwork/generate/", data=kwargs)
-    
     def list_proposals(self) -> Optional[Dict[str, Any]]:
         """List user's proposals"""
         return self.client.get("upwork/proposals/")
@@ -378,30 +438,6 @@ class UpworkAPI:
     def create_proposal(self, **kwargs) -> Optional[Dict[str, Any]]:
         """Create new proposal generation request"""
         return self.client.post("upwork/proposals/", data=kwargs)
-    
-    def get_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
-        """Get proposal details"""
-        return self.client.get(f"upwork/proposals/{proposal_id}/")
-    
-    def update_proposal(self, proposal_id: int, **kwargs) -> Optional[Dict[str, Any]]:
-        """Update proposal"""
-        return self.client.put(f"upwork/proposals/{proposal_id}/", data=kwargs)
-    
-    def patch_proposal(self, proposal_id: int, **kwargs) -> Optional[Dict[str, Any]]:
-        """Partially update proposal"""
-        return self.client.put(f"upwork/proposals/{proposal_id}/", data=kwargs)
-    
-    def delete_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
-        """Delete proposal"""
-        return self.client.delete(f"upwork/proposals/{proposal_id}/")
-    
-    def regenerate_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
-        """Regenerate existing proposal"""
-        return self.client.post(f"upwork/proposals/{proposal_id}/regenerate/")
-    
-    def get_proposal_status(self, proposal_id: int) -> Optional[Dict[str, Any]]:
-        """Get proposal status"""
-        return self.client.get(f"upwork/proposals/{proposal_id}/status/")
     
     def list_upwork_proposals(self) -> Optional[Dict[str, Any]]:
         """List Upwork proposals for data management"""
@@ -411,11 +447,16 @@ class UpworkAPI:
     def delete_upwork_proposals(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete Upwork proposals"""
         endpoint = get_api_endpoint('upwork_delete')
-        return self.client.delete(endpoint, data={'ids': ids})
+        if len(ids) == 1:
+            # Single deletion
+            return self.client.delete(endpoint, data={'proposal_id': ids[0]})
+        else:
+            # Bulk deletion
+            return self.client.delete(endpoint, data={'proposal_ids': ids})
     
-    def download_proposal_pdf(self, proposal_id: int) -> Optional[Dict[str, Any]]:
-        """Download Upwork proposal PDF"""
-        endpoint = get_api_endpoint('upwork_download_pdf') + f"{proposal_id}/"
+    def get_upwork_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
+        """Get a specific Upwork proposal by ID"""
+        endpoint = f"upwork/proposals/{proposal_id}/"
         return self.client.get(endpoint)
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
@@ -465,7 +506,12 @@ class TrendsAPI:
     def delete_trends(self, ids: List[int]) -> Optional[Dict[str, Any]]:
         """Delete AI trends"""
         endpoint = get_api_endpoint('ai_trends_delete')
-        return self.client.delete(endpoint, data={'ids': ids})
+        if len(ids) == 1:
+            # Single deletion
+            return self.client.delete(endpoint, data={'topic_id': ids[0]})
+        else:
+            # Bulk deletion
+            return self.client.delete(endpoint, data={'topic_ids': ids})
     
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Make GET request - generic method for data management compatibility"""

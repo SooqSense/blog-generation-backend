@@ -10,8 +10,8 @@ from .base_component import BaseComponent
 class ProposalHistoryManager(BaseComponent):
     """Component for managing proposal history."""
     
-    def __init__(self, api_client, service, on_view_proposal: Callable, on_edit_proposal: Callable, 
-                 on_regenerate_proposal: Callable, on_delete_proposal: Callable):
+    def __init__(self, api_client, service, on_view_proposal: Callable, on_edit_proposal: Callable = None, 
+                 on_regenerate_proposal: Callable = None, on_delete_proposal: Callable = None):
         """Initialize with API client, service, and callback functions."""
         super().__init__(api_client)
         self.service = service
@@ -89,22 +89,12 @@ class ProposalHistoryManager(BaseComponent):
     def _render_proposal_actions(self, proposal: Dict[str, Any]):
         """Render proposal action buttons."""
         proposal_id = proposal.get('id')
-        status = proposal.get('status', '').lower()
         
         if proposal_id:
-            # Action buttons
+            # Only show view button - other actions removed
             if st.button("👁️ View Full", key=f"view_{proposal_id}"):
-                self.on_view_proposal(proposal_id)
-            
-            if st.button("✏️ Edit", key=f"edit_{proposal_id}"):
-                self.on_edit_proposal(proposal_id)
-            
-            if status == 'completed':
-                if st.button("🔄 Regenerate", key=f"regen_{proposal_id}"):
-                    self.on_regenerate_proposal(proposal_id)
-            
-            if st.button("🗑️ Delete", key=f"delete_{proposal_id}"):
-                self.on_delete_proposal(proposal_id)
+                if self.on_view_proposal:
+                    self.on_view_proposal(proposal_id)
     
     def _refresh_proposals(self):
         """Refresh proposals list."""

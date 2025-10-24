@@ -20,8 +20,7 @@ from management_app.authentication.services.access_control import require_organi
 # Import serializers
 from .serializers import (
     LinkedinPostListSerializer, LinkedinPostDetailSerializer, LinkedinPostDeleteSerializer,
-    LinkedinPostDownloadSerializer, LinkedinPostingContentListSerializer,
-    LinkedinPostingContentDeleteSerializer, ErrorResponseSerializer
+    LinkedinPostingContentListSerializer, LinkedinPostingContentDeleteSerializer, ErrorResponseSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -569,54 +568,6 @@ def delete_linkedin_posts_api(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@extend_schema(
-    responses={
-        200: OpenApiResponse(
-            response=LinkedinPostDownloadSerializer,
-            description="LinkedIn post PDF generated successfully."
-        ),
-        404: OpenApiResponse(
-            response=ErrorResponseSerializer, description="LinkedIn post not found."
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
-        ),
-    },
-    description="Generate and download a LinkedIn post as PDF.",
-)
-@api_view(["GET"])
-@require_organization_access()
-def download_linkedin_post_pdf_api(request, post_id):
-    """Download LinkedIn post as PDF."""
-    try:
-        user = request.user
-        organization_name = get_user_selected_organization(request)
-        
-        # Get LinkedIn post with organization filter
-        try:
-            linkedin_post = LinkedinPost.objects.get(
-                id=post_id,
-                organization_name=organization_name
-            )
-        except LinkedinPost.DoesNotExist:
-            return Response({
-                'error': 'LinkedIn post not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Generate PDF (you'll need to implement PDF generation logic)
-        # For now, return a placeholder response
-        return Response({
-            'success': True,
-            'message': 'PDF generation not yet implemented',
-            'download_url': None,
-            'file_name': f"{linkedin_post.topic.replace(' ', '_')}_linkedin_post.pdf"
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF for LinkedIn post {post_id}: {str(e)}")
-        return Response({
-            'error': 'Failed to generate PDF'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # List and Management Views for LinkedIn Posting Content

@@ -17,6 +17,9 @@ class UpworkProposal(models.Model):
     upwork_profile_link = models.URLField(blank=True, null=True, help_text="Your Upwork profile URL")
     contact_information = models.TextField(blank=True, null=True, help_text="Your contact details (email, phone, etc.)")
     
+    # Knowledge base settings
+    use_knowledge_base = models.BooleanField(default=True, help_text="Whether to use knowledge base for relevant project examples")
+    
     # Generated content
     proposal_content = models.TextField(blank=True, null=True)
     

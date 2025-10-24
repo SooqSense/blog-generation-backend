@@ -10,7 +10,7 @@ from .base_component import BaseComponent
 class ProposalEditor(BaseComponent):
     """Component for editing existing proposals."""
     
-    def __init__(self, api_client, on_update_proposal: Callable, on_cancel_edit: Callable):
+    def __init__(self, api_client, on_update_proposal: Callable = None, on_cancel_edit: Callable = None):
         """Initialize with API client and callback functions."""
         super().__init__(api_client)
         self.on_update_proposal = on_update_proposal
@@ -117,4 +117,7 @@ class ProposalEditor(BaseComponent):
     
     def _handle_save(self, proposal_id: int, data: Dict[str, Any]):
         """Handle save operation."""
-        self.on_update_proposal(proposal_id, data)
+        if self.on_update_proposal:
+            self.on_update_proposal(proposal_id, data)
+        else:
+            self.show_error("Update functionality has been disabled")

@@ -271,18 +271,9 @@ class DataManagementUI:
         """Display action buttons for the card"""
         st.markdown("**Actions:**")
         
-        # View details button
-        if st.button("👁️ View", key=f"view_card_{index}", help="View full details"):
-            self.show_card_details(item)
-        
         # Download PDF button
         if st.button("📥 PDF", key=f"pdf_card_{index}", help="Download as PDF"):
             self.download_single_item_pdf(item)
-        
-        # Download images button (if supported)
-        if self.supports_image_download():
-            if st.button("🖼️ Images", key=f"images_card_{index}", help="Download images"):
-                self.download_single_item_images(item)
         
         # Delete button
         if st.button("🗑️ Delete", key=f"delete_card_{index}", help="Delete this item", type="secondary"):
@@ -301,11 +292,28 @@ class DataManagementUI:
         item_id = item.get('id')
         if item_id:
             try:
-                response = self.get_api_download_method(item_id)
-                if response and response.get('success'):
-                    st.success(f"PDF download initiated for {item.get('title', item.get('topic', 'Item'))}")
+                # Use the new download_pdf method if available
+                if hasattr(self, 'download_pdf'):
+                    self.download_pdf(item_id)
                 else:
-                    st.error(f"Failed to download PDF for {item.get('title', item.get('topic', 'Item'))}")
+                    # Fallback to API method
+                    response = self.get_api_download_method(item_id)
+                    
+                    if response and hasattr(response, 'content') and response.content:
+                        # Create a filename based on the item
+                        filename = f"{item.get('title', item.get('topic', 'Item')).replace(' ', '_')}_{item_id}.pdf"
+                        
+                        # Use Streamlit's download button to trigger the download
+                        st.download_button(
+                            label="📥 Download PDF",
+                            data=response.content,
+                            file_name=filename,
+                            mime="application/pdf",
+                            help=f"Download PDF for {item.get('title', item.get('topic', 'Item'))}"
+                        )
+                        st.success(f"PDF ready for download: {filename}")
+                    else:
+                        st.error(f"Failed to generate PDF for {item.get('title', item.get('topic', 'Item'))}")
             except Exception as e:
                 st.error(f"Error downloading PDF: {str(e)}")
     
@@ -318,15 +326,20 @@ class DataManagementUI:
         item_id = item.get('id')
         if item_id:
             try:
-                if hasattr(self, 'get_image_download_method'):
-                    response = self.get_image_download_method(item_id)
+                # Use the new download_images method if available
+                if hasattr(self, 'download_images'):
+                    self.download_images(item_id)
                 else:
-                    endpoint = self.get_image_download_endpoint(item_id)
-                    response = self.api.get(endpoint)
-                if response and response.get('success'):
-                    st.success(f"Image download initiated for {item.get('title', item.get('topic', 'Item'))}")
-                else:
-                    st.error(f"Failed to download images for {item.get('title', item.get('topic', 'Item'))}")
+                    # Fallback to API method
+                    if hasattr(self, 'get_image_download_method'):
+                        response = self.get_image_download_method(item_id)
+                    else:
+                        endpoint = self.get_image_download_endpoint(item_id)
+                        response = self.api.get(endpoint)
+                    if response and response.get('success'):
+                        st.success(f"Image download initiated for {item.get('title', item.get('topic', 'Item'))}")
+                    else:
+                        st.error(f"Failed to download images for {item.get('title', item.get('topic', 'Item'))}")
             except Exception as e:
                 st.error(f"Error downloading images: {str(e)}")
     

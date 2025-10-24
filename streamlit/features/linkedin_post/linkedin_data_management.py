@@ -6,6 +6,7 @@ Handles LinkedIn post data management functionality
 import streamlit as st
 from typing import List, Dict, Any
 from base.data_management_ui import DataManagementUI
+from base.download_service import download_service
 
 
 class LinkedInDataManagement(DataManagementUI):
@@ -22,9 +23,36 @@ class LinkedInDataManagement(DataManagementUI):
         """Get the API delete method for LinkedIn posts"""
         return self.api.delete_posts(ids)
     
-    def get_api_download_method(self, item_id: int):
-        """Get the API download method for LinkedIn posts"""
-        return self.api.download_post_pdf(item_id)
+    def download_pdf(self, item_id: int):
+        """Download LinkedIn post as PDF using Streamlit download service"""
+        try:
+            # Get LinkedIn post details
+            post_data = self.api.get_post(item_id)
+            if post_data and 'success' in post_data and post_data['success']:
+                post_info = post_data['data']
+                
+                # Generate PDF using the download service
+                pdf_bytes = download_service.generate_linkedin_post_pdf(post_info)
+                
+                # Create filename
+                topic = post_info.get('topic', 'linkedin_post').replace(' ', '_')
+                filename = f"linkedin_post_{topic}_{item_id}.pdf"
+                
+                # Use Streamlit's download button
+                st.download_button(
+                    label="📄 Download PDF",
+                    data=pdf_bytes,
+                    file_name=filename,
+                    mime="application/pdf",
+                    key=f"download_linkedin_{item_id}"
+                )
+                return True
+            else:
+                st.error("Failed to retrieve LinkedIn post data")
+                return False
+        except Exception as e:
+            st.error(f"Error generating PDF: {str(e)}")
+            return False
     
     def supports_image_download(self) -> bool:
         """LinkedIn posts don't support image download"""
@@ -75,10 +103,6 @@ class LinkedInDataManagement(DataManagementUI):
     def display_card_actions(self, item: Dict[str, Any], index: int):
         """Display action buttons for the card with LinkedIn-specific actions"""
         st.markdown("**Actions:**")
-        
-        # View details button
-        if st.button("👁️ View", key=f"view_card_{index}", help="View full post details"):
-            self.show_card_details(item)
         
         # Download PDF button
         if st.button("📥 PDF", key=f"pdf_card_{index}", help="Download as PDF"):

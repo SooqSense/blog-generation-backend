@@ -111,7 +111,6 @@ def generate_image_api(request):
             username=request.user.username,
             email=request.user.email,
             prompt=prompt,
-            image_url=images_data[0]["image_url"] if images_data else "",  # Legacy field
             image_urls=[img["image_url"] for img in images_data],
             images_count=total_generated,
             enhanced_prompts=[img["enhanced_prompt"] for img in images_data],
@@ -294,3 +293,97 @@ def edit_image_api(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@extend_schema(
+    description="List all generated images for the authenticated user's organization",
+    responses={
+        200: OpenApiResponse(description="List of generated images"),
+        401: OpenApiResponse(description="Authentication required"),
+        403: OpenApiResponse(description="Organization access required"),
+    },
+)
+@api_view(['GET'])
+@require_organization_access()
+def list_images_api(request):
+    """List all generated images for the user's organization"""
+    try:
+        # Get images for the user's organization
+        images = ImageGeneration.objects.filter(
+            organization_id=request.user.organization_id
+        ).order_by('-created_at')
+        
+        # Serialize the data
+        image_data = []
+        for image in images:
+            image_data.append({
+                'id': image.id,
+                'title': image.prompt[:50] + "..." if len(image.prompt) > 50 else image.prompt,
+                'prompt': image.prompt,
+                'image_urls': image.image_urls if image.image_urls else [],
+                'images_count': image.images_count,
+                'generation_method': image.generation_method,
+                'image_style': image.image_style,
+                'created_at': image.created_at.isoformat(),
+                'username': request.user.username,
+                'organization_name': request.user.organization_name,
+            })
+        
+        return Response({
+            'success': True,
+            'data': image_data,
+            'message': f'Found {len(image_data)} images'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing images: {str(e)}")
+        return Response(
+            {"error": f"Failed to list images: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    description="Delete multiple images by IDs",
+    responses={
+        200: OpenApiResponse(description="Images deleted successfully"),
+        400: OpenApiResponse(description="Invalid request data"),
+        401: OpenApiResponse(description="Authentication required"),
+        403: OpenApiResponse(description="Organization access required"),
+    },
+)
+@api_view(['DELETE'])
+@require_organization_access()
+def delete_images_api(request):
+    """Delete multiple images by IDs"""
+    try:
+        image_ids = request.data.get('ids', [])
+        
+        if not image_ids:
+            return Response(
+                {"error": "No image IDs provided"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Get images for the user's organization
+        images = ImageGeneration.objects.filter(
+            id__in=image_ids,
+            organization_id=request.user.organization_id
+        )
+        
+        deleted_count = images.count()
+        images.delete()
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} images',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting images: {str(e)}")
+        return Response(
+            {"error": f"Failed to delete images: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+

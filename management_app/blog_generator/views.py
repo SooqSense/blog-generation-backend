@@ -15,7 +15,7 @@ import logging
 from .models import BlogGeneral
 from .serializers import (
     BlogRequestSerializer, BlogResponseSerializer, ErrorResponseSerializer,
-    BlogListSerializer, BlogDetailSerializer, BlogDeleteSerializer, BlogDownloadSerializer
+    BlogListSerializer, BlogDetailSerializer, BlogDeleteSerializer
 )
 
 # Import organization access control
@@ -483,101 +483,3 @@ def delete_blog_posts_api(request):
             'error': 'Failed to delete blog posts'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-@extend_schema(
-    responses={
-        200: OpenApiResponse(
-            response=BlogDownloadSerializer,
-            description="Blog post PDF generated successfully."
-        ),
-        404: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Blog post not found."
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
-        ),
-    },
-    description="Generate and download a blog post as PDF.",
-)
-@api_view(["GET"])
-@require_organization_access()
-def download_blog_pdf_api(request, blog_id):
-    """Download blog post as PDF."""
-    try:
-        user = request.user
-        organization_name = get_user_selected_organization(request)
-        
-        # Get blog post with organization filter
-        try:
-            blog_post = BlogGeneral.objects.get(
-                id=blog_id,
-                organization_name=organization_name
-            )
-        except BlogGeneral.DoesNotExist:
-            return Response({
-                'error': 'Blog post not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Generate PDF (you'll need to implement PDF generation logic)
-        # For now, return a placeholder response
-        return Response({
-            'success': True,
-            'message': 'PDF generation not yet implemented',
-            'download_url': None,
-            'file_name': f"{blog_post.topic.replace(' ', '_')}_blog.pdf"
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF for blog {blog_id}: {str(e)}")
-        return Response({
-            'error': 'Failed to generate PDF'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@extend_schema(
-    responses={
-        200: OpenApiResponse(
-            description="Blog images downloaded successfully."
-        ),
-        404: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Blog post not found."
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
-        ),
-    },
-    description="Download all images associated with a blog post as a ZIP file.",
-)
-@api_view(["GET"])
-@require_organization_access()
-def download_blog_images_api(request, blog_id):
-    """Download blog post images as ZIP."""
-    try:
-        user = request.user
-        organization_name = get_user_selected_organization(request)
-        
-        # Get blog post with organization filter
-        try:
-            blog_post = BlogGeneral.objects.get(
-                id=blog_id,
-                organization_name=organization_name
-            )
-        except BlogGeneral.DoesNotExist:
-            return Response({
-                'error': 'Blog post not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Generate ZIP with images (you'll need to implement ZIP generation logic)
-        # For now, return a placeholder response
-        return Response({
-            'success': True,
-            'message': 'Image ZIP generation not yet implemented',
-            'download_url': None,
-            'file_name': f"{blog_post.topic.replace(' ', '_')}_images.zip"
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Error generating image ZIP for blog {blog_id}: {str(e)}")
-        return Response({
-            'error': 'Failed to generate image ZIP'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

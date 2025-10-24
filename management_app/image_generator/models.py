@@ -7,7 +7,6 @@ class ImageGeneration(models.Model):
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
     prompt = models.TextField()
-    image_url = models.URLField(max_length=500)  # Keep for backward compatibility
     image_urls = models.JSONField(default=list, blank=True)  # Store multiple image URLs
     images_count = models.IntegerField(default=1)  # Number of images generated
     enhanced_prompts = models.JSONField(default=list, blank=True)  # Store enhanced prompts for each image

@@ -60,6 +60,11 @@ class UpworkProposalCreateSerializer(serializers.ModelSerializer):
         help_text="Your contact details (email, phone, etc.)",
         style={'base_template': 'textarea.html', 'placeholder': 'Email: john@example.com\nPhone: +1 (555) 123-4567\nLinkedIn: linkedin.com/in/johnsmith'}
     )
+    use_knowledge_base = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Whether to use knowledge base for relevant project examples"
+    )
     
     class Meta:
         model = UpworkProposal
@@ -71,7 +76,8 @@ class UpworkProposalCreateSerializer(serializers.ModelSerializer):
             'company_website_links',
             'your_name',
             'upwork_profile_link',
-            'contact_information'
+            'contact_information',
+            'use_knowledge_base'
         ]
     
     def validate_requirements(self, value):
@@ -125,6 +131,7 @@ class UpworkProposalResponseSerializer(serializers.ModelSerializer):
             'your_name',
             'upwork_profile_link',
             'contact_information',
+            'use_knowledge_base',
             'proposal_content',
             'status',
             'error_message',
@@ -155,89 +162,6 @@ class UpworkProposalListSerializer(serializers.ModelSerializer):
         ]
 
 
-class ProposalGenerationStatusSerializer(serializers.Serializer):
-    """Serializer for proposal generation status responses."""
-    
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    proposal_id = serializers.IntegerField(required=False)
-    status = serializers.CharField(required=False)
-    proposal_content = serializers.CharField(required=False)
-    error = serializers.CharField(required=False)
-    metadata = serializers.DictField(required=False)
-
-
-# Input validation serializers for direct API calls
-class GenerateProposalDirectSerializer(serializers.Serializer):
-    """Serializer for direct proposal generation without saving to database."""
-    
-    client_name = serializers.CharField(
-        max_length=255,
-        required=False,
-        allow_blank=True,
-        help_text="Name of the client contact person (optional)",
-        style={'placeholder': 'John Smith'}
-    )
-    company_name = serializers.CharField(
-        max_length=255,
-        required=False,
-        allow_blank=True,
-        help_text="Name of the client's company (optional)",
-        style={'placeholder': 'TechCorp Inc.'}
-    )
-    title = serializers.CharField(
-        max_length=500,
-        help_text="Project title or job description",
-        style={'placeholder': 'Need a Full-Stack Developer for E-commerce Platform'}
-    )
-    requirements = serializers.CharField(
-        min_length=10,
-        help_text="Detailed project requirements and description",
-        style={'base_template': 'textarea.html', 'placeholder': 'We need a developer to build a modern e-commerce platform with React frontend and Django backend. Must have experience with payment integrations and responsive design...'}
-    )
-    company_website_links = serializers.ListField(
-        child=serializers.URLField(),
-        required=False,
-        allow_empty=True,
-        default=list,
-        help_text="List of company website URLs (optional)",
-        style={'placeholder': '["https://techcorp.com", "https://techcorp.com/about"]'}
-    )
-    
-    # Personal information fields
-    your_name = serializers.CharField(
-        max_length=255,
-        required=False,
-        allow_blank=True,
-        help_text="Your full name for proposal signature",
-        style={'placeholder': 'Sarah Johnson'}
-    )
-    upwork_profile_link = serializers.URLField(
-        required=False,
-        allow_blank=True,
-        help_text="Your Upwork profile URL",
-        style={'placeholder': 'https://www.upwork.com/freelancers/~your-profile'}
-    )
-    contact_information = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Your contact details (email, phone, etc.)",
-        style={'base_template': 'textarea.html', 'placeholder': 'Email: sarah@example.com\nPhone: +1 (555) 987-6543\nLinkedIn: linkedin.com/in/sarahjohnson'}
-    )
-    
-    def validate_company_website_links(self, value):
-        """Clean and validate website links."""
-        if not value:
-            return []
-        
-        valid_links = []
-        for link in value:
-            if isinstance(link, str) and link.strip():
-                link = link.strip()
-                if not link.startswith(('http://', 'https://')):
-                    link = f'https://{link}'
-                valid_links.append(link)
-        return valid_links
 
 
 # Additional Management Serializers for Upwork Proposals
@@ -260,12 +184,6 @@ class UpworkProposalDeleteSerializer(serializers.Serializer):
     deleted_count = serializers.IntegerField(required=False)
 
 
-class UpworkProposalDownloadSerializer(serializers.Serializer):
-    """Serializer for Upwork proposal download response."""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    download_url = serializers.URLField(required=False)
-    file_name = serializers.CharField(required=False)
 
 
 class ErrorResponseSerializer(serializers.Serializer):

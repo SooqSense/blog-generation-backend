@@ -82,9 +82,3 @@ class AINewsDeleteSerializer(serializers.Serializer):
     deleted_count = serializers.IntegerField(required=False)
 
 
-class AINewsDownloadSerializer(serializers.Serializer):
-    """Serializer for AI news download response."""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    download_url = serializers.URLField(required=False)
-    file_name = serializers.CharField(required=False)

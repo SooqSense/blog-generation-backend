@@ -261,9 +261,3 @@ class BlogDeleteSerializer(serializers.Serializer):
     deleted_count = serializers.IntegerField(required=False)
 
 
-class BlogDownloadSerializer(serializers.Serializer):
-    """Serializer for blog download response."""
-    success = serializers.BooleanField()
-    message = serializers.CharField()
-    download_url = serializers.URLField(required=False)
-    file_name = serializers.CharField(required=False)

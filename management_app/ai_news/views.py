@@ -12,7 +12,7 @@ import logging
 from .models import BlogAiNews
 from .serializers import (
     DailyAINewsRequestSerializer, DailyAINewsResponseSerializer, ErrorResponseSerializer,
-    AINewsListSerializer, AINewsDetailSerializer, AINewsDeleteSerializer, AINewsDownloadSerializer
+    AINewsListSerializer, AINewsDetailSerializer, AINewsDeleteSerializer
 )
 
 # Set up logging
@@ -413,52 +413,3 @@ def delete_ai_news_api(request):
             'error': 'Failed to delete AI news'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-@extend_schema(
-    responses={
-        200: OpenApiResponse(
-            response=AINewsDownloadSerializer,
-            description="AI news PDF generated successfully."
-        ),
-        404: OpenApiResponse(
-            response=ErrorResponseSerializer, description="AI news not found."
-        ),
-        500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
-        ),
-    },
-    description="Generate and download AI news as PDF.",
-)
-@api_view(["GET"])
-@require_organization_access()
-def download_ai_news_pdf_api(request, news_id):
-    """Download AI news as PDF."""
-    try:
-        user = request.user
-        organization_name = get_user_selected_organization(request)
-        
-        # Get AI news with organization filter
-        try:
-            ai_news = BlogAiNews.objects.get(
-                id=news_id,
-                organization_name=organization_name
-            )
-        except BlogAiNews.DoesNotExist:
-            return Response({
-                'error': 'AI news not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Generate PDF (you'll need to implement PDF generation logic)
-        # For now, return a placeholder response
-        return Response({
-            'success': True,
-            'message': 'PDF generation not yet implemented',
-            'download_url': None,
-            'file_name': f"AI_News_{ai_news.news_date}_{ai_news.country}.pdf"
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF for AI news {news_id}: {str(e)}")
-        return Response({
-            'error': 'Failed to generate PDF'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
