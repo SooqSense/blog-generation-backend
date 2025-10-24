@@ -17,6 +17,9 @@ class UpworkProposal(models.Model):
     upwork_profile_link = models.URLField(blank=True, null=True, help_text="Your Upwork profile URL")
     contact_information = models.TextField(blank=True, null=True, help_text="Your contact details (email, phone, etc.)")
     
+    # Knowledge base settings
+    use_knowledge_base = models.BooleanField(default=True, help_text="Whether to use knowledge base for relevant project examples")
+    
     # Generated content
     proposal_content = models.TextField(blank=True, null=True)
     
@@ -24,6 +27,10 @@ class UpworkProposal(models.Model):
     user_id = models.IntegerField(default=0)
     username = models.CharField(max_length=150, default='')
     email = models.EmailField(default='')
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
     
     # Metadata
     created_at = models.DateTimeField(default=timezone.now)

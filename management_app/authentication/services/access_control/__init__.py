@@ -8,12 +8,14 @@ Available Components:
 - decorators: Organization-based access control decorators
 - require_organization_access: Function decorator for organization membership
 - require_sooqsense_organization: Convenience decorator for sooqsense organization
+- require_organization_admin_access: Decorator for organization admin access
 - RequireOrganizationMixin: Class-based view mixin for organization access control
 """
 
 from .decorators import (
     require_organization_access,
     require_sooqsense_organization,
+    require_organization_admin_access,
     RequireOrganizationMixin,
     get_user_selected_organization,
     set_selected_organization_context,
@@ -22,7 +24,8 @@ from .decorators import (
 
 __all__ = [
     'require_organization_access',
-    'require_sooqsense_organization', 
+    'require_sooqsense_organization',
+    'require_organization_admin_access',
     'RequireOrganizationMixin',
     'get_user_selected_organization',
     'set_selected_organization_context',

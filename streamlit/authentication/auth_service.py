@@ -291,16 +291,10 @@ class StreamlitAuthManager:
             user_orgs = user.get('organization_names', [])
             st.session_state.user_organizations = user_orgs
             
-            # Auto-select 'sooqsense' organization if user is a member
-            if 'sooqsense' in [org.lower() for org in user_orgs]:
-                # Find the exact case-sensitive name
-                sooqsense_org = next((org for org in user_orgs if org.lower() == 'sooqsense'), None)
-                st.session_state.selected_organization = sooqsense_org
-                logger.info(f"✅ Auto-selected 'sooqsense' organization")
-            elif user_orgs:
-                # Select first organization if sooqsense not available
+            # Auto-select first organization
+            if user_orgs:
                 st.session_state.selected_organization = user_orgs[0]
-                logger.warning(f"⚠️ User is not a member of 'sooqsense', selected: {user_orgs[0]}")
+                logger.info(f"✅ Auto-selected organization: {user_orgs[0]}")
             else:
                 st.session_state.selected_organization = None
                 logger.warning("⚠️ User has no organizations")
@@ -380,15 +374,15 @@ class StreamlitAuthManager:
         
         return headers
     
-    def has_sooqsense_access(self) -> bool:
-        """Check if user has access to sooqsense organization"""
+    def has_organization_access(self) -> bool:
+        """Check if user has access to any organization"""
         user_orgs = st.session_state.get('user_organizations', [])
-        return 'sooqsense' in [org.lower() for org in user_orgs]
+        return len(user_orgs) > 0
     
-    def is_sooqsense_selected(self) -> bool:
-        """Check if sooqsense organization is currently selected"""
+    def is_organization_selected(self) -> bool:
+        """Check if any organization is currently selected"""
         selected_org = st.session_state.get('selected_organization', '')
-        return selected_org.lower() == 'sooqsense' if selected_org else False
+        return bool(selected_org)
     
     def get_selected_organization(self) -> Optional[str]:
         """Get the currently selected organization"""
@@ -412,16 +406,10 @@ class StreamlitAuthManager:
             user_orgs = user.get('organization_names', [])
             st.session_state.user_organizations = user_orgs
             
-            # Auto-select 'sooqsense' organization if user is a member
-            if 'sooqsense' in [org.lower() for org in user_orgs]:
-                # Find the exact case-sensitive name
-                sooqsense_org = next((org for org in user_orgs if org.lower() == 'sooqsense'), None)
-                st.session_state.selected_organization = sooqsense_org
-                logger.info(f"✅ Auto-selected 'sooqsense' organization")
-            elif user_orgs:
-                # Select first organization if sooqsense not available
+            # Auto-select first organization
+            if user_orgs:
                 st.session_state.selected_organization = user_orgs[0]
-                logger.warning(f"⚠️ User is not a member of 'sooqsense', selected: {user_orgs[0]}")
+                logger.info(f"✅ Auto-selected organization: {user_orgs[0]}")
             else:
                 st.session_state.selected_organization = None
                 logger.warning("⚠️ User has no organizations")

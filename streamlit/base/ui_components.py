@@ -127,12 +127,11 @@ class UIComponents:
             st.info(f"📍 {org_name}")
             st.caption(f"Role: {role_display}")
         
-        # Check if sooqsense is selected
-        if selected_org and selected_org.lower() == 'sooqsense':
-            st.success("✅ Full Feature Access")
-        elif selected_org:
-            st.warning("⚠️ Limited Access")
-            st.caption("Switch to 'sooqsense' for full access")
+        # Show organization access status
+        if selected_org:
+            st.success("✅ Organization Access Available")
+        else:
+            st.warning("⚠️ No Organization Selected")
         
         st.markdown("---")
     

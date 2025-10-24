@@ -8,6 +8,11 @@ class LinkedinPost(models.Model):
     email = models.EmailField(default='')
     topic = models.CharField(max_length=255)
     content = models.TextField()
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -30,6 +35,11 @@ class LinkedinPostingContent(models.Model):
     image_urls = models.JSONField(default=list, blank=True)  # Store image URLs that were posted
     images_count = models.IntegerField(default=0)  # Number of images posted
     post_type = models.CharField(max_length=20, default='text')  # 'text' or 'image'
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
+    
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -58,6 +68,10 @@ class LinkedinAnalytics(models.Model):
     total_reposts = models.IntegerField(default=0)
     total_impressions = models.IntegerField(default=0)
     total_engagement = models.IntegerField(default=0)
+    
+    # Organization-based isolation
+    organization_id = models.CharField(max_length=255, null=True, blank=True, help_text="Clerk organization ID")
+    organization_name = models.CharField(max_length=255, null=True, blank=True, help_text="Organization name/slug")
     
     # Metadata
     last_updated = models.DateTimeField(default=timezone.now)

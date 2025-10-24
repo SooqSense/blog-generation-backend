@@ -8,20 +8,32 @@ from typing import Dict, Any, List, Optional
 from api_client.api_client import blog_api
 # Import markdown processor
 from base.markdown_processor import MarkdownProcessor
+# Import data management
+from .blog_data_management import BlogDataManagement
 
 class BlogGenerationFeature:
     """Blog Generation feature for Streamlit UI - API-based"""
     
     def __init__(self):
         self.api = blog_api
+        self.data_management = BlogDataManagement(blog_api)
     
     def render(self):
         """Main render method"""
         st.title("📝 Blog Generation")
         st.markdown("Create professional blog posts with AI-powered content generation.")
         
-        # Render blog generation directly without tabs
-        self.render_blog_generation()
+        # Create tabs for different features
+        tab1, tab2 = st.tabs([
+            "🚀 Generate Blog", 
+            "📊 Data Management"
+        ])
+        
+        with tab1:
+            self.render_blog_generation()
+        
+        with tab2:
+            self.data_management.render_data_management_tab()
     
     def render_blog_generation(self):
         """Render blog generation form"""

@@ -16,7 +16,7 @@ from .models import Directory, PDFDocument
 from .serializers import DirectorySerializer, PDFDocumentSerializer, PDFDocumentListSerializer
 
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_admin_access
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -71,8 +71,8 @@ def _is_sooqsense_admin(user):
     return False
 
 
-def _ensure_default_directories():
-    """Ensure default directories exist in the database."""
+def _ensure_default_directories(organization_id=None, organization_name=None):
+    """Ensure default directories exist in the database for the specified organization."""
     default_directories = [
         {
             'name': 'artilence_projects',
@@ -89,16 +89,19 @@ def _ensure_default_directories():
     for dir_data in default_directories:
         directory, created = Directory.objects.get_or_create(
             name=dir_data['name'],
+            organization_id=organization_id,
             defaults={
                 'description': dir_data['description'],
-                'is_default': dir_data['is_default']
+                'is_default': dir_data['is_default'],
+                'organization_id': organization_id,
+                'organization_name': organization_name
             }
         )
         
         if created:
-            logger.info(f"✅ Created default directory: {directory.name}")
+            logger.info(f"✅ Created default directory: {directory.name} for organization: {organization_name}")
         else:
-            logger.debug(f"📁 Default directory already exists: {directory.name}")
+            logger.debug(f"📁 Default directory already exists: {directory.name} for organization: {organization_name}")
 
 
 # =====================================================
@@ -113,20 +116,26 @@ def _ensure_default_directories():
     description="Get list of all directories. Automatically creates default directories (artilence_projects, client_projects) if they don't exist."
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_admin_access
 def list_directories_api(request):
-    """Get list of all directories. Creates default directories if they don't exist."""
+    """Get list of all directories for the selected organization. Creates default directories if they don't exist."""
     try:
-        # Ensure default directories exist
-        _ensure_default_directories()
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
         
-        directories = Directory.objects.all()
+        # Ensure default directories exist for this organization
+        _ensure_default_directories(organization_id, organization_name)
+        
+        # Get all directories for this organization
+        directories = Directory.objects.filter(organization_id=organization_id)
         serializer = DirectorySerializer(directories, many=True)
         
         return Response({
             "status": "success",
             "directories": serializer.data,
-            "total": len(serializer.data)
+            "total": len(serializer.data),
+            "organization": organization_name
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -148,26 +157,25 @@ def list_directories_api(request):
     description="Create a new directory. Only sooqsense organization administrators can create custom directories."
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_admin_access
 def create_directory_api(request):
-    """Create a new directory."""
-    # Check if user is admin of sooqsense organization
-    if not _is_sooqsense_admin(request.user):
-        return Response(
-            {"error": "Admin privileges required", "detail": "Only sooqsense organization administrators can create directories."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
+    """Create a new directory for the selected organization."""
     try:
-        # Add created_by_user_id to the data
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
+        
+        # Add organization and user info to the data
         data = request.data.copy()
         data['created_by_user_id'] = request.user.id
+        data['organization_id'] = organization_id
+        data['organization_name'] = organization_name
         
         serializer = DirectorySerializer(data=data)
         
         if serializer.is_valid():
             directory = serializer.save()
-            logger.info(f"Created directory: {directory.name} by user {request.user.username}")
+            logger.info(f"Created directory: {directory.name} by user {request.user.username} for organization: {organization_name}")
             
             return Response({
                 "status": "success",
@@ -198,18 +206,16 @@ def create_directory_api(request):
     description="Delete a directory. Cannot delete default directories. All documents in the directory must be deleted first."
 )
 @api_view(["DELETE"])
-@require_sooqsense_organization
+@require_organization_admin_access
 def delete_directory_api(request, directory_id):
-    """Delete a directory."""
-    # Check if user is admin of sooqsense organization
-    if not _is_sooqsense_admin(request.user):
-        return Response(
-            {"error": "Admin privileges required", "detail": "Only sooqsense organization administrators can delete directories."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
+    """Delete a directory for the selected organization."""
     try:
-        directory = Directory.objects.get(id=directory_id)
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
+        
+        # Get directory and verify it belongs to the organization
+        directory = Directory.objects.get(id=directory_id, organization_id=organization_id)
         
         # Check if it's a default directory
         if directory.is_default:
@@ -225,7 +231,7 @@ def delete_directory_api(request, directory_id):
         
         directory_name = directory.name
         directory.delete()
-        logger.info(f"Deleted directory: {directory_name} by user {request.user.username}")
+        logger.info(f"Deleted directory: {directory_name} by user {request.user.username} for organization: {organization_name}")
         
         return Response({
             "status": "success",
@@ -275,19 +281,16 @@ def delete_directory_api(request, directory_id):
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
-@require_sooqsense_organization
+@require_organization_admin_access
 def upload_document_api(request):
-    """Upload and process document files to a specific directory."""
-    # Check if user is admin of sooqsense organization
-    if not _is_sooqsense_admin(request.user):
-        return Response(
-            {"error": "Admin privileges required", "detail": "Only sooqsense organization administrators can upload documents."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
+    """Upload and process document files to a specific directory for the selected organization."""
     try:
-        # Ensure default directories exist
-        _ensure_default_directories()
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
+        
+        # Ensure default directories exist for this organization
+        _ensure_default_directories(organization_id, organization_name)
         
         if 'file' not in request.FILES:
             return Response(
@@ -304,12 +307,12 @@ def upload_document_api(request):
         file = request.FILES['file']
         directory_id = request.data['directory_id']
         
-        # Get directory
+        # Get directory and verify it belongs to the organization
         try:
-            directory = Directory.objects.get(id=directory_id)
+            directory = Directory.objects.get(id=directory_id, organization_id=organization_id)
         except Directory.DoesNotExist:
             return Response(
-                {"error": f"Directory with id {directory_id} not found."},
+                {"error": f"Directory with id {directory_id} not found in your organization."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         
@@ -413,6 +416,8 @@ def upload_document_api(request):
             user_id=request.user.id,
             username=request.user.username,
             email=request.user.email,
+            organization_id=organization_id,
+            organization_name=organization_name,
             file_name=file.name,
             file_type=extraction_result['file_type'],
             content=extraction_result['content'],
@@ -490,26 +495,30 @@ def upload_document_api(request):
     description="List documents. Optionally filter by directory_id to get documents from a specific directory."
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_admin_access
 def list_documents_api(request):
-    """List documents, optionally filtered by directory."""
+    """List documents for the selected organization, optionally filtered by directory."""
     try:
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
+        
         directory_id = request.query_params.get('directory_id', None)
         
         if directory_id:
-            # Filter by directory
+            # Filter by directory within the organization
             try:
-                directory = Directory.objects.get(id=directory_id)
-                documents = PDFDocument.objects.filter(directory=directory, user_id=request.user.id)
-                filter_info = f"directory '{directory.name}'"
+                directory = Directory.objects.get(id=directory_id, organization_id=organization_id)
+                documents = PDFDocument.objects.filter(directory=directory, organization_id=organization_id)
+                filter_info = f"directory '{directory.name}' in organization '{organization_name}'"
             except Directory.DoesNotExist:
                 return Response({
-                    "error": f"Directory with id {directory_id} not found"
+                    "error": f"Directory with id {directory_id} not found in your organization"
                 }, status=status.HTTP_404_NOT_FOUND)
         else:
-            # Get all documents for user
-            documents = PDFDocument.objects.filter(user_id=request.user.id)
-            filter_info = "all directories"
+            # Get all documents for the organization
+            documents = PDFDocument.objects.filter(organization_id=organization_id)
+            filter_info = f"all directories in organization '{organization_name}'"
         
         serializer = PDFDocumentListSerializer(documents, many=True)
         
@@ -517,7 +526,8 @@ def list_documents_api(request):
             "status": "success",
             "documents": serializer.data,
             "total": len(serializer.data),
-            "filter": filter_info
+            "filter": filter_info,
+            "organization": organization_name
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -541,23 +551,20 @@ def list_documents_api(request):
     description="Delete a document completely. This removes the document from the database, S3 bucket, and Pinecone vector index."
 )
 @api_view(["DELETE"])
-@require_sooqsense_organization
+@require_organization_admin_access
 def delete_document_api(request, document_id):
-    """Delete a document from database, S3, and Pinecone."""
-    # Check if user is admin of sooqsense organization
-    if not _is_sooqsense_admin(request.user):
-        return Response(
-            {"error": "Admin privileges required", "detail": "Only sooqsense organization administrators can delete documents."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
+    """Delete a document from database, S3, and Pinecone for the selected organization."""
     try:
-        # Get the document
+        # Get organization context from request
+        organization_id = getattr(request, 'organization_id', None)
+        organization_name = getattr(request, 'selected_organization', None)
+        
+        # Get the document and verify it belongs to the organization
         try:
-            document = PDFDocument.objects.get(id=document_id, user_id=request.user.id)
+            document = PDFDocument.objects.get(id=document_id, organization_id=organization_id)
         except PDFDocument.DoesNotExist:
             return Response({
-                "error": f"Document with id {document_id} not found or you don't have permission to delete it"
+                "error": f"Document with id {document_id} not found in your organization"
             }, status=status.HTTP_404_NOT_FOUND)
         
         file_name = document.file_name

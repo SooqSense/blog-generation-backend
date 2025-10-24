@@ -22,7 +22,7 @@ from .serializers import (
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ from .service.edit_images import edit_image_with_flux, convert_image_to_base64
     description="Generate one or more professional images using FLUX AI generation models. Choose between FLUX Dev (28 steps, high quality) or FLUX Schnell (4 steps, fast generation) models for detailed, artistic image generation.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def generate_image_api(request):
     """
     Generate one or more professional images using FLUX AI generation models.
@@ -100,18 +100,24 @@ def generate_image_api(request):
 
         logger.info(f"Successfully generated {total_generated} images")
 
+        # Get organization information
+        from management_app.authentication.services.access_control import get_user_selected_organization
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         image_generation = ImageGeneration(
             user_id=request.user.id,
             username=request.user.username,
             email=request.user.email,
             prompt=prompt,
-            image_url=images_data[0]["image_url"] if images_data else "",  # Legacy field
             image_urls=[img["image_url"] for img in images_data],
             images_count=total_generated,
             enhanced_prompts=[img["enhanced_prompt"] for img in images_data],
             generation_method=generation_method,
             image_style=model,
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         image_generation.save()
@@ -196,7 +202,7 @@ def generate_image_api(request):
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
-@require_sooqsense_organization
+@require_organization_access()
 def edit_image_api(request):
     """Edit an uploaded image using FLUX AI based on the provided prompt and optional keywords."""
     try:
@@ -231,6 +237,11 @@ def edit_image_api(request):
 
         logger.info("Successfully edited image")
 
+        # Get organization information
+        from management_app.authentication.services.access_control import get_user_selected_organization
+        organization_name = get_user_selected_organization(request)
+        organization_id = getattr(request.user, 'organization_id', None)
+        
         # Save to database
         image_editing = ImageEditing(
             user_id=request.user.id,
@@ -242,6 +253,8 @@ def edit_image_api(request):
             image_url=edited_image_url,
             enhanced_prompt=enhanced_prompt,
             edit_status="success",
+            organization_id=organization_id,
+            organization_name=organization_name,
             created_at=timezone.now(),
         )
         image_editing.save()
@@ -280,3 +293,97 @@ def edit_image_api(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@extend_schema(
+    description="List all generated images for the authenticated user's organization",
+    responses={
+        200: OpenApiResponse(description="List of generated images"),
+        401: OpenApiResponse(description="Authentication required"),
+        403: OpenApiResponse(description="Organization access required"),
+    },
+)
+@api_view(['GET'])
+@require_organization_access()
+def list_images_api(request):
+    """List all generated images for the user's organization"""
+    try:
+        # Get images for the user's organization
+        images = ImageGeneration.objects.filter(
+            organization_id=request.user.organization_id
+        ).order_by('-created_at')
+        
+        # Serialize the data
+        image_data = []
+        for image in images:
+            image_data.append({
+                'id': image.id,
+                'title': image.prompt[:50] + "..." if len(image.prompt) > 50 else image.prompt,
+                'prompt': image.prompt,
+                'image_urls': image.image_urls if image.image_urls else [],
+                'images_count': image.images_count,
+                'generation_method': image.generation_method,
+                'image_style': image.image_style,
+                'created_at': image.created_at.isoformat(),
+                'username': request.user.username,
+                'organization_name': request.user.organization_name,
+            })
+        
+        return Response({
+            'success': True,
+            'data': image_data,
+            'message': f'Found {len(image_data)} images'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error listing images: {str(e)}")
+        return Response(
+            {"error": f"Failed to list images: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@extend_schema(
+    description="Delete multiple images by IDs",
+    responses={
+        200: OpenApiResponse(description="Images deleted successfully"),
+        400: OpenApiResponse(description="Invalid request data"),
+        401: OpenApiResponse(description="Authentication required"),
+        403: OpenApiResponse(description="Organization access required"),
+    },
+)
+@api_view(['DELETE'])
+@require_organization_access()
+def delete_images_api(request):
+    """Delete multiple images by IDs"""
+    try:
+        image_ids = request.data.get('ids', [])
+        
+        if not image_ids:
+            return Response(
+                {"error": "No image IDs provided"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Get images for the user's organization
+        images = ImageGeneration.objects.filter(
+            id__in=image_ids,
+            organization_id=request.user.organization_id
+        )
+        
+        deleted_count = images.count()
+        images.delete()
+        
+        return Response({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} images',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error deleting images: {str(e)}")
+        return Response(
+            {"error": f"Failed to delete images: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+

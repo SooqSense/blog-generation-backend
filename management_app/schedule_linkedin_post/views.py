@@ -11,7 +11,7 @@ from .models import SchedulePosts
 
 # Set up logging
 # Import organization access control
-from management_app.authentication.services.access_control import require_sooqsense_organization
+from management_app.authentication.services.access_control import require_organization_access
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ from .service.tasks import schedule_linkedin_post_task
     description="Schedule multiple LinkedIn posts to be published at a specific date and time with delays between posts. Requires LinkedIn authentication and validates the scheduled time is in the future.",
 )
 @api_view(["POST"])
-@require_sooqsense_organization
+@require_organization_access()
 def schedule_linkedin_post_api(request):
     """Schedule multiple LinkedIn posts to be published at a specific date and time."""
     try:
@@ -156,7 +156,7 @@ def schedule_linkedin_post_api(request):
     description="Get all scheduled LinkedIn posts for the authenticated user, including their status and details.",
 )
 @api_view(["GET"])
-@require_sooqsense_organization
+@require_organization_access()
 def get_scheduled_posts_api(request):
     """Get all scheduled LinkedIn posts for the authenticated user."""
     try:
@@ -223,7 +223,7 @@ def get_scheduled_posts_api(request):
     description="Cancel a scheduled LinkedIn post. Only posts with 'scheduled' status can be cancelled.",
 )
 @api_view(["DELETE"])
-@require_sooqsense_organization
+@require_organization_access()
 def cancel_scheduled_post_api(request, schedule_id):
     """Cancel a scheduled LinkedIn post."""
     try:
