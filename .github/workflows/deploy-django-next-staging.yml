@@ -74,8 +74,8 @@ jobs:
             --set-env-vars="PINECONE_INDEX_NAME=artilence-production" \
             --set-env-vars="S3_BUCKET_NAME=sooqsense" \
             --set-env-vars="AWS_REGION=us-east-1" \
-            --set-env-vars="AWS_ACCESS_KEY_ID=AKIAT7JJVEEM4IU2334A" \
-            --set-env-vars="AWS_SECRET_ACCESS_KEY=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" \
+            --set-env-vars="AWS_ACCESS_KEY_ID=AKIAT7JJVEEMYAEX2UGD" \
+            --set-env-vars="AWS_SECRET_ACCESS_KEY=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" \
             --set-env-vars="REDIS_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
             --set-env-vars="CELERY_BROKER_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
             --set-env-vars="CELERY_RESULT_BACKEND=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
