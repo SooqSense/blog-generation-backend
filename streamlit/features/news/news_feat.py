@@ -2,7 +2,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 
 # Import API client
-from api_client.api_client import news_api
+from api_client import news_api
 # Import markdown processor
 from base.markdown_processor import MarkdownProcessor
 # Import data management

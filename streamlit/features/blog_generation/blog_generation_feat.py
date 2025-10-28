@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 # Import API client
-from api_client.api_client import blog_api
+from api_client import blog_api
 # Import markdown processor
 from base.markdown_processor import MarkdownProcessor
 # Import data management
@@ -126,7 +126,11 @@ class BlogGenerationFeature:
                 help="Select target audience for the blog post"
             )
             
-            # Submit button
+            # Submit button with toggle for streaming
+            col_btn1, col_btn2 = st.columns([3, 1])
+            with col_btn1:
+                use_streaming = st.checkbox("⚡ Use Real-time Streaming", value=True, help="Stream generation progress in real-time")
+            
             submitted = st.form_submit_button("🚀 Generate Blog Post", use_container_width=True)
             
             if submitted:
@@ -154,11 +158,14 @@ class BlogGenerationFeature:
                 if sample_blog_url:
                     blog_data["sample_blog_url"] = sample_blog_url
                 
-                # Generate blog
-                self.generate_blog_post(**blog_data)
+                # Generate blog with or without streaming
+                if use_streaming:
+                    self.generate_blog_post_stream(blog_data)
+                else:
+                    self.generate_blog_post(**blog_data)
     
     def generate_blog_post(self, **kwargs):
-        """Generate blog post using API"""
+        """Generate blog post using API (non-streaming)"""
         with st.spinner("🤖 Generating blog post... This may take up to 5 minutes for complex content."):
             try:
                 response = self.api.generate_blog(**kwargs)
@@ -171,6 +178,47 @@ class BlogGenerationFeature:
                     
             except Exception as e:
                 st.error(f"❌ Error generating blog: {str(e)}")
+    
+    def generate_blog_post_stream(self, blog_data: Dict[str, Any]):
+        """Generate blog post using WebSocket streaming"""
+        # Create status container
+        status_placeholder = st.empty()
+        result_placeholder = st.empty()
+        
+        current_stage = {"stage": "", "message": ""}
+        result_data = {"data": None}
+        
+        def handle_status(stage: str, message: str):
+            """Handle status updates"""
+            current_stage["stage"] = stage
+            current_stage["message"] = message
+            status_placeholder.info(f"**{message}**")
+        
+        def handle_complete(data: Dict[str, Any]):
+            """Handle completion"""
+            result_data["data"] = data
+            status_placeholder.success("✅ Blog generation completed successfully!")
+        
+        def handle_error(error: str):
+            """Handle error"""
+            status_placeholder.error(f"❌ {error}")
+        
+        try:
+            # Start streaming
+            self.api.generate_blog_stream(
+                blog_data=blog_data,
+                on_status=handle_status,
+                on_complete=handle_complete,
+                on_error=handle_error
+            )
+            
+            # Display result if successful
+            if result_data["data"]:
+                result_placeholder.empty()
+                self.display_generated_blog_stream(result_data["data"])
+                
+        except Exception as e:
+            st.error(f"❌ Error during streaming: {str(e)}")
     
     def display_generated_blog(self, blog_data: Dict[str, Any]):
         """Display the generated blog post"""
@@ -194,4 +242,33 @@ class BlogGenerationFeature:
         
         # Display sources if available
         MarkdownProcessor.display_sources(blog_data.get("research_sources", []), "📚 Research Sources")
+    
+    def display_generated_blog_stream(self, blog_data: Dict[str, Any]):
+        """Display the streamed blog generation result"""
+        st.divider()
+        
+        # Display metadata
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📊 Word Count", blog_data.get('word_count', 0))
+        with col2:
+            st.metric("🖼️ Images", blog_data.get('images_count', 0))
+        with col3:
+            st.metric("📚 Sources", blog_data.get('sources_count', 0))
+        
+        # Display content
+        st.subheader("📝 Generated Blog Content")
+        content = blog_data.get('content', '')
+        if content:
+            st.markdown(content)
+            
+            # Copy button
+            st.download_button(
+                label="📥 Download Markdown",
+                data=content,
+                file_name=f"blog_{blog_data.get('topic', 'generated')}.md",
+                mime="text/markdown"
+            )
+        else:
+            st.warning("No content generated")
     
