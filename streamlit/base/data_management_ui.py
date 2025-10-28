@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional, Callable
 from datetime import datetime
 import json
 
-from api_client.api_client import APIClient
+from api_client import APIClient
 
 
 class DataManagementUI:
@@ -271,8 +271,15 @@ class DataManagementUI:
         """Display action buttons for the card"""
         st.markdown("**Actions:**")
         
-        # Download PDF button
-        if st.button("📥 PDF", key=f"pdf_card_{index}", help="Download as PDF"):
+        # Download button (PDF or MD depending on feature)
+        if self.feature_name in ['upwork', 'blog']:
+            download_label = "📥 MD"
+            download_help = "Download as Markdown"
+        else:
+            download_label = "📥 PDF"
+            download_help = "Download as PDF"
+            
+        if st.button(download_label, key=f"pdf_card_{index}", help=download_help):
             self.download_single_item_pdf(item)
         
         # Delete button
@@ -288,34 +295,45 @@ class DataManagementUI:
                     st.markdown(f"**{key.replace('_', ' ').title()}:** {value}")
     
     def download_single_item_pdf(self, item: Dict[str, Any]):
-        """Download PDF for a single item"""
+        """Download file for a single item (PDF or MD depending on feature)"""
         item_id = item.get('id')
         if item_id:
             try:
-                # Use the new download_pdf method if available
-                if hasattr(self, 'download_pdf'):
+                # Use the appropriate download method based on feature
+                if self.feature_name == 'blog' and hasattr(self, 'download_md'):
+                    self.download_md(item_id)
+                elif hasattr(self, 'download_pdf'):
                     self.download_pdf(item_id)
                 else:
                     # Fallback to API method
                     response = self.get_api_download_method(item_id)
                     
-                    if response and hasattr(response, 'content') and response.content:
-                        # Create a filename based on the item
-                        filename = f"{item.get('title', item.get('topic', 'Item')).replace(' ', '_')}_{item_id}.pdf"
+                    if response:
+                        # Determine file type and MIME based on feature
+                        if self.feature_name in ['upwork', 'blog']:
+                            # For Upwork proposals and blog posts, download as MD
+                            filename = f"{item.get('title', item.get('topic', 'Item')).replace(' ', '_')}_{item_id}.md"
+                            mime_type = "text/markdown"
+                            label = "📥 Download MD"
+                        else:
+                            # For other features, download as PDF
+                            filename = f"{item.get('title', item.get('topic', 'Item')).replace(' ', '_')}_{item_id}.pdf"
+                            mime_type = "application/pdf"
+                            label = "📥 Download PDF"
                         
                         # Use Streamlit's download button to trigger the download
                         st.download_button(
-                            label="📥 Download PDF",
-                            data=response.content,
+                            label=label,
+                            data=response,
                             file_name=filename,
-                            mime="application/pdf",
-                            help=f"Download PDF for {item.get('title', item.get('topic', 'Item'))}"
+                            mime=mime_type,
+                            help=f"Download {filename.split('.')[-1].upper()} for {item.get('title', item.get('topic', 'Item'))}"
                         )
-                        st.success(f"PDF ready for download: {filename}")
+                        st.success(f"File ready for download: {filename}")
                     else:
-                        st.error(f"Failed to generate PDF for {item.get('title', item.get('topic', 'Item'))}")
+                        st.error(f"Failed to generate file for {item.get('title', item.get('topic', 'Item'))}")
             except Exception as e:
-                st.error(f"Error downloading PDF: {str(e)}")
+                st.error(f"Error downloading file: {str(e)}")
     
     def download_single_item_images(self, item: Dict[str, Any]):
         """Download images for a single item"""

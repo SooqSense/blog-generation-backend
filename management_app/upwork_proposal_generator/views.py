@@ -55,7 +55,7 @@ def create_upwork_proposal_api(request):
         organization_name = get_user_selected_organization(request)
         organization_id = getattr(request.user, 'organization_id', None)
         
-        # Create the proposal
+        # Create the proposal (initial record)
         proposal = serializer.save(
             user_id=request.user.id,
             username=request.user.username,
@@ -64,21 +64,19 @@ def create_upwork_proposal_api(request):
             organization_name=organization_name,
             status='generating'
         )
-        
-        # Trigger proposal generation in background
+
+        # Synchronous generation: produce content inline and return completed result
         try:
-            import threading
-            thread = threading.Thread(target=_generate_proposal_content, args=(proposal,))
-            thread.daemon = True
-            thread.start()
-            logger.info(f"🚀 Started proposal generation thread for ID: {proposal.id}")
+            _generate_proposal_content(proposal)  # updates and saves proposal
         except Exception as e:
-            logger.error(f"❌ Failed to start proposal generation for {proposal.id}: {str(e)}")
-            proposal.status = 'failed'
-            proposal.error_message = str(e)
-            proposal.save()
-        
-        # Return the created proposal
+            logger.error(f"❌ Proposal generation failed for {proposal.id}: {str(e)}")
+            # Ensure proposal reflects failure state
+            proposal.refresh_from_db()
+            response_serializer = UpworkProposalResponseSerializer(proposal)
+            return Response(response_serializer.data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Reload and return the completed proposal
+        proposal.refresh_from_db()
         response_serializer = UpworkProposalResponseSerializer(proposal)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         

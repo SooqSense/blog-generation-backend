@@ -1,4 +1,6 @@
 import uuid
+import json
+import asyncio
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
@@ -6,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 import logging
+from django.contrib.auth import get_user_model
 
 # Import models
 from .models import ChatSession, ChatMessage
@@ -15,6 +18,7 @@ from .models import ChatSession, ChatMessage
 from management_app.authentication.services.access_control import require_organization_access
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 # Import local services
 from .service.agent.agent import project_chatbot
@@ -160,6 +164,7 @@ def chat_api(request):
         )
 
 
+
 @extend_schema(
     responses={
         200: OpenApiResponse(
@@ -211,3 +216,5 @@ def get_user_sessions_api(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+

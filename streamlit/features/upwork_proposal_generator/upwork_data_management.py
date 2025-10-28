@@ -24,7 +24,7 @@ class UpworkDataManagement(DataManagementUI):
         return self.api.delete_upwork_proposals(ids)
     
     def download_pdf(self, item_id: int):
-        """Download Upwork proposal as PDF using Streamlit download service"""
+        """Download Upwork proposal as MD file using Streamlit download service"""
         try:
             # Get Upwork proposal details
             proposal_data = self.api.get_upwork_proposal(item_id)
@@ -32,20 +32,20 @@ class UpworkDataManagement(DataManagementUI):
                 # The API returns the proposal data directly, not wrapped in success/data
                 proposal_info = proposal_data
                 
-                # Generate PDF using the download service
-                pdf_bytes = download_service.generate_upwork_proposal_pdf(proposal_info)
+                # Generate MD content using the download service
+                md_content = download_service.generate_upwork_proposal_md(proposal_info)
                 
                 # Create filename
                 title = proposal_info.get('title', 'upwork_proposal').replace(' ', '_')
                 company = proposal_info.get('company_name', 'unknown_company').replace(' ', '_')
-                filename = f"upwork_proposal_{company}_{title}_{item_id}.pdf"
+                filename = f"upwork_proposal_{company}_{title}_{item_id}.md"
                 
                 # Use Streamlit's download button
                 st.download_button(
-                    label="📄 Download PDF",
-                    data=pdf_bytes,
+                    label="📄 Download MD",
+                    data=md_content,
                     file_name=filename,
-                    mime="application/pdf",
+                    mime="text/markdown",
                     key=f"download_upwork_{item_id}"
                 )
                 return True
@@ -53,7 +53,7 @@ class UpworkDataManagement(DataManagementUI):
                 st.error("Failed to retrieve Upwork proposal data")
                 return False
         except Exception as e:
-            st.error(f"Error generating PDF: {str(e)}")
+            st.error(f"Error generating MD file: {str(e)}")
             return False
     
     def get_api_download_method(self, item_id: int):
@@ -62,13 +62,13 @@ class UpworkDataManagement(DataManagementUI):
             # Get the proposal data first
             proposal_data = self.api.get_upwork_proposal(item_id)
             if proposal_data:
-                # Generate PDF using the download service
-                pdf_content = download_service.generate_upwork_proposal_pdf(proposal_data)
-                return pdf_content
+                # Generate MD content using the download service
+                md_content = download_service.generate_upwork_proposal_md(proposal_data)
+                return md_content
             else:
                 return None
         except Exception as e:
-            st.error(f"Error generating PDF: {str(e)}")
+            st.error(f"Error generating MD file: {str(e)}")
             return None
     
     def supports_image_download(self) -> bool:

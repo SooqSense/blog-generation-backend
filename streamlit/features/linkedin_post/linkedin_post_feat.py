@@ -2,7 +2,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 
 # Import API client
-from api_client.api_client import linkedin_api
+from api_client import linkedin_api
 # Import data management
 from .linkedin_data_management import LinkedInDataManagement
 
