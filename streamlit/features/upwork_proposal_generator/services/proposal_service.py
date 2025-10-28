@@ -4,7 +4,7 @@ Service layer for Upwork proposal operations.
 
 import streamlit as st
 from typing import Dict, Any, Optional, List
-from api_client.api_client import upwork_api
+from api_client import upwork_api
 
 
 class UpworkProposalService:
@@ -15,23 +15,19 @@ class UpworkProposalService:
         self.api = upwork_api
     
     
-    def create_proposal_saved(self, **kwargs) -> bool:
-        """Create proposal and save to database."""
-        with st.spinner("💼 Creating and generating proposal... This may take up to 5 minutes for complex proposals."):
+    def create_proposal_saved(self, **kwargs) -> Optional[Dict[str, Any]]:
+        """Create proposal and return created record (synchronous backend)."""
+        with st.spinner("💼 Generating proposal..."):
             try:
                 response = self.api.create_proposal(**kwargs)
-                
                 if response:
                     st.success("✅ Proposal created successfully!")
-                    st.info("🔄 Proposal is being generated in the background. Check the Proposal History tab to see the progress.")
-                    return True
-                else:
-                    st.error("❌ Failed to create proposal")
-                    return False
-                    
+                    return response  # Backend returns the full proposal payload
+                st.error("❌ Failed to create proposal")
+                return None
             except Exception as e:
                 st.error(f"❌ Error creating proposal: {str(e)}")
-                return False
+                return None
     
     
     

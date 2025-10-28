@@ -22,6 +22,7 @@ AUTH_USER_MODEL = "authentication.User"
 
 # Application definition
 INSTALLED_APPS = [
+    "daphne",  # MUST be first for ASGI/WebSocket support
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -47,6 +48,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "corsheaders",  # CORS headers
     "django_celery_beat",  # Celery beat for scheduled tasks
+    "channels",  # WebSocket support
 ]
 
 MIDDLEWARE = [
@@ -80,6 +82,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "management_app.config.wsgi.application"
+ASGI_APPLICATION = "management_app.config.asgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -362,3 +365,13 @@ LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchai
 LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
 
 BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
+
+# Channels Configuration for WebSocket support
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.getenv("REDIS_URL", "redis://localhost:6379")],
+        },
+    },
+}

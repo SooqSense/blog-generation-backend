@@ -12,6 +12,11 @@ load_dotenv()
 # API Configuration
 API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
+# WebSocket base URL mirrors API_BASE_URL protocol and host
+WS_BASE_URL = (
+    API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+)
+
 # Available API endpoints based on management_app structure
 API_ENDPOINTS = {
     # Blog Generation
@@ -60,7 +65,14 @@ API_ENDPOINTS = {
     
     # Chatbot
     'chatbot': f"{API_BASE_URL}/chat/chat/",
+    'chatbot_websocket': f"{WS_BASE_URL}/ws/chat/",
     'chatbot_sessions': f"{API_BASE_URL}/chat/sessions/",
+    
+    # WebSocket Streaming (Centralized)
+    'streaming_websocket': f"{WS_BASE_URL}/ws/stream/",
+    'blog_websocket': f"{WS_BASE_URL}/ws/blog/",
+    'linkedin_websocket': f"{WS_BASE_URL}/ws/linkedin/",
+    'upwork_websocket': f"{WS_BASE_URL}/ws/upwork/",
     
     # Upwork Proposals
     'upwork_proposals': f"{API_BASE_URL}/upwork/proposals/",

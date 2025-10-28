@@ -381,89 +381,7 @@ class StreamlitDownloadService:
             logger.error(f"Error generating LinkedIn post PDF: {str(e)}")
             raise
     
-    def generate_upwork_proposal_pdf(self, proposal_data: Dict[str, Any]) -> bytes:
-        """Generate PDF for Upwork proposal"""
-        try:
-            buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
-            story = []
-            
-            # Add title
-            story.append(Paragraph("Upwork Proposal", self.styles['BlogTitle']))
-            story.append(Spacer(1, 12))
-            
-            # Add metadata
-            metadata = f"Project: {proposal_data.get('title', 'Unknown')}<br/>"
-            metadata += f"Company: {proposal_data.get('company_name', 'Unknown')}<br/>"
-            metadata += f"Client: {proposal_data.get('client_name', 'Unknown')}<br/>"
-            metadata += f"Author: {proposal_data.get('username', 'Unknown')}<br/>"
-            metadata += f"Created: {proposal_data.get('created_at', 'Unknown')}"
-            story.append(Paragraph(metadata, self.styles['BlogContent']))
-            story.append(Spacer(1, 24))
-            
-            # Add requirements
-            requirements = proposal_data.get('requirements', '')
-            if requirements:
-                story.append(Paragraph("<b>Project Requirements</b>", self.styles['BlogHeading']))
-                story.append(Paragraph(requirements, self.styles['BlogContent']))
-                story.append(Spacer(1, 24))
-            
-            # Add proposal content
-            proposal_content = proposal_data.get('proposal_content', '')
-            if proposal_content:
-                story.append(Paragraph("<b>Proposal</b>", self.styles['BlogHeading']))
-                # Parse markdown content into structured elements
-                elements = self._parse_markdown_content(proposal_content)
-                
-                for element in elements:
-                    if element['type'] == 'heading':
-                        level = element['level']
-                        heading_text = self._process_inline_formatting(element['content'])
-                        style_name = self._get_heading_style(level)
-                        story.append(Paragraph(heading_text, self.styles[style_name]))
-                        story.append(Spacer(1, 12))
-                    
-                    elif element['type'] == 'paragraph':
-                        paragraph_text = self._process_inline_formatting(element['content'])
-                        story.append(Paragraph(paragraph_text, self.styles['BlogContent']))
-                        story.append(Spacer(1, 12))
-                    
-                    elif element['type'] == 'image':
-                        self._add_image_to_story(story, element['url'], element['alt_text'])
-                    
-                    elif element['type'] == 'ordered_list':
-                        list_items = []
-                        for item in element['items']:
-                            item_text = re.sub(r'^\d+\.\s*', '', item)
-                            item_text = self._process_inline_formatting(item_text)
-                            list_items.append(ListItem(Paragraph(item_text, self.styles['BlogContent'])))
-                        story.append(ListFlowable(list_items, bulletType='1', start='1', leftIndent=0.2*inch))
-                        story.append(Spacer(1, 12))
-                    
-                    elif element['type'] == 'unordered_list':
-                        list_items = []
-                        for item in element['items']:
-                            item_text = re.sub(r'^[-*]\s*', '', item)
-                            item_text = self._process_inline_formatting(item_text)
-                            list_items.append(ListItem(Paragraph(item_text, self.styles['BlogContent'])))
-                        story.append(ListFlowable(list_items, bulletType='bullet', leftIndent=0.2*inch))
-                        story.append(Spacer(1, 12))
-            
-            # Add contact information
-            contact_info = proposal_data.get('contact_information', '')
-            if contact_info:
-                story.append(Spacer(1, 24))
-                story.append(Paragraph("<b>Contact Information</b>", self.styles['BlogHeading']))
-                story.append(Paragraph(contact_info, self.styles['BlogContent']))
-            
-            # Build PDF
-            doc.build(story)
-            buffer.seek(0)
-            return buffer.getvalue()
-            
-        except Exception as e:
-            logger.error(f"Error generating Upwork proposal PDF: {str(e)}")
-            raise
+    # Removed PDF generation for Upwork proposals. Use generate_upwork_proposal_md() instead.
     
     def _parse_markdown_content(self, content: str) -> List[Dict[str, Any]]:
         """Parse markdown content into structured elements"""
@@ -686,6 +604,38 @@ This ZIP file contains {metadata['images_count']} generated images and metadata.
             
         except Exception as e:
             logger.error(f"Error generating image ZIP: {str(e)}")
+            raise
+    
+    def generate_upwork_proposal_md(self, proposal_data: Dict[str, Any]) -> str:
+        """Generate Markdown content for Upwork proposal - returns raw MD content from database"""
+        try:
+            # Get the raw proposal content from the database
+            proposal_content = proposal_data.get('proposal_content', '')
+            
+            if not proposal_content:
+                # If no proposal content, create a basic structure
+                proposal_content = f"""# Upwork Proposal
+
+**Project:** {proposal_data.get('title', 'Unknown Project')}
+**Company:** {proposal_data.get('company_name', 'Unknown Company')}
+**Client:** {proposal_data.get('client_name', 'Unknown Client')}
+**Author:** {proposal_data.get('username', 'Unknown')}
+**Created:** {proposal_data.get('created_at', 'Unknown')}
+
+## Project Requirements
+{proposal_data.get('requirements', 'No requirements provided')}
+
+## Proposal Content
+No proposal content available yet. Please wait for the AI to generate the proposal.
+
+## Contact Information
+{proposal_data.get('contact_information', 'No contact information provided')}
+"""
+            
+            return proposal_content
+            
+        except Exception as e:
+            logger.error(f"Error generating Upwork proposal MD: {str(e)}")
             raise
 
 

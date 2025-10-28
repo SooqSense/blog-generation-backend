@@ -2,7 +2,7 @@ import streamlit as st
 from typing import Dict, Any, Optional, List
 
 # Import API client
-from api_client.api_client import knowledge_base_api
+from api_client import knowledge_base_api
 
 class KnowledgeBaseFeature:
     """Knowledge Base feature for Streamlit UI with Directory Management"""
