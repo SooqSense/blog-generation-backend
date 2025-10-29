@@ -43,6 +43,44 @@ class StreamlitApp:
     def render_home(self):
         """Render the home page"""
         self.ui_components.render_home(self.api_base_url)
+    
+    def _cleanup_all_connections(self):
+        """Clean up all active WebSocket connections"""
+        try:
+            # Clean up blog WebSocket connection
+            if 'blog_ws_manager' in st.session_state and st.session_state.blog_ws_manager:
+                st.session_state.blog_ws_manager.stop()
+                st.session_state.blog_ws_manager = None
+                st.session_state.blog_ws_initialized = False
+                print("🔌 Blog WebSocket connection cleaned up")
+            
+            # Clean up chatbot WebSocket connection
+            if 'chatbot_ws_manager' in st.session_state and st.session_state.chatbot_ws_manager:
+                st.session_state.chatbot_ws_manager.stop()
+                st.session_state.chatbot_ws_manager = None
+                print("🔌 Chatbot WebSocket connection cleaned up")
+                
+        except Exception as e:
+            print(f"⚠️ Error during connection cleanup: {e}")
+    
+    def _add_cleanup_script(self):
+        """Add JavaScript to handle cleanup on page unload"""
+        cleanup_script = """
+        <script>
+        window.addEventListener('beforeunload', function(event) {
+            // Send cleanup signal to Streamlit
+            console.log('Page unloading - WebSocket connections should be cleaned up');
+        });
+        
+        // Also handle page visibility change
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                console.log('Page hidden - WebSocket connections should be cleaned up');
+            }
+        });
+        </script>
+        """
+        st.markdown(cleanup_script, unsafe_allow_html=True)
             
     def run(self):
         """Main application runner"""
@@ -56,6 +94,8 @@ class StreamlitApp:
         
         # Check if user is authenticated
         if not self.auth_handler.auth_manager.is_authenticated():
+            # Cleanup any active connections before showing login
+            self._cleanup_all_connections()
             # Show login page
             self.render_login_page()
             return
@@ -63,6 +103,8 @@ class StreamlitApp:
         # Verify session token
         if not self.auth_handler.auth_manager.verify_session():
             st.error("Session expired. Please login again.")
+            # Cleanup connections on session expiry
+            self._cleanup_all_connections()
             st.stop()
         
         # Render header

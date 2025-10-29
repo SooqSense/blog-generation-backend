@@ -4,7 +4,7 @@ from crewai_tools import SerperDevTool
 
 class BlogWriterAgents:
     """Agents for the blog writing crew"""
-    
+
     def __init__(self, llm, search_tool, topic, blog_type, length_min, length_max, max_image_prompts):
         self.llm = llm
         self.search_tool = search_tool
@@ -13,50 +13,98 @@ class BlogWriterAgents:
         self.length_min = length_min
         self.length_max = length_max
         self.max_image_prompts = max_image_prompts
-    
-    def researcher(self):
+
+    # === 1. TOC Agent ===
+    def toc_builder(self):
         return Agent(
-            role="Content Researcher",
-            goal=f"Research and gather comprehensive information about {self.topic} using Google search to find top-ranked blogs and reliable sources",
-            backstory="You are an expert researcher who uses SERPER API to find the most relevant and authoritative sources on any topic. You analyze search results to extract key insights and reliable information for content creation.",
+            role="Table of Contents Builder",
+            goal=(
+                f"Search Google for existing blogs related to '{self.topic}' "
+                "and build a dynamic, data-driven table of contents (TOC) "
+                f"for a {self.blog_type.lower()} blog post. "
+                "The TOC should reflect real-world blog structures from top-ranking results "
+                "and organize the sections logically from introduction to conclusion."
+            ),
+            backstory=(
+                "You are an expert content strategist who analyzes top-ranking blog posts "
+                "to build realistic, SEO-optimized outlines. You identify how the best blogs "
+                "structure their content and use that to create a data-backed table of contents."
+            ),
             verbose=True,
             llm=self.llm,
             tools=[self.search_tool]
         )
-            
-    def planner(self):
+
+    # === 2. Section Research Agent ===
+    def section_researcher(self):
         return Agent(
-            role="Content Planner",
-            goal=f"Create a comprehensive outline for a {self.length_min}-{self.length_max} word {self.blog_type.lower()} blog post about {self.topic} based on researched information",
-            backstory="You are an experienced content strategist who creates detailed outlines based on research findings. You specialize in creating structured plans that result in engaging, well-researched blog posts.",
+            role="Section Researcher",
+            goal=(
+                f"For each section in the blog’s table of contents about '{self.topic}', "
+                "perform a Google search to gather relevant, credible, and diverse information "
+                "from top-ranking pages, articles, and sources. "
+                "Summarize the key facts, statistics, examples, and perspectives "
+                "to support writing detailed and accurate section content."
+            ),
+            backstory=(
+                "You are a research specialist who excels at analyzing multiple sources to gather "
+                "insightful, accurate, and verifiable information for each blog section. "
+                "Your summaries help writers create content that is informative and authoritative."
+            ),
             verbose=True,
             llm=self.llm,
-            tools=[]
+            tools=[self.search_tool]
         )
-    
-    def writer(self):
+
+    # === 3. Section Writer Agent ===
+    def section_writer(self):
         return Agent(
-            role="Content Writer",
-            goal=f"Write a comprehensive {self.length_min}-{self.length_max} word {self.blog_type.lower()} blog post about {self.topic} based on research and outline",
-            backstory="You are a skilled content writer who creates engaging, informative blog posts using researched information. You excel at different blog types and always include proper source citations.",
+            role="Section Content Writer",
+            goal=(
+                f"Using the research provided by the Section Researcher, "
+                f"write a detailed, engaging, and well-structured section for the blog about '{self.topic}'. "
+                "Each section should align with the TOC and provide value, clarity, and reader engagement. "
+                "Maintain consistency in tone and flow across sections."
+            ),
+            backstory=(
+                "You are an experienced content writer who specializes in creating in-depth, SEO-optimized "
+                "sections for blogs. You transform research insights into clear, engaging writing that "
+                "educates and retains readers."
+            ),
             verbose=True,
             llm=self.llm
         )
-    
+
+    # === 4. Editor Agent ===
     def editor(self):
         return Agent(
             role="Content Editor",
-            goal=f"Review and enhance the {self.blog_type.lower()} blog post to ensure it meets quality standards, includes proper sources, and follows {self.blog_type.lower()} blog format requirements",
-            backstory="You are an experienced editor who improves content quality, ensures proper structure, verifies source citations, and confirms the blog follows the specified type format.",
+            goal=(
+                f"Review and refine the complete {self.blog_type.lower()} blog post about '{self.topic}'. "
+                "Ensure it is coherent, well-structured, free of repetition, and factually accurate. "
+                "Make sure each section flows naturally and matches the tone and format of the {self.blog_type.lower()} blog."
+            ),
+            backstory=(
+                "You are a professional editor with a sharp eye for structure, accuracy, and tone consistency. "
+                "You ensure that each blog post reads naturally, maintains narrative flow, and delivers on its intent."
+            ),
             verbose=True,
             llm=self.llm
         )
-    
+
+    # === 5. Image Prompt Generator Agent ===
     def image_prompt_generator(self):
         return Agent(
             role="Content-Aware Visual Strategist",
-            goal=f"Analyze the written {self.blog_type.lower()} blog content and generate {self.max_image_prompts} highly specific, content-based AI image generation prompts",
-            backstory="You are an expert visual content strategist who specializes in reading and analyzing written content to create precise AI image generation prompts. You excel at identifying key visual elements within blog posts and translating specific content details into actionable prompts for DALL-E, Midjourney, and Stable Diffusion. You understand how to match visual styles to content types and create images that directly support and enhance the written material. Your strength is in analyzing actual content rather than creating generic visuals.",
+            goal=(
+                f"Analyze the final written blog about '{self.topic}' "
+                f"and generate up to {self.max_image_prompts} specific, content-based AI image prompts. "
+                "Each image should visually represent a concept, section, or example discussed in the content."
+            ),
+            backstory=(
+                "You are a visual strategist who reads content closely and designs creative image prompts "
+                "that enhance understanding and engagement. Your image ideas are detailed, relevant, and stylistically consistent."
+            ),
             verbose=True,
             llm=self.llm
         )
