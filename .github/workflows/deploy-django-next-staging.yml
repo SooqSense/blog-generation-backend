@@ -37,17 +37,14 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-      - name: Build & Push Docker Image
+      - name: Build & Push Docker Image (Daphne/ASGI)
         run: |
-          echo "🔨 Building Django production Docker image..."
-          docker build --platform linux/amd64 --target production -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-
-          echo "📤 Pushing to Artifact Registry..."
+          docker build --platform linux/amd64 --target production \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (disable HTTP/2 for WebSockets)
         run: |
-          echo "🚀 Deploying Django to Cloud Run Production..."
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
@@ -55,14 +52,14 @@ jobs:
             --allow-unauthenticated \
             --port=8080 \
             --memory=4Gi \
-            --cpu=4 \
+            --cpu=2 \
             --timeout=3000 \
-            --max-instances=2 \
+            --max-instances=5 \
             --min-instances=0 \
             --concurrency=100 \
-            --set-env-vars="DJANGO_ENVIRONMENT=production" \
-            --set-env-vars="DEBUG=False" \
-            --set-env-vars="DJANGO_SECRET_KEY=django-insecure-dummy-key" \
+            --use-http2=false \
+            --set-env-vars="DEBUG=False,DJANGO_SETTINGS_MODULE=management_app.config.settings" \
+            --set-env-vars="BACKEND_API_BASE_URL=https://sooqsense-django-production-798090991303.asia-south2.run.app" \
             --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \
             --set-env-vars="DB_PORT=5432" \
             --set-env-vars="DB_NAME=neondb" \
@@ -90,8 +87,6 @@ jobs:
             --set-env-vars="LINKEDIN_CLIENT_ID=77bbsr8z46dzgg" \
             --set-env-vars="LINKEDIN_CLIENT_SECRET=WPL_AP1.cPzBTYa3NNJXpstR.a2D98w==" \
             --set-env-vars="LINKEDIN_REDIRECT_URI=http://localhost:8000/auth/linkedin/callback" \
-            --set-env-vars="BACKEND_API_BASE_URL=https://sooqsense-django-production-798090991303.asia-south2.run.app" \
-            --set-env-vars="STREAMLIT_APP_URL=http://localhost:8501" \
             --set-env-vars="LANGSMITH_TRACING=true" \
             --set-env-vars="LANGSMITH_API_KEY=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" \
             --set-env-vars="LANGSMITH_PROJECT=sooqsense-blog-generation" \
@@ -102,18 +97,12 @@ jobs:
       - name: Get Service URL
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
-          echo "🎉 Django Production deployment successful!"
-          echo "🌐 Django API URL: $SERVICE_URL"
-          echo "📚 API Documentation: $SERVICE_URL/docs/"
-          echo "🔧 Admin Panel: $SERVICE_URL/admin/"
+          echo "API: $SERVICE_URL"
+          echo "Docs: $SERVICE_URL/docs/"
+          echo "Admin: $SERVICE_URL/admin/"
 
       - name: Health Check
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')
-          echo "🔍 Performing production health check..."
           sleep 30
-          if curl -f "$SERVICE_URL/docs/" > /dev/null 2>&1; then
-            echo "✅ Django Production service is healthy!"
-          else
-            echo "⚠️ Health check failed, but deployment completed"
-          fi
+          curl -f "$SERVICE_URL/docs/" >/dev/null 2>&1 || echo "Docs not reachable yet"
