@@ -44,6 +44,59 @@ class BlogGenerationFeature:
     # ----------------------------
     # INTERNAL HELPERS
     # ----------------------------
+    def _linkify_sources(self, text: str) -> str:
+        """Convert common source patterns into clickable markdown links.
+
+        Supported patterns:
+        - (Source: domain.com) -> (Source: [domain.com](https://domain.com))
+        - Source: domain.com    -> (Source: [domain.com](https://domain.com)) at line end
+        """
+        try:
+            md = text or ""
+
+            # (Source: domain.com)
+            def _paren_link(m):
+                domain = m.group(1).strip().rstrip('.')
+                url = domain if domain.startswith('http') else f'https://{domain}'
+                return f'(Source: [{domain}]({url}))'
+
+            md = re.sub(r"\(Source:\s*([a-zA-Z0-9_.-]+\.[a-zA-Z]{2,})(?:/[^)]*)?\)", _paren_link, md)
+
+            # Standalone 'Source: domain.com' at end of line -> convert to same (in parens)
+            def _line_link(m):
+                prefix = m.group(1)
+                domain = m.group(2).strip().rstrip('.')
+                url = domain if domain.startswith('http') else f'https://{domain}'
+                return f"{prefix}(Source: [{domain}]({url}))"
+
+            md = re.sub(r"(?m)(^|\s)Source:\s*([a-zA-Z0-9_.-]+\.[a-zA-Z]{2,})(?:/\S*)?\.?$", _line_link, md)
+
+            return md
+        except Exception:
+            return text
+
+    def _normalize_headings(self, text: str) -> str:
+        """Normalize markdown headings to avoid accidental link-like rendering.
+
+        - Ensure a space after heading hashes
+        - Ensure headings start on a new paragraph
+        - Strip surrounding brackets in headings like: '## [Title]' -> '## Title'
+        """
+        try:
+            md = text or ""
+            # Space after hashes for headings
+            md = re.sub(r'(?m)^(#{1,6})([^#\s])', r'\1 \2', md)
+            # New paragraph before headings (except at start)
+            md = re.sub(r'(?<!\n)(#{1,6}\s)', r'\n\n\1', md)
+            # Strip brackets around heading text
+            md = re.sub(r'(?m)^(#{1,6}\s*)\[(.+?)\]\s*$', r'\1\2', md)
+            return md
+        except Exception:
+            return text
+
+    def _prepare_stream_md(self, text: str) -> str:
+        """Apply safe markdown sanitization and then linkify sources only."""
+        return self._linkify_sources(self._normalize_headings(text))
     def _ensure_websocket_connection(self) -> bool:
         """Ensure unified WebSocket connection is active and running"""
         try:
@@ -285,7 +338,15 @@ class BlogGenerationFeature:
                                 # Keep TOC fixed at the top
                                 if toc_title_placeholder is not None:
                                     toc_title_placeholder.markdown("### 📋 Table of Contents")
-                                toc_md = "\n".join([f"{i+1}. {s}" for i, s in enumerate(toc)])
+                                # Strip surrounding brackets in TOC labels to avoid link-like rendering
+                                def _clean_label(s: str) -> str:
+                                    try:
+                                        s2 = s.strip()
+                                        m = re.match(r'^\[(.+?)\]$', s2)
+                                        return m.group(1) if m else s2
+                                    except Exception:
+                                        return s
+                                toc_md = "\n".join([f"{i+1}. {_clean_label(s)}" for i, s in enumerate(toc)])
                                 toc_placeholder.markdown(toc_md)
                                 
                         elif t == "section_start":
@@ -300,7 +361,7 @@ class BlogGenerationFeature:
                                 # Batch updates for smoother streaming
                                 current_time = time.time()
                                 if (current_time - last_update_time) >= update_interval:
-                                    content_placeholder.markdown(live_md["text"] + " ▌")
+                                    content_placeholder.markdown(self._prepare_stream_md(live_md["text"]) + " ▌")
                                     last_update_time = current_time
                                     
                         elif t == "image":
@@ -308,13 +369,13 @@ class BlogGenerationFeature:
                             url = evt.get("image_url", "")
                             if url:
                                 live_md["text"] += f"\n\n![Section Image]({url})\n\n"
-                                content_placeholder.markdown(live_md["text"])
+                                content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
                                 progress_placeholder.info(f"🖼️ **Image added** for section: {section}")
                                 
                         elif t == "section_complete":
                             section = evt.get("section", "")
                             progress_placeholder.success(f"✅ **Completed section**: {section}")
-                            content_placeholder.markdown(live_md["text"])
+                            content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
                             
                     elif msg_type == 'complete':
                         print("🎉 [STREAMLIT] Blog generation completed!")
@@ -354,7 +415,7 @@ class BlogGenerationFeature:
                     
                     # Update display periodically even without new tokens
                     if live_md["text"] and (current_time - last_update_time) >= 1.0:
-                        content_placeholder.markdown(live_md["text"] + " ▌")
+                        content_placeholder.markdown(self._prepare_stream_md(live_md["text"]) + " ▌")
                         last_update_time = current_time
                 
                 # Check unified WebSocket connection health periodically
@@ -367,7 +428,7 @@ class BlogGenerationFeature:
 
         # Final update without cursor
         if live_md["text"]:
-            content_placeholder.markdown(live_md["text"])
+            content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
         
         if st.session_state.get("blog_stream_done"):
             if st.session_state.get("blog_result"):
