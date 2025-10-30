@@ -73,9 +73,9 @@ jobs:
             --set-env-vars="AWS_REGION=us-east-1" \
             --set-env-vars="AWS_ACCESS_KEY_ID=AKIAT7JJVEEMYAEX2UGD" \
             --set-env-vars="AWS_SECRET_ACCESS_KEY=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" \
-            --set-env-vars="REDIS_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
-            --set-env-vars="CELERY_BROKER_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
-            --set-env-vars="CELERY_RESULT_BACKEND=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379?ssl_cert_reqs=CERT_NONE" \
+            --set-env-vars="REDIS_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
+            --set-env-vars="CELERY_BROKER_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
+            --set-env-vars="CELERY_RESULT_BACKEND=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
             --set-env-vars="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_Y2xpbWJpbmctcm9vc3Rlci02MC5jbGVyay5hY2NvdW50cy5kZXYk" \
             --set-env-vars="CLERK_SECRET_KEY=sk_test_VQ0vUgco3WhaI3iqA6okF3zCGV0XTAjpdnz0rJxgfi" \
             --set-env-vars="CLERK_BACKEND_AVAILABLE=https://api.clerk.com" \

@@ -94,9 +94,7 @@ DATABASES = {
         "PASSWORD": os.environ.get("DB_PASSWORD"),
         "HOST": os.environ.get("DB_HOST"),
         "PORT": os.environ.get("DB_PORT"),
-        "OPTIONS": {
-            "connect_timeout": 10
-        }
+        "OPTIONS": {"connect_timeout": 10},
     }
 }
 
@@ -265,6 +263,7 @@ CLERK_FRONTEND_URL = os.getenv("CLERK_FRONTEND_URL")
 if DEBUG:
     import ssl
     import urllib3
+
     # Disable SSL verification for development
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -367,11 +366,28 @@ LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
 BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
 # Channels Configuration for WebSocket support
+import ssl
+
+
+def get_redis_config():
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+    if redis_url.startswith("rediss://"):
+        # For SSL Redis connections (like Upstash)
+        return {
+            "hosts": [redis_url],
+            "ssl_cert_reqs": None,  # Disable SSL certificate verification
+        }
+    else:
+        # For non-SSL Redis connections
+        return {
+            "hosts": [redis_url],
+        }
+
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [os.getenv("REDIS_URL", "redis://localhost:6379")],
-        },
+        "CONFIG": get_redis_config(),
     },
 }
