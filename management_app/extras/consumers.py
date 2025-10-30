@@ -47,12 +47,61 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             'organization': self.organization
         }
         
+        # Initialize connection state
+        self.is_connected = True
+        self.active_tasks = set()
+        
         # Accept the connection
         await self.accept()
+        
+        # Start keepalive ping to prevent timeouts
+        self.keepalive_task = asyncio.create_task(self._keepalive_ping())
+    
+    async def _keepalive_ping(self):
+        """Send periodic pings to keep connection alive"""
+        try:
+            while self.is_connected:
+                await asyncio.sleep(15)  # Ping every 15 seconds for better connection stability
+                if self.is_connected:
+                    try:
+                        await self.send(text_data=json.dumps({
+                            'type': 'ping',
+                            'timestamp': timezone.now().isoformat()
+                        }))
+                        print(f"🏓 [KEEPALIVE] Ping sent - Active tasks: {len(self.active_tasks)}")
+                    except Exception as e:
+                        logger.warning(f"Keepalive ping failed: {e}")
+                        self.is_connected = False
+                        break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Keepalive error: {e}")
+            self.is_connected = False
     
     async def disconnect(self, close_code):
         """Handle WebSocket disconnection"""
-        logger.info(f"WebSocket disconnected for streaming - Code: {close_code}")
+        self.is_connected = False
+        
+        # Cancel keepalive task
+        if hasattr(self, 'keepalive_task'):
+            self.keepalive_task.cancel()
+            try:
+                await self.keepalive_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cancel all active tasks gracefully
+        for task in self.active_tasks:
+            if not task.done():
+                try:
+                    task.cancel()
+                    # Give tasks a moment to clean up
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    logger.warning(f"Error cancelling task: {e}")
+        
+        logger.info(f"WebSocket disconnected - Code: {close_code}")
     
     async def receive(self, text_data):
         """Handle incoming WebSocket messages"""
@@ -70,6 +119,9 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
                 await self.handle_upwork_proposal(data)
             elif message_type == 'ping':
                 await self.send(text_data=json.dumps({'type': 'pong'}))
+            elif message_type == 'pong':
+                # Client responded to our ping
+                pass
             else:
                 await self.send(text_data=json.dumps({
                     'type': 'error',
@@ -92,7 +144,7 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
         """Handle chat message and stream response"""
         query = data.get('query', '').strip()
         session_id = data.get('session_id', '').strip()
-        message_id = data.get('message_id', 'default')  # Track message ID for multiplexing
+        message_id = data.get('message_id', 'default')
         
         if not query:
             await self.send(text_data=json.dumps({
@@ -120,99 +172,225 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             }))
     
     async def handle_blog_generation(self, data):
-        """Handle blog generation streaming with real-time stage updates"""
+        """Handle blog generation streaming - KEEP CONNECTION ALIVE"""
         try:
-            # Extract blog generation parameters
-            topic = data.get('topic', '')
-            keywords = data.get('keywords', [])
+            # Extract blog parameters
+            topic = data.get('topic', '').strip()
             blog_type = data.get('blog_type', 'News')
-            length_min = data.get('length_min', 800)
-            length_max = data.get('length_max', 1500)
-            
+            length_min = int(data.get('length_min', 800))
+            length_max = int(data.get('length_max', 1500))
+            introduction = data.get('introduction', True)
+            faq = data.get('faq', False)
+            cta = data.get('cta', False)
+            conclusion = data.get('conclusion', True)
+            target_audience = data.get('target_audience', [])
+            sample_blog_url = data.get('sample_blog_url')
+            generate_image_prompts = data.get('generate_image_prompts', True)
+            generate_images = data.get('generate_images', True)
+            use_custom_llm = data.get('use_custom_llm', False)
+            keywords = data.get('keywords', [])
+            message_id = data.get('message_id', 'default')
+
             if not topic:
                 await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Topic is required for blog generation'
+                    'type': 'error', 
+                    'message': 'Topic is required',
+                    'message_id': message_id
                 }))
                 return
-            
-            logger.info(f"Starting blog generation stream: topic={topic}, blog_type={blog_type}")
-            
-            # Send stage updates for blog generation process
-            stages = [
-                {'stage': 'initialization', 'message': '🚀 Initializing blog generation...'},
-                {'stage': 'research', 'message': '🔍 Researching topic and gathering information...'},
-                {'stage': 'planning', 'message': '📋 Planning blog structure and outline...'},
-                {'stage': 'writing', 'message': '✍️ Writing blog content...'},
-                {'stage': 'editing', 'message': '✨ Editing and polishing content...'},
-                {'stage': 'finalizing', 'message': '🎯 Finalizing blog post...'}
-            ]
-            
-            for stage_info in stages:
-                await self.send(text_data=json.dumps({
-                    'type': 'status',
-                    'stage': stage_info['stage'],
-                    'message': stage_info['message']
-                }))
-                # Small delay to make stages visible
-                await asyncio.sleep(0.5)
-            
-            # Import blog writer service (async)
+
+            # Use the updated BlogWriter with streaming capabilities
             from management_app.blog_generator.service.blog_writing.blog_writer import BlogWriter
             
-            # Generate blog content (note: this is a blocking operation)
-            # In a production system, this would be refactored to support true streaming
-            blog_writer = BlogWriter(
-                use_custom_llm=False,
+            # Initialize blog writer
+            generator = BlogWriter(
                 topic=topic,
-                keywords=keywords,
                 blog_type=blog_type,
                 length_min=length_min,
                 length_max=length_max,
-                introduction=data.get('introduction', True),
-                table_of_content=data.get('table_of_content', False),
-                faq=data.get('faq', False),
-                cta=data.get('cta', False),
-                conclusion=data.get('conclusion', True),
-                target_audience=data.get('target_audience', []),
-                sample_blog_url=data.get('sample_blog_url'),
-                generate_image_prompts=data.get('generate_image_prompts', True),
-                generate_images=data.get('generate_images', True)
-            )
-            
-            # Run blog generation in thread pool to avoid blocking
-            result = await database_sync_to_async(blog_writer.generate_blog)(
-                topic=topic,
                 keywords=keywords,
-                blog_type=blog_type,
-                length_min=length_min,
-                length_max=length_max
+                target_audience=target_audience,
+                use_custom_llm=use_custom_llm,
+                generate_images=generate_images,
+                max_image_prompts=5,
             )
             
-            # Send completion with result
-            await self.send(text_data=json.dumps({
-                'type': 'complete',
-                'message': '✅ Blog generation completed successfully!',
-                'data': {
-                    'topic': topic,
-                    'content': result.get('raw_content', result.get('content', '')),
-                    'word_count': len(result.get('raw_content', '').split()) if result.get('raw_content') else 0,
-                    'images_count': result.get('images_count', 0),
-                    'sources_count': result.get('sources_count', 0)
-                }
-            }))
+            # Define streaming callbacks with error handling
+            async def safe_send(data_dict):
+                """Safely send data, checking connection status"""
+                if not self.is_connected:
+                    raise ConnectionError("WebSocket connection closed")
+                try:
+                    await self.send(text_data=json.dumps(data_dict))
+                    print(f"📤 [WEBSOCKET] Sent: {data_dict.get('type', 'unknown')}")
+                except Exception as e:
+                    logger.error(f"Failed to send data: {e}")
+                    self.is_connected = False
+                    raise
             
+            async def on_status(stage, message):
+                print(f"📊 [BLOG STREAM] Status: {stage} - {message}")
+                try:
+                    await safe_send({
+                        'type': 'status', 
+                        'stage': stage,
+                        'message': message,
+                        'message_id': message_id
+                    })
+                except Exception as e:
+                    print(f"⚠️ [BLOG STREAM] Status send failed: {e}")
+                    # Don't raise - continue with generation
+            
+            async def on_toc(sections):
+                print(f"📋 [BLOG STREAM] TOC Generated: {len(sections)} sections")
+                await safe_send({
+                    'type': 'toc', 
+                    'sections': sections, 
+                    'message_id': message_id
+                })
+            
+            async def on_section_start(section, index):
+                print(f"🚀 [BLOG STREAM] Starting Section {index}: {section}")
+                await safe_send({
+                    'type': 'section_start', 
+                    'section': section, 
+                    'index': index, 
+                    'message_id': message_id
+                })
+            
+            async def on_section_token(token):
+                # Only log occasionally to reduce overhead
+                if len(token) > 0:
+                    try:
+                        await safe_send({
+                            'type': 'section_token', 
+                            'content': token, 
+                            'message_id': message_id
+                        })
+                    except Exception as e:
+                        print(f"⚠️ [BLOG STREAM] Token send failed: {e}")
+                        # Don't raise - continue with generation
+            
+            async def on_image(section, image_data):
+                print(f"🖼️ [BLOG STREAM] Image generated for section: {section}")
+                await safe_send({
+                    'type': 'image', 
+                    'section': section, 
+                    'image_url': image_data.get('image_url'),
+                    'image_data': image_data,
+                    'message_id': message_id
+                })
+            
+            async def on_section_complete(section, content):
+                print(f"✅ [BLOG STREAM] Section completed: {section}")
+                await safe_send({
+                    'type': 'section_complete', 
+                    'section': section, 
+                    'message_id': message_id
+                })
+            
+            async def on_complete(result_data):
+                print(f"🎉 [BLOG STREAM] Blog generation completed!")
+                await safe_send({
+                    'type': 'complete',
+                    'message': '✅ Blog generation completed successfully!',
+                    'data': result_data,
+                    'message_id': message_id
+                })
+            
+            async def on_error(error_message):
+                print(f"❌ [BLOG STREAM] Error: {error_message}")
+                await safe_send({
+                    'type': 'error', 
+                    'message': f'Blog generation failed: {error_message}',
+                    'message_id': message_id
+                })
+            
+            # Create and track the generation task
+            generation_task = asyncio.create_task(
+                generator.generate_streaming_blog(
+                    websocket=self,
+                    on_status=on_status,
+                    on_toc=on_toc,
+                    on_section_start=on_section_start,
+                    on_section_token=on_section_token,
+                    on_image=on_image,
+                    on_section_complete=on_section_complete,
+                    on_complete=on_complete,
+                    on_error=on_error
+                )
+            )
+            
+            self.active_tasks.add(generation_task)
+            
+            try:
+                # Wait for generation with a reasonable timeout
+                await asyncio.wait_for(generation_task, timeout=1200)  # 20 minutes timeout
+                print(f"✅ [BLOG STREAM] Blog generation completed successfully")
+                
+                # Send completion message
+                try:
+                    await safe_send({
+                        'type': 'complete',
+                        'message': 'Blog generation completed successfully',
+                        'message_id': message_id
+                    })
+                except:
+                    pass
+                
+                # KEEP CONNECTION ALIVE - DO NOT CLOSE
+                # Client can request more operations or disconnect when ready
+                
+            except asyncio.TimeoutError:
+                print(f"⏰ [BLOG STREAM] Blog generation timed out")
+                try:
+                    await safe_send({
+                        'type': 'error',
+                        'message': 'Blog generation timed out after 20 minutes',
+                        'message_id': message_id
+                    })
+                except:
+                    pass
+            except asyncio.CancelledError:
+                print(f"🛑 [BLOG STREAM] Blog generation cancelled")
+                try:
+                    await safe_send({
+                        'type': 'error',
+                        'message': 'Blog generation was cancelled',
+                        'message_id': message_id
+                    })
+                except:
+                    pass
+            except ConnectionError as e:
+                print(f"🔌 [BLOG STREAM] Connection lost: {e}")
+                # Connection already closed, can't send error
+            except Exception as e:
+                print(f"❌ [BLOG STREAM] Blog generation failed: {e}")
+                try:
+                    await safe_send({
+                        'type': 'error',
+                        'message': f'Blog generation failed: {str(e)}',
+                        'message_id': message_id
+                    })
+                except:
+                    pass
+            finally:
+                self.active_tasks.discard(generation_task)
+
         except Exception as e:
             logger.error(f"Error handling blog generation: {e}", exc_info=True)
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': f'Blog generation failed: {str(e)}'
-            }))
+            try:
+                await self.send(text_data=json.dumps({
+                    'type': 'error', 
+                    'message': f'Blog generation failed: {str(e)}',
+                    'message_id': message_id
+                }))
+            except:
+                pass
     
     async def handle_linkedin_post(self, data):
         """Handle LinkedIn post generation streaming"""
         try:
-            # Extract LinkedIn post parameters
             topic = data.get('topic', '')
             tone = data.get('tone', 'professional')
             hashtags = data.get('hashtags', [])
@@ -224,8 +402,10 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
                 }))
                 return
             
-            # Stream LinkedIn post generation response
-            await self.stream_ai_response(f"Generate a LinkedIn post about: {topic}, Tone: {tone}, Hashtags: {hashtags}", 'linkedin')
+            await self.stream_ai_response(
+                f"Generate a LinkedIn post about: {topic}, Tone: {tone}, Hashtags: {hashtags}", 
+                'linkedin'
+            )
             
         except Exception as e:
             logger.error(f"Error handling LinkedIn post generation: {e}")
@@ -237,7 +417,6 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
     async def handle_upwork_proposal(self, data):
         """Handle Upwork proposal generation streaming"""
         try:
-            # Extract Upwork proposal parameters
             job_description = data.get('job_description', '')
             skills = data.get('skills', [])
             experience = data.get('experience', '')
@@ -249,8 +428,10 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
                 }))
                 return
             
-            # Stream Upwork proposal generation response
-            await self.stream_ai_response(f"Generate an Upwork proposal for: {job_description}, Skills: {skills}, Experience: {experience}", 'upwork')
+            await self.stream_ai_response(
+                f"Generate an Upwork proposal for: {job_description}, Skills: {skills}, Experience: {experience}", 
+                'upwork'
+            )
             
         except Exception as e:
             logger.error(f"Error handling Upwork proposal generation: {e}")
@@ -260,44 +441,36 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             }))
     
     async def stream_ai_response(self, query, feature_type='general', message_id='default'):
-        """Stream AI response tokens for any feature using fully async approach"""
+        """Stream AI response tokens for any feature"""
         try:
             full_response_parts = []
             
-            # Use the new async streaming method for real-time performance
             async for chunk in project_chatbot.ask_stream_async(query):
-                if not chunk:
+                if not chunk or not self.is_connected:
                     continue
                 
-                # Convert to string but preserve spaces and formatting
                 text = str(chunk)
-                
-                # Only skip completely empty chunks
                 if not text or text == "":
                     continue
                 
-                # Accumulate for saving (preserve original text)
                 full_response_parts.append(text)
                 
-                # Send token to client immediately (with all formatting preserved)
                 try:
-                    token_data = {
+                    await self.send(text_data=json.dumps({
                         'type': 'token',
-                        'content': text,  # Send as-is to preserve spaces
+                        'content': text,
                         'feature_type': feature_type,
                         'message_id': message_id
-                    }
-                    # Reduce logging frequency for better performance
-                    if len(full_response_parts) % 10 == 0:  # Log every 10th token
-                        logger.debug(f"🔄 Sending token batch: {len(full_response_parts)} tokens")
-                    await self.send(text_data=json.dumps(token_data))
+                    }))
                 except Exception as send_error:
                     logger.error(f"Error sending token: {send_error}")
-                    # If we can't send, the connection is likely closed
                     break
             
-            # Save complete response (only for authenticated users with chat sessions)
-            if self.user and not (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous) and hasattr(self, 'chat_session') and self.chat_session:
+            # Save complete response
+            if (self.user and 
+                not (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous) and 
+                hasattr(self, 'chat_session') and 
+                self.chat_session):
                 full_response = "".join(full_response_parts)
                 await self.save_message('assistant', full_response)
                 await self.update_session_messages()
@@ -326,13 +499,12 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def get_or_create_session(self, session_id):
-        """Get or create chat session (only for authenticated users)"""
+        """Get or create chat session"""
         if not self.user or (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous):
             return None
             
         try:
             if session_id:
-                # Try to find existing session
                 session = ChatSession.objects.filter(
                     session_id=session_id,
                     user_id=self.user.id,
@@ -342,7 +514,6 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
                 if session:
                     return session
             
-            # Create new session
             new_session_id = session_id or str(uuid.uuid4())
             session = ChatSession.objects.create(
                 session_id=new_session_id,
@@ -360,7 +531,7 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def save_message(self, message_type, content):
-        """Save chat message (only for authenticated users)"""
+        """Save chat message"""
         if not self.chat_session:
             return
             
@@ -376,12 +547,12 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
     
     @database_sync_to_async
     def update_session_messages(self):
-        """Update session message count (only for authenticated users)"""
+        """Update session message count"""
         if not self.chat_session:
             return
             
         try:
-            self.chat_session.total_messages += 2  # User + Assistant messages
+            self.chat_session.total_messages += 2
             self.chat_session.updated_at = timezone.now()
             self.chat_session.save()
         except Exception as e:
