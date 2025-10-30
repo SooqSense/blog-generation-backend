@@ -54,10 +54,10 @@ jobs:
             --memory=4Gi \
             --cpu=2 \
             --timeout=3000 \
-            --max-instances=5 \
+            --max-instances=3 \
             --min-instances=0 \
             --concurrency=100 \
-            --use-http2=false \
+            --no-use-http2 \
             --set-env-vars="DEBUG=False,DJANGO_SETTINGS_MODULE=management_app.config.settings" \
             --set-env-vars="BACKEND_API_BASE_URL=https://sooqsense-django-production-798090991303.asia-south2.run.app" \
             --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \

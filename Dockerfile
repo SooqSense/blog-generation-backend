@@ -90,28 +90,19 @@ CMD sh -c 'streamlit run app.py --server.port=${PORT:-8501} --server.address=0.0
 
 # Production stage
 FROM base AS production
+
 ENV DEBUG=False
-ENV PORT=8000
+ENV PORT=8080
+ENV DJANGO_SETTINGS_MODULE=management_app.config.settings
 
 COPY . .
 
-# Create non-root user with home directory
 RUN groupadd -r django && useradd -r -g django -m -d /home/django django
+RUN mkdir -p /app/logs && chown -R django:django /app /home/django
 
-# Create necessary directories
-RUN mkdir -p /app/logs
-
-# Set up directory permissions
-RUN chown -R django:django /app /home/django
-
-# Switch to non-root user
 USER django
-
-# Set working directory for Django app (project root contains manage.py)
 WORKDIR /app
 
-# Note: Removed health check as there's no /health/ endpoint defined
-# If you need health checks, add a simple health endpoint to your Django app
+EXPOSE 8080
 
-EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && daphne -b 0.0.0.0 -p 8080 management_app.config.asgi:application"]
