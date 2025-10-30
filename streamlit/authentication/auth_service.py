@@ -334,18 +334,12 @@ class StreamlitAuthManager:
     def _cleanup_websocket_connections(self):
         """Clean up all active WebSocket connections"""
         try:
-            # Clean up blog WebSocket connection
-            if 'blog_ws_manager' in st.session_state and st.session_state.blog_ws_manager:
-                st.session_state.blog_ws_manager.stop()
-                st.session_state.blog_ws_manager = None
-                st.session_state.blog_ws_initialized = False
-                print("🔌 Blog WebSocket connection cleaned up on logout")
-            
-            # Clean up chatbot WebSocket connection
-            if 'chatbot_ws_manager' in st.session_state and st.session_state.chatbot_ws_manager:
-                st.session_state.chatbot_ws_manager.stop()
-                st.session_state.chatbot_ws_manager = None
-                print("🔌 Chatbot WebSocket connection cleaned up on logout")
+            # Clean up unified WebSocket connection on logout
+            if 'ws_manager' in st.session_state and st.session_state.ws_manager:
+                st.session_state.ws_manager.stop()
+                st.session_state.ws_manager = None
+                st.session_state.ws_initialized = False
+                print("🔌 Unified WebSocket connection cleaned up on logout")
                 
         except Exception as e:
             print(f"⚠️ Error during WebSocket cleanup on logout: {e}")

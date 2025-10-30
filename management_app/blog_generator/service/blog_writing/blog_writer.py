@@ -247,7 +247,13 @@ class BlogWriter:
                 process=Process.sequential,
                 verbose=False,
             )
-            toc_result = toc_crew.kickoff(inputs={"topic": self.topic})
+            
+            # Run TOC generation in thread pool to prevent blocking event loop
+            loop = asyncio.get_event_loop()
+            toc_result = await loop.run_in_executor(
+                None,
+                lambda: toc_crew.kickoff(inputs={"topic": self.topic})
+            )
             toc_content = getattr(toc_result, "raw", None) or str(toc_result)
             sections = self._parse_toc_sections(toc_content)
             
@@ -273,7 +279,13 @@ class BlogWriter:
                     tasks=[research_task],
                     process=Process.sequential,
                 )
-                research_result = research_crew.kickoff(inputs={"topic": self.topic})
+                
+                # Run CrewAI research in thread pool to prevent blocking event loop
+                loop = asyncio.get_event_loop()
+                research_result = await loop.run_in_executor(
+                    None,
+                    lambda: research_crew.kickoff(inputs={"topic": self.topic})
+                )
                 raw_research = getattr(research_result, "raw", None) or str(research_result)
 
                 try:
@@ -296,7 +308,13 @@ class BlogWriter:
                     tasks=[writing_task],
                     process=Process.sequential,
                 )
-                section_result = writing_crew.kickoff(inputs={"topic": self.topic})
+                
+                # Run CrewAI writing in thread pool to prevent blocking event loop
+                loop = asyncio.get_event_loop()
+                section_result = await loop.run_in_executor(
+                    None,
+                    lambda: writing_crew.kickoff(inputs={"topic": self.topic})
+                )
                 section_content = getattr(section_result, "raw", None) or str(section_result)
 
                 # Send the complete section content immediately
@@ -329,21 +347,29 @@ class BlogWriter:
                         await on_status("image_generation", f"🖼️ Generating contextual image for section '{section_title}'...")
                     
                     try:
-                        image_prompt_data = self.image_prompt_agent.generate_prompt(
-                            topic=self.topic,
-                            section_title=section_title,
-                            section_content=section_content,
-                            blog_type=self.blog_type,
+                        # Run image prompt generation in thread pool
+                        loop = asyncio.get_event_loop()
+                        image_prompt_data = await loop.run_in_executor(
+                            None,
+                            self.image_prompt_agent.generate_prompt,
+                            self.topic,
+                            section_title,
+                            section_content,
+                            self.blog_type
                         )
                         image_prompt = image_prompt_data["prompt"]
 
-                        section_images = generate_section_specific_images(
-                            topic=self.topic,
-                            blog_type=self.blog_type,
-                            blog_content=image_prompt,
-                            output_dir="blog_images",
-                            generation_method="flux",
-                            use_custom_llm=False,
+                        # Run image generation in a thread pool to prevent blocking the event loop
+                        # This ensures WebSocket keepalive messages continue during long image generation
+                        section_images = await loop.run_in_executor(
+                            None,  # Use default ThreadPoolExecutor
+                            generate_section_specific_images,
+                            self.topic,
+                            self.blog_type,
+                            image_prompt,
+                            "blog_images",
+                            "flux",
+                            False
                         )
 
                         if section_images and "banner" in section_images:

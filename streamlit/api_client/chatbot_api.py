@@ -67,11 +67,11 @@ class PersistentWebSocketManager:
             async with websockets.connect(
                 self.ws_url, 
                 additional_headers=websocket_headers,
-                ping_interval=20,  # Send ping every 20 seconds
-                ping_timeout=20,   # Wait 20 seconds for pong (more lenient)
-                close_timeout=10,  # Wait 10 seconds for close
-                max_size=10 * 1024 * 1024,  # 10MB max message size
-                max_queue=100  # Allow more queued messages
+                ping_interval=30,  # Send ping every 30 seconds (longer for blog generation)
+                ping_timeout=60,   # Wait 60 seconds for pong (much more lenient)
+                close_timeout=30,  # Wait 30 seconds for close
+                max_size=50 * 1024 * 1024,  # 50MB max message size (for large blog content)
+                max_queue=500  # Allow more queued messages for streaming
             ) as websocket:
                 self.websocket = websocket
                 print("✅ WebSocket connected successfully!")
@@ -104,13 +104,17 @@ class PersistentWebSocketManager:
         """Send periodic application-level ping messages to keep connection alive
         Note: This is in addition to the websocket library's built-in ping/pong mechanism
         """
+        ping_count = 0
         while self.is_running:
             try:
-                await asyncio.sleep(15)  # Ping every 15 seconds (less than websocket ping_interval)
+                await asyncio.sleep(25)  # Ping every 25 seconds (less than websocket ping_interval of 30s)
                 if self.is_running:
+                    ping_count += 1
                     # Send application-level ping
-                    await websocket.send(json.dumps({'type': 'ping'}))
-                    # Don't print on every ping to reduce noise
+                    await websocket.send(json.dumps({'type': 'ping', 'count': ping_count}))
+                    # Log every 5th ping to monitor connection health during long operations
+                    if ping_count % 5 == 0:
+                        print(f"🏓 [WS Manager] Keep-alive ping #{ping_count} sent - Active callbacks: {len(self.response_callbacks)}")
             except websockets.exceptions.ConnectionClosed:
                 print("🔌 Keep-alive: Connection closed")
                 self.is_running = False
@@ -158,6 +162,14 @@ class PersistentWebSocketManager:
                     # Log received message for debugging
                     if message_type not in ['ping', 'pong']:
                         print(f"📥 [WS Manager] Received: type={message_type}, id={message_id}")
+                        # Debug: show available callbacks
+                        if message_type in ['status', 'toc', 'section_start', 'section_token', 'section_complete', 'image']:
+                            print(f"📋 [WS Manager] Available callbacks: {list(self.response_callbacks.keys())}")
+                            if message_id in self.response_callbacks:
+                                callbacks = self.response_callbacks[message_id]
+                                print(f"📋 [WS Manager] Callback handlers for {message_id}: {list(callbacks.keys())}")
+                            else:
+                                print(f"⚠️ [WS Manager] No callbacks found for message_id: {message_id}")
                     
                     # Handle ping IMMEDIATELY - critical for keeping connection alive
                     if message_type == 'ping':
@@ -187,12 +199,21 @@ class PersistentWebSocketManager:
                     
                     # Handle blog-specific events (status, toc, section_start, section_token, image, section_complete)
                     elif message_type in ['status', 'toc', 'section_start', 'section_token', 'section_complete', 'image']:
+                        print(f"📨 [WS Manager] Processing blog event: {message_type} for {message_id}")
                         if callbacks.get('on_event'):
                             try:
                                 callbacks['on_event'](data)
                             except Exception as callback_error:
-                                # Silently ignore callback errors
-                                pass
+                                print(f"⚠️ [WS Manager] Blog event callback error: {callback_error}")
+                                # Continue processing other events
+                        elif callbacks.get('on_token'):
+                            # Fallback: if no on_event handler but has on_token, try using that
+                            try:
+                                callbacks['on_token'](data)
+                            except Exception as callback_error:
+                                print(f"⚠️ [WS Manager] Blog token fallback error: {callback_error}")
+                        else:
+                            print(f"⚠️ [WS Manager] No event handler for blog event: {message_type}")
                             
                     elif message_type == 'complete':
                         print(f"✅ [WS Manager] Complete received for {message_id}")
@@ -243,8 +264,8 @@ class PersistentWebSocketManager:
             traceback.print_exc()
             self.is_running = False
     
-    def send_message(self, query: str, session_id: str, message_id: str, on_token=None, on_complete=None, on_error=None):
-        """Queue a message to be sent via WebSocket"""
+    def send_message(self, message_type: str, query: str, session_id: str, message_id: str, on_token=None, on_complete=None, on_error=None):
+        """Queue a chat message to be sent via WebSocket"""
         if not self.is_running:
             print("❌ WebSocket not running, starting...")
             self.start()
@@ -261,13 +282,40 @@ class PersistentWebSocketManager:
         
         # Queue the message
         message_data = {
-            'type': 'chat_message',
+            'type': message_type,  # 'chat_message' for conversations
             'query': query,
             'session_id': session_id or '',
             'message_id': message_id
         }
         self.message_queue.put(message_data)
         print(f"📨 Queued message: {message_id} (Connection running: {self.is_running})")
+    
+    def send_blog_generation(self, blog_data: dict, message_id: str, on_event=None, on_complete=None, on_error=None):
+        """Queue a blog generation request to be sent via WebSocket"""
+        if not self.is_running:
+            print("❌ WebSocket not running, starting...")
+            self.start()
+            # Wait a bit for connection to establish
+            import time
+            time.sleep(1.5)
+        
+        # Register callbacks for this message - blog events need special handling
+        print(f"📋 [WS Manager] Registering blog callbacks for {message_id}")
+        self.response_callbacks[message_id] = {
+            'on_event': on_event,  # Primary handler for blog events (status, toc, section_token, etc.)
+            'on_complete': on_complete,
+            'on_error': on_error
+        }
+        
+        # Queue the blog generation request
+        message_data = {
+            'type': 'blog_generation',  # Trigger for blog generation
+            'message_id': message_id,
+            **blog_data  # Include all blog parameters
+        }
+        self.message_queue.put(message_data)
+        print(f"📨 Queued blog generation: {message_id} (Connection running: {self.is_running})")
+        print(f"📋 [WS Manager] Active callbacks: {list(self.response_callbacks.keys())}")
     
     def stop(self):
         """Stop the WebSocket connection"""
@@ -337,7 +385,7 @@ class ChatbotAPI:
             self.ws_manager = None
     
     def ask_question_stream_websocket(self, query: str, session_id: str = None, on_token=None, on_complete=None, on_error=None):
-        """Send a message via persistent WebSocket connection"""
+        """Send a chat message via persistent WebSocket connection"""
         try:
             # Initialize persistent connection if needed
             manager = self.init_persistent_connection()
@@ -346,8 +394,9 @@ class ChatbotAPI:
             import time
             message_id = f"msg_{int(time.time() * 1000)}"
             
-            # Send message via persistent connection
+            # Send message via persistent connection with 'conversation' trigger
             manager.send_message(
+                message_type='chat_message',  # Trigger for conversation
                 query=query,
                 session_id=session_id,
                 message_id=message_id,
@@ -358,6 +407,31 @@ class ChatbotAPI:
         except Exception as e:
             if on_error:
                 on_error(str(e))
+    
+    def send_blog_generation_request(self, blog_data: dict, on_event=None, on_complete=None, on_error=None):
+        """Send a blog generation request via persistent WebSocket connection"""
+        try:
+            # Initialize persistent connection if needed
+            manager = self.init_persistent_connection()
+            
+            # Generate unique message ID
+            import time
+            message_id = f"blog_{int(time.time() * 1000)}"
+            
+            # Send blog generation request with 'blog_generation' trigger
+            manager.send_blog_generation(
+                blog_data=blog_data,
+                message_id=message_id,
+                on_event=on_event,
+                on_complete=on_complete,
+                on_error=on_error
+            )
+            
+            return message_id
+        except Exception as e:
+            if on_error:
+                on_error(str(e))
+            return None
 
 
 

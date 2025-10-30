@@ -21,39 +21,31 @@ class BlogGenerationFeature:
         self.api = blog_api
         self.data_management = BlogDataManagement(blog_api)
         
-        # Initialize persistent WebSocket connection ONCE per session
+        # Use the unified WebSocket connection from chatbot_api
+        # Import chatbot_api to access the unified WebSocket manager
+        from api_client import chatbot_api
+        self.unified_api = chatbot_api
+        
+        # Initialize unified WebSocket connection ONCE per session
         # Store the manager in session state to survive reruns
-        if 'blog_ws_manager' not in st.session_state:
-            print("🚀 Initializing persistent WebSocket connection for blog generation...")
+        if 'ws_manager' not in st.session_state:
+            print("🚀 Initializing unified WebSocket connection...")
             # Only initialize if authenticated
             if st.session_state.get('authenticated', False) and st.session_state.get('token'):
-                manager = self._initialize_websocket_manager()
+                manager = self.unified_api.init_persistent_connection()
                 if manager:
-                    st.session_state.blog_ws_manager = manager
-                    st.session_state.blog_ws_initialized = True
-                    print("✅ Blog WebSocket manager stored in session state")
+                    st.session_state.ws_manager = manager
+                    st.session_state.ws_initialized = True
+                    print("✅ Unified WebSocket manager stored in session state")
         
-        # Ensure we have a reference to the manager
-        self.ws_manager = st.session_state.get('blog_ws_manager')
+        # Ensure we have a reference to the unified manager
+        self.ws_manager = st.session_state.get('ws_manager')
 
     # ----------------------------
     # INTERNAL HELPERS
     # ----------------------------
-    def _initialize_websocket_manager(self):
-        """Initialize WebSocket manager with authentication headers"""
-        try:
-            headers = self.api.client._get_auth_headers()
-            print(f"🔑 Initializing blog WebSocket with headers: {list(headers.keys())}")
-            manager = self.api.init_persistent_connection(headers)
-            return manager
-        except Exception as e:
-            print(f"❌ Failed to initialize WebSocket manager: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-    
     def _ensure_websocket_connection(self) -> bool:
-        """Ensure WebSocket connection is active and running"""
+        """Ensure unified WebSocket connection is active and running"""
         try:
             # Validate authentication first
             if not st.session_state.get('authenticated', False):
@@ -68,79 +60,44 @@ class BlogGenerationFeature:
                 print("❌ No organization selected - cannot establish WebSocket connection")
                 return False
             
-            # Check if we have a manager in session state
-            manager = st.session_state.get('blog_ws_manager')
+            # Check if we have the unified manager in session state
+            manager = st.session_state.get('ws_manager')
             
             if not manager:
-                print("🔄 No WebSocket manager found, creating new one...")
-                manager = self._initialize_websocket_manager()
+                print("🔄 No unified WebSocket manager found, creating new one...")
+                manager = self.unified_api.init_persistent_connection()
                 if manager:
-                    st.session_state.blog_ws_manager = manager
-                    st.session_state.blog_ws_initialized = True
+                    st.session_state.ws_manager = manager
+                    st.session_state.ws_initialized = True
                     self.ws_manager = manager
                 else:
                     return False
             
             # Check if manager is running
             if not manager.is_running:
-                print("🔄 WebSocket manager not running, restarting...")
+                print("🔄 Unified WebSocket manager not running, restarting...")
                 manager.start()
                 import time as time_module
                 time_module.sleep(1.0)  # Wait for connection to establish
             
-            print(f"✅ WebSocket connection ready - running: {manager.is_running}")
+            print(f"✅ Unified WebSocket connection ready - running: {manager.is_running}")
             return manager.is_running
             
         except Exception as e:
-            print(f"⚠️ Failed to ensure WebSocket connection: {e}")
+            print(f"⚠️ Failed to ensure unified WebSocket connection: {e}")
             import traceback
             traceback.print_exc()
             return False
-
-    def _cleanup_websocket_connection(self):
-        """Clean up WebSocket connection when leaving the feature"""
-        if 'blog_ws_manager' in st.session_state and st.session_state.blog_ws_manager:
-            try:
-                st.session_state.blog_ws_manager.stop()
-                print("🔌 Blog WebSocket connection cleaned up")
-            except Exception as e:
-                print(f"⚠️ Error cleaning up WebSocket: {e}")
-            finally:
-                st.session_state.blog_ws_manager = None
-                st.session_state.blog_ws_initialized = False
-
-    def _handle_feature_switch(self):
-        """Handle feature switching and cleanup WebSocket connections"""
-        # Initialize current feature tracking
-        if 'current_feature' not in st.session_state:
-            st.session_state.current_feature = "📝 Blog Generation"
-        
-        # Get the currently selected feature from the sidebar
-        current_selection = st.session_state.get('feature_selector', "📝 Blog Generation")
-        
-        # If we're switching away from Blog Generation, cleanup WebSocket
-        if (st.session_state.current_feature == "📝 Blog Generation" and 
-            current_selection != "📝 Blog Generation"):
-            print("🔄 Switching away from Blog Generation - cleaning up WebSocket")
-            self._cleanup_websocket_connection()
-            # Reset the initialization flag so it can be re-established if user comes back
-            st.session_state.blog_ws_initialized = False
-        
-        # Update current feature
-        st.session_state.current_feature = current_selection
 
     # ----------------------------
     # MAIN RENDER METHOD
     # ----------------------------
     def render(self):
-        # Check if we're switching away from Blog Generation feature
-        self._handle_feature_switch()
-        
-        # Ensure WebSocket connection is ready (will check and reconnect if needed)
+        # Ensure unified WebSocket connection is ready (will check and reconnect if needed)
         if st.session_state.get('authenticated', False) and st.session_state.get('token'):
-            manager = st.session_state.get('blog_ws_manager')
+            manager = st.session_state.get('ws_manager')
             if not manager or not manager.is_running:
-                print("🔄 WebSocket needs initialization or restart")
+                print("🔄 Unified WebSocket needs initialization or restart")
                 self._ensure_websocket_connection()
         
         st.title("📝 Blog Generation")
@@ -205,15 +162,18 @@ class BlogGenerationFeature:
         st.divider()
         st.subheader("📡 Live Blog Generation")
 
+        # Ensure TOC stays at the top by declaring it BEFORE content placeholder
+        toc_title_placeholder = st.empty()
+        toc_placeholder = st.empty()
         content_placeholder = st.empty()
         progress_placeholder = st.empty()
-        toc_placeholder = st.empty()
 
         if "live_md" not in st.session_state:
             st.session_state.live_md = {"text": ""}
         live_md = st.session_state.live_md
 
         if not live_md["text"]:
+            toc_title_placeholder.markdown("### 📋 Table of Contents")
             content_placeholder.info("Click **Start Generation** to begin.")
             progress_placeholder.info("Waiting for generation...")
 
@@ -233,12 +193,18 @@ class BlogGenerationFeature:
             live_md = st.session_state.live_md
 
             # Always use streaming - no fallback
-            self.generate_blog_post_stream(blog_data, content_placeholder, progress_placeholder, toc_placeholder)
+            self.generate_blog_post_stream(
+                blog_data,
+                content_placeholder,
+                progress_placeholder,
+                toc_placeholder,
+                toc_title_placeholder,
+            )
 
     # ----------------------------
     # STREAMING IMPLEMENTATION
     # ----------------------------
-    def generate_blog_post_stream(self, blog_data, content_placeholder, progress_placeholder, toc_placeholder):
+    def generate_blog_post_stream(self, blog_data, content_placeholder, progress_placeholder, toc_placeholder, toc_title_placeholder=None):
         """Generate blog via WebSocket stream using queue-based messaging."""
         import queue
         
@@ -269,9 +235,9 @@ class BlogGenerationFeature:
             st.error("❌ Failed to establish WebSocket connection")
             return
 
-        # Send blog generation request via persistent WebSocket
-        print(f"📤 [STREAMLIT] Sending blog generation request via WebSocket")
-        message_id = self.api.generate_blog_stream_websocket(
+        # Send blog generation request via unified WebSocket
+        print(f"📤 [STREAMLIT] Sending blog generation request via unified WebSocket")
+        message_id = self.unified_api.send_blog_generation_request(
             blog_data=blog_data,
             on_event=queue_event,
             on_complete=queue_complete,
@@ -316,8 +282,11 @@ class BlogGenerationFeature:
                         elif t == "toc":
                             toc = evt.get("sections", [])
                             if toc:
+                                # Keep TOC fixed at the top
+                                if toc_title_placeholder is not None:
+                                    toc_title_placeholder.markdown("### 📋 Table of Contents")
                                 toc_md = "\n".join([f"{i+1}. {s}" for i, s in enumerate(toc)])
-                                toc_placeholder.markdown(f"**📋 Table of Contents:**\n\n{toc_md}")
+                                toc_placeholder.markdown(toc_md)
                                 
                         elif t == "section_start":
                             section = evt.get("section", "")
@@ -374,8 +343,8 @@ class BlogGenerationFeature:
                     
                     # Check activity timeout (no events received)
                     if current_time - last_activity_time > activity_timeout:
-                        # Check if WebSocket is still connected
-                        manager = st.session_state.get('blog_ws_manager')
+                        # Check if unified WebSocket is still connected
+                        manager = st.session_state.get('ws_manager')
                         if manager and not manager.is_running:
                             error_msg = "WebSocket connection lost"
                             print(f"🔌 [STREAMLIT] {error_msg}")
@@ -388,13 +357,13 @@ class BlogGenerationFeature:
                         content_placeholder.markdown(live_md["text"] + " ▌")
                         last_update_time = current_time
                 
-                # Check WebSocket connection health periodically
+                # Check unified WebSocket connection health periodically
                 if time.time() % 5 < 0.5:  # Every ~5 seconds
-                    manager = st.session_state.get('blog_ws_manager')
+                    manager = st.session_state.get('ws_manager')
                     if manager:
-                        print(f"💓 [STREAMLIT] WebSocket health check - running: {manager.is_running}, callbacks: {len(manager.response_callbacks)}")
+                        print(f"💓 [STREAMLIT] Unified WebSocket health check - running: {manager.is_running}, callbacks: {len(manager.response_callbacks)}")
                     else:
-                        print(f"⚠️ [STREAMLIT] No WebSocket manager found in session state")
+                        print(f"⚠️ [STREAMLIT] No unified WebSocket manager found in session state")
 
         # Final update without cursor
         if live_md["text"]:
