@@ -1,6 +1,9 @@
 import json
 import asyncio
+import logging
 from urllib.parse import urlparse
+from typing import Dict, Any, List, Optional
+
 from crewai import Crew, Process
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI
@@ -15,21 +18,31 @@ from .images.blog_images import (
     embed_images_in_blog_content,
 )
 
+# Optional LangSmith tracing/cost logging
 try:
     from management_app.langsmith_integration.langsmith_integration import (
-        log_cost, trace_blog_writer
+        log_cost,
+        trace_blog_writer,
     )
     LANGSMITH_AVAILABLE = True
 except Exception:
     LANGSMITH_AVAILABLE = False
 
-    def log_cost(*_, **__): 
+    def log_cost(*_, **__):
         pass
 
     def trace_blog_writer(*_, **__):
-        def decorator(func): 
+        def decorator(func):
             return func
         return decorator
+
+
+logger = logging.getLogger(__name__)
+
+# Stream tuning
+_CHUNK_BYTES = 1500  # ~1–2KB per push keeps UI smooth
+_IMAGE_CONCURRENCY = 2  # parallel image jobs (tune to infra)
+_MAX_SOURCES = 30       # cap references to avoid bloat
 
 
 class BlogWriter:
@@ -37,15 +50,15 @@ class BlogWriter:
 
     def __init__(
         self,
-        topic,
-        blog_type="News",
-        length_min=800,
-        length_max=1500,
-        keywords=None,
-        target_audience=None,
-        use_custom_llm=False,
-        generate_images=True,
-        max_image_prompts=5,
+        topic: str,
+        blog_type: str = "News",
+        length_min: int = 800,
+        length_max: int = 1500,
+        keywords: Optional[List[str]] = None,
+        target_audience: Optional[List[str]] = None,
+        use_custom_llm: bool = False,
+        generate_images: bool = True,
+        max_image_prompts: int = 5,
     ):
         self.topic = topic
         self.blog_type = blog_type
@@ -83,15 +96,15 @@ class BlogWriter:
         self.image_prompt_agent = ContextualImagePromptAgent(use_custom_llm=use_custom_llm)
 
         # Runtime data
-        self.blog_content = ""
-        self.section_images = {}
-        self.image_urls = []
-        self.research_sources = []
+        self.blog_content: str = ""
+        self.section_images: Dict[str, Dict[str, Any]] = {}
+        self.image_urls: List[str] = []
+        self.research_sources: List[Dict[str, str]] = []
 
     # -------------------------------------------------------------------
     # LLM SETUP
     # -------------------------------------------------------------------
-    def _init_llm(self, use_custom_llm):
+    def _init_llm(self, use_custom_llm: bool):
         if use_custom_llm:
             gemini_key = getattr(settings, "GOOGLE_API_KEY", None)
             if not gemini_key:
@@ -101,28 +114,41 @@ class BlogWriter:
                 google_api_key=gemini_key,
                 temperature=0.6,
             )
-        else:
-            openai_key = getattr(settings, "OPENAI_API_KEY", None)
-            if not openai_key:
-                raise ValueError("OPENAI_API_KEY not found in Django settings")
-            return ChatOpenAI(
-                model="gpt-4o-mini",
-                temperature=0.4,
-                max_tokens=6000,
-                api_key=openai_key,
-            )
+
+        openai_key = getattr(settings, "OPENAI_API_KEY", None)
+        if not openai_key:
+            raise ValueError("OPENAI_API_KEY not found in Django settings")
+        # Keep output token cap reasonable for latency/cost
+        return ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.4,
+            max_tokens=900,
+            api_key=openai_key,
+        )
 
     # -------------------------------------------------------------------
-    # HELPER: CLEAN SOURCES
+    # HELPERS
     # -------------------------------------------------------------------
+    async def _to_thread(self, func, *args, timeout: Optional[float] = None, **kwargs):
+        """Run sync work off the event loop with optional timeout."""
+        coro = asyncio.to_thread(func, *args, **kwargs)
+        return await (asyncio.wait_for(coro, timeout=timeout) if timeout else coro)
+
+    def _iter_chunks(self, text: str, size: int = _CHUNK_BYTES):
+        b = text.encode("utf-8")
+        for i in range(0, len(b), size):
+            yield b[i : i + size].decode("utf-8", errors="ignore")
+
     def _clean_and_deduplicate_sources(self, raw_sources):
         unique = {}
-        for s in raw_sources:
-            url = s.get("url", "").strip()
+        for s in raw_sources or []:
+            url = (s.get("url") or "").strip()
             if not url or url in unique:
                 continue
-            title = s.get("title", urlparse(url).netloc.replace("www.", ""))
+            title = s.get("title") or urlparse(url).netloc.replace("www.", "")
             unique[url] = {"url": url, "title": title, "type": s.get("type", "reference")}
+            if len(unique) >= _MAX_SOURCES:
+                break
         return list(unique.values())
 
     # -------------------------------------------------------------------
@@ -130,7 +156,7 @@ class BlogWriter:
     # -------------------------------------------------------------------
     @trace_blog_writer("generate_blog_v6", metadata={"workflow": "section_image_sync"})
     def generate_blog(self):
-        print(f"🚀 Generating blog for topic: {self.topic}")
+        logger.info("Generating blog for topic=%s", self.topic)
 
         # === STEP 1: TOC ===
         toc_crew = Crew(
@@ -142,13 +168,14 @@ class BlogWriter:
         toc_result = toc_crew.kickoff(inputs={"topic": self.topic})
         toc_content = getattr(toc_result, "raw", None) or str(toc_result)
         sections = self._parse_toc_sections(toc_content)
-        print(f"📋 TOC created with {len(sections)} sections")
+        logger.info("TOC created with %d sections", len(sections))
 
-        blog_sections = []
+        blog_sections: List[str] = []
+        self.research_sources = []
 
         # === STEP 2: Section loop ===
         for idx, section_title in enumerate(sections, 1):
-            print(f"\n🔍 Researching section {idx}/{len(sections)}: {section_title}")
+            logger.info("Researching section %d/%d: %s", idx, len(sections), section_title)
 
             research_task = self.tasks.section_research_task(self.agents, section_title)
             research_crew = Crew(
@@ -176,11 +203,10 @@ class BlogWriter:
                 process=Process.sequential,
             )
             section_result = writing_crew.kickoff(inputs={"topic": self.topic})
-            section_content = getattr(section_result, "raw", None) or str(section_result)
-            section_content = section_content.strip()
+            section_content = (getattr(section_result, "raw", None) or str(section_result)).strip()
 
+            # === Images ===
             if self.generate_images:
-                print(f"🖼️ Generating contextual image for section: {section_title}")
                 try:
                     image_prompt_data = self.image_prompt_agent.generate_prompt(
                         topic=self.topic,
@@ -200,106 +226,132 @@ class BlogWriter:
                     )
 
                     if section_images and "banner" in section_images:
-                        section_image = section_images["banner"]
-                        image_url = section_image.get("image_url")
-                        if image_url:
-                            self.section_images[section_title] = section_image
-                            self.image_urls.append(image_url)
+                        banner = section_images["banner"]
+                        url = banner.get("image_url")
+                        if url:
+                            self.section_images[section_title] = banner
+                            self.image_urls.append(url)
                             section_content = embed_images_in_blog_content(
-                                section_content, {"banner": section_image}
+                                section_content, {"banner": banner}
                             )
-                            print(f"✅ Image embedded for '{section_title}'")
                 except Exception as e:
-                    print(f"⚠️ Image generation failed for '{section_title}': {e}")
+                    logger.warning("Image generation failed for '%s': %s", section_title, e)
 
             blog_sections.append(section_content)
 
         self.blog_content = f"# {self.topic}\n\n{toc_content}\n\n" + "\n\n".join(blog_sections)
-        print(f"✅ Blog complete. Sections: {len(sections)} | Images: {len(self.image_urls)}")
+        logger.info("Blog complete. sections=%d images=%d", len(sections), len(self.image_urls))
 
         return {
             "content": self.blog_content,
             "sections": sections,
             "images": self.image_urls,
-            "sources": self.research_sources,
+            "sources": self.research_sources[:_MAX_SOURCES],
         }
 
     # -------------------------------------------------------------------
     # STREAMING VERSION FOR WEBSOCKET CONSUMER
     # -------------------------------------------------------------------
-    async def generate_streaming_blog(self, websocket=None, on_status=None, on_toc=None, on_section_start=None, on_section_token=None, on_image=None, on_section_complete=None, on_complete=None, on_error=None, **kwargs):
+    async def generate_streaming_blog(
+        self,
+        websocket=None,
+        on_status=None,
+        on_toc=None,
+        on_section_start=None,
+        on_section_token=None,
+        on_image=None,
+        on_section_complete=None,
+        on_complete=None,
+        on_error=None,
+        *,
+        cancel_event: Optional[asyncio.Event] = None,
+        research_timeout: float = 60.0,
+        writing_timeout: float = 90.0,
+        toc_timeout: float = 30.0,
+        image_timeout: float = 60.0,
+        **kwargs,
+    ):
         """
         Streaming version of generate_blog() for WebSocket use.
-        Uses callback functions to send incremental updates to the WebSocket consumer.
+        Uses callback functions to send incremental updates.
+        Adds timeouts, chunked streaming, cancellation, and image concurrency caps.
         """
         try:
-            # Call status callback
             if on_status:
                 await on_status("starting", f"🚀 Starting blog generation for '{self.topic}'")
 
-            # === STEP 1: TOC ===
+            # === TOC ===
             if on_status:
-                await on_status("toc_generation", f"📋 Generating table of contents...")
-            
+                await on_status("toc_generation", "📋 Generating table of contents...")
             toc_crew = Crew(
                 agents=[self.agents.toc_builder()],
                 tasks=[self.tasks.toc_generation_task(self.agents)],
                 process=Process.sequential,
                 verbose=False,
             )
-            
-            # Run TOC generation in thread pool to prevent blocking event loop
-            loop = asyncio.get_event_loop()
-            toc_result = await loop.run_in_executor(
-                None,
-                lambda: toc_crew.kickoff(inputs={"topic": self.topic})
+            toc_result = await self._to_thread(
+                toc_crew.kickoff, inputs={"topic": self.topic}, timeout=toc_timeout
             )
             toc_content = getattr(toc_result, "raw", None) or str(toc_result)
             sections = self._parse_toc_sections(toc_content)
-            
-            # Call TOC callback
             if on_toc:
                 await on_toc(sections)
 
-            blog_sections = []
+            blog_sections: List[str] = []
+            self.research_sources = []
+            sources_seen = set()
 
-            # === STEP 2: Section loop ===
+            sem_images = asyncio.Semaphore(_IMAGE_CONCURRENCY)
+            sent_images = 0
+            max_images = int(self.max_image_prompts or 0)
+
             for idx, section_title in enumerate(sections, 1):
-                # Call section start callback
+                if cancel_event and cancel_event.is_set():
+                    if on_status:
+                        await on_status("cancelled", "🛑 Generation cancelled")
+                    return
+
                 if on_section_start:
                     await on_section_start(section_title, idx)
 
-                # Research phase
+                # === Research ===
                 if on_status:
-                    await on_status("research", f"🔍 Researching content for section '{section_title}'...")
-                
+                    await on_status("research", f"🔍 Researching '{section_title}'...")
                 research_task = self.tasks.section_research_task(self.agents, section_title)
                 research_crew = Crew(
                     agents=[self.agents.section_researcher()],
                     tasks=[research_task],
                     process=Process.sequential,
                 )
-                
-                # Run CrewAI research in thread pool to prevent blocking event loop
-                loop = asyncio.get_event_loop()
-                research_result = await loop.run_in_executor(
-                    None,
-                    lambda: research_crew.kickoff(inputs={"topic": self.topic})
+                research_result = await self._to_thread(
+                    research_crew.kickoff, inputs={"topic": self.topic}, timeout=research_timeout
                 )
                 raw_research = getattr(research_result, "raw", None) or str(research_result)
 
                 try:
                     research_json = json.loads(raw_research)
                     research_summary = "\n".join(research_json.get("key_findings", []))
-                    section_sources = self._clean_and_deduplicate_sources(research_json.get("sources", []))
-                    self.research_sources.extend(section_sources)
+                    for s in research_json.get("sources", []):
+                        u = (s.get("url") or "").strip()
+                        if u and u not in sources_seen:
+                            title = s.get("title") or urlparse(u).netloc.replace("www.", "")
+                            self.research_sources.append(
+                                {"url": u, "title": title, "type": s.get("type", "reference")}
+                            )
+                            sources_seen.add(u)
+                    if len(self.research_sources) > _MAX_SOURCES:
+                        self.research_sources = self.research_sources[:_MAX_SOURCES]
                 except Exception:
                     research_summary = raw_research
 
-                # Writing phase
+                if cancel_event and cancel_event.is_set():
+                    if on_status:
+                        await on_status("cancelled", "🛑 Generation cancelled")
+                    return
+
+                # === Writing ===
                 if on_status:
-                    await on_status("writing", f"✍️ Writing content for section '{section_title}'...")
-                
+                    await on_status("writing", f"✍️ Writing '{section_title}'...")
                 writing_task = self.tasks.section_writing_task(
                     self.agents, section_title, idx, len(sections), research_summary=research_summary
                 )
@@ -308,118 +360,95 @@ class BlogWriter:
                     tasks=[writing_task],
                     process=Process.sequential,
                 )
-                
-                # Run CrewAI writing in thread pool to prevent blocking event loop
-                loop = asyncio.get_event_loop()
-                section_result = await loop.run_in_executor(
-                    None,
-                    lambda: writing_crew.kickoff(inputs={"topic": self.topic})
+                section_result = await self._to_thread(
+                    writing_crew.kickoff, inputs={"topic": self.topic}, timeout=writing_timeout
                 )
-                section_content = getattr(section_result, "raw", None) or str(section_result)
+                section_content = (getattr(section_result, "raw", None) or str(section_result)).strip()
 
-                # Send the complete section content immediately
-                if on_section_token:
-                    try:
-                        # Send the entire section content at once for better reliability
-                        await on_section_token(section_content)
-                        print(f"📝 [BLOG STREAM] Sent section content: {len(section_content)} characters")
-                        
-                        # Send a heartbeat to keep connection alive
-                        if on_status:
-                            await on_status("heartbeat", f"Section {idx} content sent successfully")
-                            
-                    except Exception as e:
-                        print(f"⚠️ Section content streaming error: {e}")
-                        # Try to send in smaller chunks if full content fails
-                        try:
-                            words = section_content.split()
-                            for i, word in enumerate(words):
-                                await on_section_token(word + " ")
-                                if i % 10 == 0:
-                                    await asyncio.sleep(0.1)
-                        except Exception as e2:
-                            print(f"⚠️ Chunked streaming also failed: {e2}")
-                            continue
+                # Stream in fixed-size chunks
+                if on_section_token and section_content:
+                    for chunk in self._iter_chunks(section_content):
+                        if cancel_event and cancel_event.is_set():
+                            break
+                        await on_section_token(chunk)
 
-                # === Image Generation ===
-                if self.generate_images:
+                # === Images (capped & concurrency-controlled) ===
+                if self.generate_images and (max_images <= 0 or sent_images < max_images):
                     if on_status:
-                        await on_status("image_generation", f"🖼️ Generating contextual image for section '{section_title}'...")
-                    
+                        await on_status("image_generation", f"🖼️ Generating image for '{section_title}'...")
                     try:
-                        # Run image prompt generation in thread pool
-                        loop = asyncio.get_event_loop()
-                        image_prompt_data = await loop.run_in_executor(
-                            None,
+                        image_prompt_data = await self._to_thread(
                             self.image_prompt_agent.generate_prompt,
                             self.topic,
                             section_title,
                             section_content,
-                            self.blog_type
+                            self.blog_type,
+                            timeout=15.0,
                         )
                         image_prompt = image_prompt_data["prompt"]
 
-                        # Run image generation in a thread pool to prevent blocking the event loop
-                        # This ensures WebSocket keepalive messages continue during long image generation
-                        section_images = await loop.run_in_executor(
-                            None,  # Use default ThreadPoolExecutor
-                            generate_section_specific_images,
-                            self.topic,
-                            self.blog_type,
-                            image_prompt,
-                            "blog_images",
-                            "flux",
-                            False
-                        )
+                        async with sem_images:
+                            section_images = await self._to_thread(
+                                generate_section_specific_images,
+                                self.topic,
+                                self.blog_type,
+                                image_prompt,
+                                "blog_images",
+                                "flux",
+                                False,
+                                timeout=image_timeout,
+                            )
 
                         if section_images and "banner" in section_images:
-                            section_image = section_images["banner"]
-                            image_url = section_image.get("image_url")
-                            if image_url:
-                                self.section_images[section_title] = section_image
-                                self.image_urls.append(image_url)
+                            banner = section_images["banner"]
+                            url = banner.get("image_url")
+                            if url:
+                                self.section_images[section_title] = banner
+                                self.image_urls.append(url)
                                 section_content = embed_images_in_blog_content(
-                                    section_content, {"banner": section_image}
+                                    section_content, {"banner": banner}
                                 )
-                                # Call image callback
+                                sent_images += 1
                                 if on_image:
-                                    await on_image(section_title, section_image)
+                                    await on_image(section_title, banner)
                     except Exception as e:
-                        print(f"⚠️ Image generation failed for '{section_title}': {e}")
+                        logger.warning("Image generation failed for '%s': %s", section_title, e)
                         if on_error:
-                            await on_error(f"⚠️ Image generation failed for '{section_title}': {e}")
+                            await on_error(f"Image generation failed for '{section_title}': {e}")
 
-                # Call section complete callback
                 if on_section_complete:
                     await on_section_complete(section_title, section_content)
                 blog_sections.append(section_content)
 
-            # Final assembly
+            if cancel_event and cancel_event.is_set():
+                if on_status:
+                    await on_status("cancelled", "🛑 Generation cancelled")
+                return
+
             if on_status:
-                await on_status("finalizing", f"📝 Finalizing blog content...")
-            
+                await on_status("finalizing", "🧩 Finalizing blog content...")
             self.blog_content = f"# {self.topic}\n\n{toc_content}\n\n" + "\n\n".join(blog_sections)
 
-            # Call complete callback
             if on_complete:
-                result_data = {
-                    "content": self.blog_content,
-                    "sections": sections,
-                    "image_urls": self.image_urls,
-                    "sources": self.research_sources
-                }
-                await on_complete(result_data)
+                await on_complete(
+                    {
+                        "content": self.blog_content,
+                        "sections": sections,
+                        "image_urls": self.image_urls,
+                        "sources": self.research_sources[:_MAX_SOURCES],
+                    }
+                )
 
         except Exception as e:
-            print(f"❌ Blog generation error: {e}")
+            logger.exception("Blog generation error")
             if on_error:
                 await on_error(str(e))
 
     # -------------------------------------------------------------------
     # TOC PARSER
     # -------------------------------------------------------------------
-    def _parse_toc_sections(self, toc_content):
-        sections = []
+    def _parse_toc_sections(self, toc_content: str) -> List[str]:
+        sections: List[str] = []
         for line in toc_content.split("\n"):
             line = line.strip()
             if line and line[0].isdigit() and "." in line:

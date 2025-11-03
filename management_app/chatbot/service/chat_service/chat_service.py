@@ -1,230 +1,85 @@
-"""
-Django chat service for database operations with user isolation
-"""
+# project_chatbot.py
+import asyncio
 import logging
-from datetime import datetime
-from typing import List, Dict, Optional, Tuple
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-from django.db import transaction
-from django.utils import timezone
-
-from ...models import ChatSession, ChatMessage, ChatConversationContext
+from typing import Optional, AsyncGenerator, Dict, Any, List
+from langchain_openai import ChatOpenAI
+from langchain.schema import Document
+from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
+from ..prompts.prompts import ChatbotPrompts
 
 logger = logging.getLogger(__name__)
 
-
-class DjangoChatService:
-    """Django service for managing chat data with user isolation"""
-    
+class ProjectChatbot:
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
-    def get_user_by_id(self, user_id: int) -> Optional[User]:
-        """Get user by ID with error handling"""
-        try:
-            return User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            self.logger.error(f"User with ID {user_id} not found")
-            return None
-        except Exception as e:
-            self.logger.error(f"Error getting user {user_id}: {e}")
-            return None
-    
-    def create_chat_session(self, user_id: int, session_id: str, title: str = None) -> Optional[ChatSession]:
-        """Create a new chat session for a user"""
-        try:
-            user = self.get_user_by_id(user_id)
-            if not user:
-                return None
-            
-            session = ChatSession.objects.create(
-                user_id=user_id,
-                username=user.username,
-                email=user.email,
-                session_id=session_id,
-                is_active=True,
-                total_messages=0
+        self.model_name = "gpt-4o-mini"
+        self.llm = ChatOpenAI(
+            model=self.model_name,
+            temperature=0.3,
+            max_tokens=700,
+            timeout=20,
+        )
+        self.pinecone_service = PineconeService()
+
+    def is_available(self) -> bool:
+        return self.pinecone_service.is_available() and self.llm is not None
+
+    def _results_to_documents(self, results: List[Dict[str, Any]]) -> List[Document]:
+        return [
+            Document(
+                page_content=r.get("chunk_content", "") or "",
+                metadata={
+                    "file_name": r.get("file_name"),
+                    "file_type": r.get("file_type"),
+                    "file_url": r.get("file_url"),
+                    "chunk_index": r.get("chunk_index"),
+                    "score": r.get("score"),
+                    "links": r.get("links", []) or [],
+                },
             )
-            
-            self.logger.info(f"Created chat session {session_id} for user {user.username}")
-            return session
-            
-        except Exception as e:
-            self.logger.error(f"Error creating chat session: {e}")
-            return None
-    
-    def get_user_sessions(self, user_id: int, limit: int = 50) -> List[ChatSession]:
-        """Get all chat sessions for a user (user isolation)"""
+            for r in results
+        ]
+
+    async def ask_stream_async(
+        self,
+        query: str,
+        top_k: int = 10,
+        user_id: Optional[int] = None,
+    ) -> AsyncGenerator[str, None]:
+        if not self.is_available():
+            yield "[ERROR] Chatbot is not available. Please check Pinecone and OpenAI."
+            return
+
         try:
-            sessions = ChatSession.objects.filter(
-                user_id=user_id,
-                is_active=True
-            ).order_by('-updated_at')[:limit]
-            
-            return list(sessions)
-            
-        except Exception as e:
-            self.logger.error(f"Error getting user sessions: {e}")
-            return []
-    
-    def get_session_messages(self, user_id: int, session_id: str) -> List[ChatMessage]:
-        """Get messages for a specific session (user isolation)"""
-        try:
-            # Verify session belongs to user
-            session = ChatSession.objects.filter(
-                user_id=user_id,
-                session_id=session_id,
-                is_active=True
-            ).first()
-            
-            if not session:
-                self.logger.warning(f"Session {session_id} not found for user {user_id}")
-                return []
-            
-            messages = ChatMessage.objects.filter(session_id=session).order_by('created_at')
-            return list(messages)
-            
-        except Exception as e:
-            self.logger.error(f"Error getting session messages: {e}")
-            return []
-    
-    def save_message(self, user_id: int, session_id: str, message_type: str, 
-                    content: str, sources: List = None, processing_info: Dict = None) -> Optional[ChatMessage]:
-        """Save a message to a session (user isolation)"""
-        try:
-            # Get or create session
-            session = ChatSession.objects.filter(
-                user_id=user_id,
-                session_id=session_id,
-                is_active=True
-            ).first()
-            
-            if not session:
-                session = self.create_chat_session(user_id, session_id)
-                if not session:
-                    return None
-            
-            # Create message
-            message = ChatMessage.objects.create(
-                session_id=session,
-                message_type=message_type,
-                content=content,
-                sources_used=sources or [],
-                relevant_documents=processing_info or {}
+            # Run blocking Pinecone search off the event loop
+            loop = asyncio.get_running_loop()
+            search_result = await loop.run_in_executor(
+                None, self.pinecone_service.search_documents, query, top_k
             )
-            
-            # Update session timestamp and message count
-            session.updated_at = timezone.now()
-            session.total_messages += 1
-            session.save()
-            
-            self.logger.info(f"Saved {message_type} message for user {user_id}")
-            return message
-            
+
+            if not search_result.get("success") or not search_result.get("results"):
+                yield "I could not find any relevant information for your query."
+                return
+
+            docs = self._results_to_documents(search_result["results"])
+
+            context_parts, all_links = [], []
+            for d in docs[:top_k]:
+                context_parts.append(d.page_content)
+                all_links.extend([l for l in d.metadata.get("links", []) if l not in all_links])
+
+            context_text = "\n\n".join(context_parts)
+            links_section = ("\n\nRelevant Links from Documents:\n" +
+                             "\n".join(f"- {l}" for l in all_links)) if all_links else ""
+
+            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
+
+            async for chunk in self.llm.astream(prompt):
+                content = getattr(chunk, "content", None)
+                if content:
+                    yield str(content)
+
+            # Optional EOF marker for some clients
+            yield ""
         except Exception as e:
-            self.logger.error(f"Error saving message: {e}")
-            return None
-    
-    def save_conversation_context(self, user_id: int, session_id: str, context_data: List) -> bool:
-        """Save conversation context for AI continuity (user isolation)"""
-        try:
-            session = ChatSession.objects.filter(
-                user_id=user_id,
-                session_id=session_id,
-                is_active=True
-            ).first()
-            
-            if not session:
-                return False
-            
-            # Update or create context
-            context, created = ChatConversationContext.objects.update_or_create(
-                user_id=user_id,
-                session_id=session_id,
-                defaults={'context_data': context_data}
-            )
-            
-            self.logger.info(f"Saved conversation context for user {user_id}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error saving conversation context: {e}")
-            return False
-    
-    def get_conversation_context(self, user_id: int, session_id: str) -> List:
-        """Get conversation context for a session (user isolation)"""
-        try:
-            session = ChatSession.objects.filter(
-                user_id=user_id,
-                session_id=session_id,
-                is_active=True
-            ).first()
-            
-            if not session:
-                return []
-            
-            context = ChatConversationContext.objects.filter(
-                user_id=user_id,
-                session_id=session_id
-            ).first()
-            
-            return context.context_data if context else []
-            
-        except Exception as e:
-            self.logger.error(f"Error getting conversation context: {e}")
-            return []
-    
-    def delete_session(self, user_id: int, session_id: str) -> bool:
-        """Delete a chat session (user isolation)"""
-        try:
-            session = ChatSession.objects.filter(
-                user_id=user_id,
-                session_id=session_id,
-                is_active=True
-            ).first()
-            
-            if not session:
-                return False
-            
-            # Soft delete by marking as inactive
-            session.is_active = False
-            session.save()
-            
-            self.logger.info(f"Deleted session {session_id} for user {user_id}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error deleting session: {e}")
-            return False
-    
-    def clear_user_sessions(self, user_id: int) -> bool:
-        """Clear all sessions for a user (user isolation)"""
-        try:
-            # Soft delete all user sessions
-            ChatSession.objects.filter(user_id=user_id, is_active=True).update(is_active=False)
-            
-            self.logger.info(f"Cleared all sessions for user {user_id}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error clearing user sessions: {e}")
-            return False
-    
-    def get_session_stats(self, user_id: int) -> Dict:
-        """Get chat statistics for a user (user isolation)"""
-        try:
-            sessions = ChatSession.objects.filter(user_id=user_id, is_active=True)
-            total_sessions = sessions.count()
-            total_messages = sum(session.total_messages for session in sessions)
-            
-            return {
-                'total_sessions': total_sessions,
-                'total_messages': total_messages,
-                'user_id': user_id
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error getting session stats: {e}")
-            return {}
+            logger.error(f"Chatbot async streaming error: {e}", exc_info=True)
+            yield "[ERROR] Something went wrong while processing your request."

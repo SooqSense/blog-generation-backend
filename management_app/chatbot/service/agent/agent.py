@@ -1,262 +1,195 @@
+# project_chatbot.py
 """
-LangChain-based ProjectChatbot that uses PineconeService for knowledge base retrieval.
-Optimized with async support for real-time streaming.
+Async-only ProjectChatbot for streaming answers with Pinecone retrieval.
+- Removes sync code (ask / ask_stream)
+- Uses run_in_executor for non-async Pinecone
+- Dedups links and trims context to a rough token budget
+- Keeps the public surface minimal
 """
 
-import time
-import logging
 import asyncio
-from typing import Dict, Any, List, Optional, AsyncGenerator
+import logging
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, AsyncGenerator, Tuple
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import Document
 
-# Import your PineconeService
 from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
-# Import prompts
 from ..prompts.prompts import ChatbotPrompts
-
 
 logger = logging.getLogger(__name__)
 
+# Optional token counting if tiktoken is available
+try:
+    import tiktoken
+except Exception:
+    tiktoken = None
+
+
+@dataclass
+class ModelConfig:
+    model: str = "gpt-4o-mini"
+    temperature: float = 0.3
+    max_output_tokens: int = 700
+    request_timeout: int = 20
+    # keep input compact so prompts don’t balloon
+    max_input_tokens: int = 6000
+    max_docs_for_context: int = 12
+
 
 class ProjectChatbot:
-    """Chatbot that answers portfolio/project queries using PineconeService."""
+    """Async streaming chatbot using Pinecone + OpenAI."""
 
-    def __init__(self):
-        self.model_name = "gpt-4o-mini"   # fast and cheap model for QA
-        self.llm = ChatOpenAI(model=self.model_name, temperature=0.7)
-        self.pinecone_service = PineconeService()
+    def __init__(
+        self,
+        pinecone_service: Optional[PineconeService] = None,
+        config: Optional[ModelConfig] = None,
+    ):
+        self.config = config or ModelConfig()
+        self.llm = ChatOpenAI(
+            model=self.config.model,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_output_tokens,
+            timeout=self.config.request_timeout,
+        )
+        self.pinecone_service = pinecone_service or PineconeService()
+        self._encoding = self._get_encoding()
+
+    # ---------- public ----------
 
     def is_available(self) -> bool:
-        """Check if chatbot service is available (Pinecone + OpenAI)."""
         return self.pinecone_service.is_available() and self.llm is not None
 
-    # --- Helper: Convert Pinecone search results to LangChain Documents ---
-    def _results_to_documents(self, results: List[Dict[str, Any]]) -> List[Document]:
-        docs = []
-        for res in results:
-            docs.append(Document(
-                page_content=res.get("chunk_content", ""),
-                metadata={
-                    "file_name": res.get("file_name"),
-                    "file_type": res.get("file_type"),
-                    "file_url": res.get("file_url"),
-                    "chunk_index": res.get("chunk_index"),
-                    "score": res.get("score"),
-                    "links": res.get("links", [])
-                }
-            ))
-        return docs
-
-    # --- Main query method ---
-    def ask(
-        self,
-        query: str,
-        top_k: int = 10,
-        user_id: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """Answer a query using PineconeService for retrieval + LLM for synthesis."""
-        start = time.time()
-
-        if not self.is_available():
-            return {
-                "success": False,
-                "response": "Chatbot is not available. Please check Pinecone and OpenAI.",
-                "sources": [],
-            }
-
-        try:
-            # Step 1: Search Pinecone via PineconeService
-            search_result = self.pinecone_service.search_documents(
-                query=query,
-                top_k=top_k
-            )
-
-            if not search_result.get("success") or not search_result.get("results"):
-                return {
-                    "success": True,
-                    "response": "I could not find any relevant information for your query.",
-                    "documents_found": 0,
-                }
-
-            docs = self._results_to_documents(search_result["results"])
-
-            # Step 2: Build context prompt for the LLM
-            context_parts = []
-            all_links = []
-            for d in docs[:top_k]:
-                context_parts.append(d.page_content)
-                # Collect unique links from all documents
-                doc_links = d.metadata.get("links", [])
-                if doc_links:
-                    all_links.extend([link for link in doc_links if link not in all_links])
-            
-            context_text = "\n\n".join(context_parts)
-            
-            # Add links section to context if available
-            links_section = ""
-            if all_links:
-                links_section = f"\n\nRelevant Links from Documents:\n" + "\n".join([f"- {link}" for link in all_links])
-            
-            # Use prompt from prompts.py
-            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
-
-            # Step 3: Generate response
-            llm_response = self.llm.invoke(prompt)
-
-            # Step 4: Build structured return (no sources, links are integrated in response)
-            return {
-                "success": True,
-                "response": llm_response.content,
-                "processing_time": round(time.time() - start, 2),
-                "query": query,
-                "documents_found": len(docs)
-            }
-
-        except Exception as e:
-            logger.error(f"❌ Chatbot error: {str(e)}")
-            return {
-                "success": False,
-                "response": "Something went wrong while processing your request.",
-                "error": str(e),
-                "documents_found": 0
-            }
-
-    # --- Streaming query method (SYNC - kept for backward compatibility) ---
-    def ask_stream(
-        self,
-        query: str,
-        top_k: int = 10,
-        user_id: Optional[int] = None
-    ):
-        """Generator that streams response chunks for a query.
-
-        Yields plain text chunks from the LLM as they arrive. The caller is responsible
-        for wrapping these into SSE or any transport format.
-        """
-        start = time.time()
-
-        if not self.is_available():
-            yield "[ERROR] Chatbot is not available. Please check Pinecone and OpenAI."
-            return
-
-        try:
-            # Step 1: Retrieval
-            search_result = self.pinecone_service.search_documents(
-                query=query,
-                top_k=top_k
-            )
-
-            # If no docs, stream a short notice and finish
-            if not search_result.get("success") or not search_result.get("results"):
-                yield "I could not find any relevant information for your query."
-                return
-
-            docs = self._results_to_documents(search_result["results"])
-
-            # Step 2: Build prompt with links aggregated
-            context_parts = []
-            all_links = []
-            for d in docs[:top_k]:
-                context_parts.append(d.page_content)
-                doc_links = d.metadata.get("links", [])
-                if doc_links:
-                    all_links.extend([link for link in doc_links if link not in all_links])
-
-            context_text = "\n\n".join(context_parts)
-            links_section = ""
-            if all_links:
-                links_section = "\n\nRelevant Links from Documents:\n" + "\n".join([f"- {link}" for link in all_links])
-
-            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
-
-            # Step 3: Stream from LLM
-            accumulated = []
-            for chunk in self.llm.stream(prompt):
-                content = getattr(chunk, "content", None)
-                if content:
-                    # Ensure proper UTF-8 encoding
-                    content = str(content).encode('utf-8').decode('utf-8')
-                    accumulated.append(content)
-                    yield content
-
-            # Final marker (optional; caller may not need)
-            total = "".join(accumulated)
-            yield ""  # Ensure generator completes cleanly
-
-        except Exception as e:
-            logger.error(f"❌ Chatbot streaming error: {str(e)}")
-            yield "[ERROR] Something went wrong while processing your request."
-    
-    # --- ASYNC Streaming query method (OPTIMIZED for real-time) ---
     async def ask_stream_async(
         self,
         query: str,
         top_k: int = 10,
-        user_id: Optional[int] = None
+        user_id: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
-        """Async generator that streams response chunks for a query in real-time.
-        
-        This is optimized to start streaming immediately while doing retrieval in parallel.
-        """
-        start = time.time()
-
+        """Stream the final answer as it’s generated."""
         if not self.is_available():
             yield "[ERROR] Chatbot is not available. Please check Pinecone and OpenAI."
             return
 
         try:
-            # Step 1: Run retrieval in thread pool (non-blocking)
-            loop = asyncio.get_event_loop()
+            # 1) Retrieval off the event loop
+            loop = asyncio.get_running_loop()
             search_result = await loop.run_in_executor(
-                None, 
-                self.pinecone_service.search_documents,
-                query,
-                top_k
+                None, self.pinecone_service.search_documents, query, top_k
             )
 
-            # If no docs, stream a short notice and finish
             if not search_result.get("success") or not search_result.get("results"):
                 yield "I could not find any relevant information for your query."
                 return
 
             docs = self._results_to_documents(search_result["results"])
-            logger.info(f"✅ Found {len(docs)} relevant chunks")
 
-            # Step 2: Build prompt with links aggregated
-            context_parts = []
-            all_links = []
-            for d in docs[:top_k]:
-                context_parts.append(d.page_content)
-                doc_links = d.metadata.get("links", [])
-                if doc_links:
-                    all_links.extend([link for link in doc_links if link not in all_links])
+            # 2) Build compact context + links
+            context_text, links_section = self._build_prompt_context(docs, query, top_k)
 
-            context_text = "\n\n".join(context_parts)
-            links_section = ""
-            if all_links:
-                links_section = "\n\nRelevant Links from Documents:\n" + "\n".join([f"- {link}" for link in all_links])
+            # 3) Prompt and stream
+            prompt = ChatbotPrompts.get_portfolio_query_prompt(
+                query, context_text, links_section
+            )
 
-            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
-
-            # Step 3: Stream from LLM using async streaming
-            accumulated = []
             async for chunk in self.llm.astream(prompt):
                 content = getattr(chunk, "content", None)
                 if content:
-                    # Ensure proper UTF-8 encoding
-                    content = str(content).encode('utf-8').decode('utf-8')
-                    accumulated.append(content)
-                    yield content
+                    yield str(content)
 
-            # Final marker
+            # Optional EOF marker (some clients expect it)
             yield ""
 
         except Exception as e:
-            logger.error(f"❌ Chatbot async streaming error: {str(e)}", exc_info=True)
+            logger.error("❌ Chatbot async streaming error", exc_info=True)
             yield "[ERROR] Something went wrong while processing your request."
 
+    # ---------- internals ----------
 
-# Create global chatbot instance
+    @staticmethod
+    def _results_to_documents(results: List[Dict[str, Any]]) -> List[Document]:
+        return [
+            Document(
+                page_content=r.get("chunk_content", "") or "",
+                metadata={
+                    "file_name": r.get("file_name"),
+                    "file_type": r.get("file_type"),
+                    "file_url": r.get("file_url"),
+                    "chunk_index": r.get("chunk_index"),
+                    "score": r.get("score"),
+                    "links": r.get("links", []) or [],
+                },
+            )
+            for r in results
+        ]
+
+    def _build_prompt_context(
+        self, docs: List[Document], query: str, top_k: int
+    ) -> Tuple[str, str]:
+        """Trim docs to a token budget and attach a deduped links section."""
+        # cap how many chunks we even consider
+        docs = docs[: min(top_k, self.config.max_docs_for_context)]
+
+        # collect unique links
+        seen = set()
+        links = []
+        for d in docs:
+            for l in d.metadata.get("links", []):
+                if l and l not in seen:
+                    seen.add(l)
+                    links.append(l)
+
+        # assemble small labeled blocks so the model can cite implicitly
+        blocks = []
+        for i, d in enumerate(docs, 1):
+            name = d.metadata.get("file_name") or "source"
+            blocks.append(f"[{i}] ({name})\n{d.page_content.strip()}")
+
+        # crude token budgeting: keep adding blocks until we hit max_input_tokens
+        context_text = self._trim_to_budget(
+            blocks, self.config.max_input_tokens, self._encoding
+        )
+        links_section = ""
+        if links:
+            links_text = "Relevant Links from Documents:\n" + "\n".join(f"- {u}" for u in links)
+            links_section = "\n\n" + self._trim_to_budget(
+                [links_text], 800, self._encoding  # small extra budget for links
+            )
+
+        return context_text, links_section
+
+    @staticmethod
+    def _get_encoding():
+        if not tiktoken:
+            return None
+        try:
+            return tiktoken.get_encoding("o200k_base")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _count_tokens(text: str, encoding=None) -> int:
+        if not text:
+            return 0
+        if not encoding:
+            # fallback: ~4 chars per token
+            return max(1, len(text) // 4)
+        return len(encoding.encode(text))
+
+    def _trim_to_budget(
+        self, parts: List[str], max_tokens: int, encoding=None
+    ) -> str:
+        used = 0
+        kept: List[str] = []
+        for p in parts:
+            t = self._count_tokens(p, encoding)
+            if used + t > max_tokens:
+                break
+            kept.append(p)
+            used += t
+        return "\n\n".join(kept)
+
+
+# Global instance (kept for your current import pattern)
 project_chatbot = ProjectChatbot()
