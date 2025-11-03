@@ -341,6 +341,9 @@ GOOGLE_REDIRECT_URI = os.getenv(
     "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback"
 )
 
+# Google API Configuration (for Gemini AI)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
 # LinkedIn OAuth Configuration
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
