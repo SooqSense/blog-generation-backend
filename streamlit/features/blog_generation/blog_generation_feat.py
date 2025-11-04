@@ -2,7 +2,6 @@ import streamlit as st
 import json
 import re
 import time
-import threading
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -15,31 +14,11 @@ from .blog_data_management import BlogDataManagement
 
 
 class BlogGenerationFeature:
-    """Blog Generation feature for Streamlit UI - with real-time streaming"""
+    """Blog Generation feature for Streamlit UI - API-based"""
 
     def __init__(self):
         self.api = blog_api
         self.data_management = BlogDataManagement(blog_api)
-        
-        # Use the unified WebSocket connection from chatbot_api
-        # Import chatbot_api to access the unified WebSocket manager
-        from api_client import chatbot_api
-        self.unified_api = chatbot_api
-        
-        # Initialize unified WebSocket connection ONCE per session
-        # Store the manager in session state to survive reruns
-        if 'ws_manager' not in st.session_state:
-            print("🚀 Initializing unified WebSocket connection...")
-            # Only initialize if authenticated
-            if st.session_state.get('authenticated', False) and st.session_state.get('token'):
-                manager = self.unified_api.init_persistent_connection()
-                if manager:
-                    st.session_state.ws_manager = manager
-                    st.session_state.ws_initialized = True
-                    print("✅ Unified WebSocket manager stored in session state")
-        
-        # Ensure we have a reference to the unified manager
-        self.ws_manager = st.session_state.get('ws_manager')
 
     # ----------------------------
     # INTERNAL HELPERS
@@ -96,65 +75,15 @@ class BlogGenerationFeature:
 
     def _prepare_stream_md(self, text: str) -> str:
         """Apply safe markdown sanitization and then linkify sources only."""
+        # Note: Method name kept for backwards compatibility, but no longer related to streaming
         return self._linkify_sources(self._normalize_headings(text))
-    def _ensure_websocket_connection(self) -> bool:
-        """Ensure unified WebSocket connection is active and running"""
-        try:
-            # Validate authentication first
-            if not st.session_state.get('authenticated', False):
-                print("❌ Not authenticated - cannot establish WebSocket connection")
-                return False
-            
-            if not st.session_state.get('token'):
-                print("❌ No authentication token - cannot establish WebSocket connection")
-                return False
-            
-            if not st.session_state.get('selected_organization'):
-                print("❌ No organization selected - cannot establish WebSocket connection")
-                return False
-            
-            # Check if we have the unified manager in session state
-            manager = st.session_state.get('ws_manager')
-            
-            if not manager:
-                print("🔄 No unified WebSocket manager found, creating new one...")
-                manager = self.unified_api.init_persistent_connection()
-                if manager:
-                    st.session_state.ws_manager = manager
-                    st.session_state.ws_initialized = True
-                    self.ws_manager = manager
-                else:
-                    return False
-            
-            # Check if manager is running
-            if not manager.is_running:
-                print("🔄 Unified WebSocket manager not running, restarting...")
-                manager.start()
-                import time as time_module
-                time_module.sleep(1.0)  # Wait for connection to establish
-            
-            print(f"✅ Unified WebSocket connection ready - running: {manager.is_running}")
-            return manager.is_running
-            
-        except Exception as e:
-            print(f"⚠️ Failed to ensure unified WebSocket connection: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
 
     # ----------------------------
     # MAIN RENDER METHOD
     # ----------------------------
     def render(self):
-        # Ensure unified WebSocket connection is ready (will check and reconnect if needed)
-        if st.session_state.get('authenticated', False) and st.session_state.get('token'):
-            manager = st.session_state.get('ws_manager')
-            if not manager or not manager.is_running:
-                print("🔄 Unified WebSocket needs initialization or restart")
-                self._ensure_websocket_connection()
-        
         st.title("📝 Blog Generation")
-        st.markdown("Generate SEO-optimized blog posts with real-time AI streaming.")
+        st.markdown("Generate SEO-optimized blog posts with AI.")
 
         tab1, tab2 = st.tabs(["🚀 Generate Blog", "📊 Data Management"])
         with tab1:
@@ -191,7 +120,6 @@ class BlogGenerationFeature:
                 length_max = st.number_input("Maximum Words", 500, 10000, 1500)
 
             generate_images = st.checkbox("🖼️ Generate Images", value=True)
-            # Streaming is always enabled - no checkbox needed
 
             submitted = st.form_submit_button("🚀 Start Generation", use_container_width=True)
 
@@ -211,9 +139,9 @@ class BlogGenerationFeature:
                 st.session_state.blog_generation_triggered = True
                 st.rerun()
 
-        # --- Streaming display section ---
+        # --- Blog output section ---
         st.divider()
-        st.subheader("📡 Live Blog Generation")
+        st.subheader("📝 Generated Blog")
 
         # Ensure TOC stays at the top by declaring it BEFORE content placeholder
         toc_title_placeholder = st.empty()
@@ -221,32 +149,31 @@ class BlogGenerationFeature:
         content_placeholder = st.empty()
         progress_placeholder = st.empty()
 
-        if "live_md" not in st.session_state:
-            st.session_state.live_md = {"text": ""}
-        live_md = st.session_state.live_md
+        if "blog_content" not in st.session_state:
+            st.session_state.blog_content = {"text": ""}
+        blog_content = st.session_state.blog_content
 
-        if not live_md["text"]:
+        if not blog_content["text"]:
             toc_title_placeholder.markdown("### 📋 Table of Contents")
             content_placeholder.info("Click **Start Generation** to begin.")
             progress_placeholder.info("Waiting for generation...")
 
-        if live_md["text"]:
+        if blog_content["text"]:
             if st.button("🗑️ Clear Output"):
-                st.session_state.live_md = {"text": ""}
+                st.session_state.blog_content = {"text": ""}
                 st.rerun()
 
-        # ---- Trigger streaming ----
+        # ---- Trigger blog generation ----
         if st.session_state.get("blog_generation_triggered", False):
             blog_data = st.session_state.get("blog_data", {})
-            use_streaming = st.session_state.get("use_streaming", True)
             st.session_state.blog_generation_triggered = False
 
-            # Reset live markdown for new generation
-            st.session_state.live_md = {"text": ""}
-            live_md = st.session_state.live_md
+            # Reset blog content for new generation
+            st.session_state.blog_content = {"text": ""}
+            blog_content = st.session_state.blog_content
 
-            # Always use streaming - no fallback
-            self.generate_blog_post_stream(
+            # Generate blog via standard REST API call
+            self.generate_blog_post_api(
                 blog_data,
                 content_placeholder,
                 progress_placeholder,
@@ -255,186 +182,85 @@ class BlogGenerationFeature:
             )
 
     # ----------------------------
-    # STREAMING IMPLEMENTATION
+    # API IMPLEMENTATION
     # ----------------------------
-    def generate_blog_post_stream(self, blog_data, content_placeholder, progress_placeholder, toc_placeholder, toc_title_placeholder=None):
-        """Generate blog via WebSocket stream using queue-based messaging."""
-        import queue
-        
+    def generate_blog_post_api(self, blog_data, content_placeholder, progress_placeholder, toc_placeholder, toc_title_placeholder=None):
+        """Generate blog via REST API call."""
         status_placeholder = st.empty()
-        live_md = st.session_state.live_md
+        blog_content = st.session_state.blog_content
 
-        st.session_state["blog_stream_done"] = False
-        st.session_state["blog_stream_error"] = None
-
-        # Thread-safe queue for receiving events
-        event_queue = queue.Queue()
-        
-        # ----------------- Event Handlers (put events in queue) -----------------
-        def queue_event(evt: Dict[str, Any]):
-            """Queue event for processing in main thread"""
-            event_queue.put(('event', evt))
-
-        def queue_error(error):
-            """Queue error for processing in main thread"""
-            event_queue.put(('error', str(error)))
-
-        def queue_complete(result):
-            """Queue completion for processing in main thread"""
-            event_queue.put(('complete', result))
-
-        # Ensure WebSocket connection
-        if not self._ensure_websocket_connection():
-            st.error("❌ Failed to establish WebSocket connection")
-            return
-
-        # Send blog generation request via unified WebSocket
-        print(f"📤 [STREAMLIT] Sending blog generation request via unified WebSocket")
-        message_id = self.unified_api.send_blog_generation_request(
-            blog_data=blog_data,
-            on_event=queue_event,
-            on_complete=queue_complete,
-            on_error=queue_error,
-        )
-        
-        if not message_id:
-            st.error("❌ Failed to send blog generation request")
-            return
-        
-        print(f"✅ [STREAMLIT] Request sent with message_id: {message_id}")
-
-        # ----------------- UI Update Loop (poll queue and update UI) -----------------
-        max_wait_time = 1200  # 20 minutes timeout
-        start_time = time.time()
-        last_update_time = time.time()
-        last_activity_time = time.time()  # Track last event received
-        update_interval = 0.1  # Update UI every 100ms
-        activity_timeout = 120  # 2 minutes without activity = timeout
-        
-        print(f"🎬 [STREAMLIT] Starting UI update loop for message_id: {message_id}")
-        
         with st.spinner("⚡ Generating blog content..."):
-            while not st.session_state.get("blog_stream_done", False):
-                try:
-                    # Poll queue for events
-                    msg_type, msg_data = event_queue.get(timeout=0.5)
+            try:
+                progress_placeholder.info("🔄 Sending request to API... This may take 10-20 minutes. Please wait...")
+                
+                # Generate blog via REST API
+                # Note: Blog generation uses extended timeout (30 minutes) to handle long-running operations
+                print(f"📤 [STREAMLIT] Sending blog generation request via REST API (timeout: 30 minutes)")
+                response = self.api.generate_blog(**blog_data)
+                
+                if response and response.get("status") == "success":
+                    print(f"✅ [STREAMLIT] Blog generation completed via API")
                     
-                    # Update last activity time
-                    last_activity_time = time.time()
+                    # Extract content from response
+                    raw_content = response.get("raw_content", "")
+                    structured_content = response.get("content", {})
+                    image_urls = response.get("image_urls", [])
+                    research_sources = response.get("research_sources", [])
                     
-                    if msg_type == 'event':
-                        evt = msg_data
-                        t = evt.get("type")
-                        print(f"📨 [STREAMLIT] Processing event: {t}")
-
-                        if t == "status":
-                            stage = evt.get("stage", "")
-                            message = evt.get("message", "")
-                            status_placeholder.info(f"**{stage.title()}**: {message}")
-                            
-                        elif t == "toc":
-                            toc = evt.get("sections", [])
-                            if toc:
-                                # Keep TOC fixed at the top
+                    # Update blog content
+                    if raw_content:
+                        blog_content["text"] = raw_content
+                        
+                        # Display TOC if available
+                        if structured_content and isinstance(structured_content, dict):
+                            sections = structured_content.get("sections", [])
+                            if sections:
                                 if toc_title_placeholder is not None:
                                     toc_title_placeholder.markdown("### 📋 Table of Contents")
-                                # Strip surrounding brackets in TOC labels to avoid link-like rendering
-                                def _clean_label(s: str) -> str:
-                                    try:
-                                        s2 = s.strip()
-                                        m = re.match(r'^\[(.+?)\]$', s2)
-                                        return m.group(1) if m else s2
-                                    except Exception:
-                                        return s
-                                toc_md = "\n".join([f"{i+1}. {_clean_label(s)}" for i, s in enumerate(toc)])
-                                toc_placeholder.markdown(toc_md)
-                                
-                        elif t == "section_start":
-                            section = evt.get("section", "")
-                            index = evt.get("index", 0)
-                            progress_placeholder.info(f"📝 **Section {index}**: {section}")
-                            
-                        elif t == "section_token":
-                            token = evt.get("content", "")
-                            if token:
-                                live_md["text"] += token
-                                # Batch updates for smoother streaming
-                                current_time = time.time()
-                                if (current_time - last_update_time) >= update_interval:
-                                    content_placeholder.markdown(self._prepare_stream_md(live_md["text"]) + " ▌")
-                                    last_update_time = current_time
-                                    
-                        elif t == "image":
-                            section = evt.get("section", "")
-                            url = evt.get("image_url", "")
-                            if url:
-                                live_md["text"] += f"\n\n![Section Image]({url})\n\n"
-                                content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
-                                progress_placeholder.info(f"🖼️ **Image added** for section: {section}")
-                                
-                        elif t == "section_complete":
-                            section = evt.get("section", "")
-                            progress_placeholder.success(f"✅ **Completed section**: {section}")
-                            content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
-                            
-                    elif msg_type == 'complete':
-                        print("🎉 [STREAMLIT] Blog generation completed!")
-                        st.session_state["blog_stream_done"] = True
-                        st.session_state["blog_result"] = msg_data
+                                toc_md = "\n".join([f"{i+1}. {s.get('title', '')}" for i, s in enumerate(sections) if isinstance(s, dict)])
+                                if toc_md:
+                                    toc_placeholder.markdown(toc_md)
+                        
+                        # Display content
+                        content_placeholder.markdown(self._prepare_stream_md(blog_content["text"]))
+                        
+                        # Display images if available
+                        if image_urls:
+                            progress_placeholder.success(f"✅ **Blog generated with {len(image_urls)} images!**")
+                        else:
+                            progress_placeholder.success("✅ **Blog generated successfully!**")
+                        
                         status_placeholder.success("✅ **Blog generation completed!**")
-                        break
                         
-                    elif msg_type == 'error':
-                        print(f"❌ [STREAMLIT] Error: {msg_data}")
-                        st.session_state["blog_stream_error"] = msg_data
-                        status_placeholder.error(f"❌ **Error**: {msg_data}")
-                        break
-                        
-                except queue.Empty:
-                    # No messages in queue
-                    current_time = time.time()
-                    
-                    # Check absolute timeout
-                    if current_time - start_time > max_wait_time:
-                        error_msg = "Blog generation timed out after 20 minutes"
-                        print(f"⏰ [STREAMLIT] {error_msg}")
-                        st.error(f"⏰ {error_msg}. Please try again.")
-                        st.session_state["blog_stream_error"] = "Timeout"
-                        break
-                    
-                    # Check activity timeout (no events received)
-                    if current_time - last_activity_time > activity_timeout:
-                        # Check if unified WebSocket is still connected
-                        manager = st.session_state.get('ws_manager')
-                        if manager and not manager.is_running:
-                            error_msg = "WebSocket connection lost"
-                            print(f"🔌 [STREAMLIT] {error_msg}")
-                            st.error(f"❌ {error_msg}. Please try again.")
-                            st.session_state["blog_stream_error"] = "Connection lost"
-                            break
-                    
-                    # Update display periodically even without new tokens
-                    if live_md["text"] and (current_time - last_update_time) >= 1.0:
-                        content_placeholder.markdown(self._prepare_stream_md(live_md["text"]) + " ▌")
-                        last_update_time = current_time
-                
-                # Check unified WebSocket connection health periodically
-                if time.time() % 5 < 0.5:  # Every ~5 seconds
-                    manager = st.session_state.get('ws_manager')
-                    if manager:
-                        print(f"💓 [STREAMLIT] Unified WebSocket health check - running: {manager.is_running}, callbacks: {len(manager.response_callbacks)}")
+                        # Store result in session state
+                        st.session_state["blog_result"] = response
+                        st.session_state["blog_generation_done"] = True
                     else:
-                        print(f"⚠️ [STREAMLIT] No unified WebSocket manager found in session state")
-
-        # Final update without cursor
-        if live_md["text"]:
-            content_placeholder.markdown(self._prepare_stream_md(live_md["text"]))
+                        error_msg = "Blog generated but no content received"
+                        status_placeholder.error(f"❌ **Error**: {error_msg}")
+                        st.session_state["blog_generation_error"] = error_msg
+                else:
+                    error_msg = response.get("error", "Unknown error") if response else "No response from server"
+                    print(f"❌ [STREAMLIT] Error: {error_msg}")
+                    status_placeholder.error(f"❌ **Error**: {error_msg}")
+                    st.session_state["blog_generation_error"] = error_msg
+                    
+            except Exception as e:
+                error_msg = f"Error generating blog: {str(e)}"
+                print(f"❌ [STREAMLIT] Exception: {error_msg}")
+                status_placeholder.error(f"❌ **Error**: {error_msg}")
+                st.session_state["blog_generation_error"] = error_msg
         
-        if st.session_state.get("blog_stream_done"):
+        # Final update
+        if blog_content["text"]:
+            content_placeholder.markdown(self._prepare_stream_md(blog_content["text"]))
+        
+        if st.session_state.get("blog_generation_done"):
             if st.session_state.get("blog_result"):
                 st.success("🎉 Blog generation completed successfully!")
-        elif not st.session_state.get("blog_stream_error"):
+        elif not st.session_state.get("blog_generation_error"):
             st.warning("⚠️ Blog generation was interrupted. Please try again.")
+    
 
     # ----------------------------
     # DISPLAY METHODS

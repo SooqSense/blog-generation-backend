@@ -1,16 +1,15 @@
 # project_chatbot.py
 """
-Async-only ProjectChatbot for streaming answers with Pinecone retrieval.
-- Removes sync code (ask / ask_stream)
-- Uses run_in_executor for non-async Pinecone
-- Dedups links and trims context to a rough token budget
-- Keeps the public surface minimal
+Sync-only ProjectChatbot for QA with Pinecone retrieval.
+- Removes all streaming paths
+- Keeps token-budgeted context and link dedup
+- Minimal public surface: is_available(), ask()
 """
 
-import asyncio
+import time
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional, AsyncGenerator, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import Document
@@ -39,7 +38,7 @@ class ModelConfig:
 
 
 class ProjectChatbot:
-    """Async streaming chatbot using Pinecone + OpenAI."""
+    """Sync chatbot using Pinecone + OpenAI."""
 
     def __init__(
         self,
@@ -61,49 +60,62 @@ class ProjectChatbot:
     def is_available(self) -> bool:
         return self.pinecone_service.is_available() and self.llm is not None
 
-    async def ask_stream_async(
+    def ask(
         self,
         query: str,
         top_k: int = 10,
         user_id: Optional[int] = None,
-    ) -> AsyncGenerator[str, None]:
-        """Stream the final answer as it’s generated."""
+    ) -> Dict[str, Any]:
+        """Return a complete answer (no streaming)."""
+        start = time.time()
+
         if not self.is_available():
-            yield "[ERROR] Chatbot is not available. Please check Pinecone and OpenAI."
-            return
+            return {
+                "success": False,
+                "response": "Chatbot is not available. Please check Pinecone and OpenAI.",
+                "documents_found": 0,
+                "processing_time": round(time.time() - start, 2),
+            }
 
         try:
-            # 1) Retrieval off the event loop
-            loop = asyncio.get_running_loop()
-            search_result = await loop.run_in_executor(
-                None, self.pinecone_service.search_documents, query, top_k
-            )
-
+            # 1) Retrieval
+            search_result = self.pinecone_service.search_documents(query=query, top_k=top_k)
             if not search_result.get("success") or not search_result.get("results"):
-                yield "I could not find any relevant information for your query."
-                return
+                return {
+                    "success": True,
+                    "response": "I could not find any relevant information for your query.",
+                    "documents_found": 0,
+                    "processing_time": round(time.time() - start, 2),
+                    "query": query,
+                }
 
             docs = self._results_to_documents(search_result["results"])
 
             # 2) Build compact context + links
             context_text, links_section = self._build_prompt_context(docs, query, top_k)
 
-            # 3) Prompt and stream
-            prompt = ChatbotPrompts.get_portfolio_query_prompt(
-                query, context_text, links_section
-            )
+            # 3) Prompt and get answer
+            prompt = ChatbotPrompts.get_portfolio_query_prompt(query, context_text, links_section)
+            llm_response = self.llm.invoke(prompt)
 
-            async for chunk in self.llm.astream(prompt):
-                content = getattr(chunk, "content", None)
-                if content:
-                    yield str(content)
-
-            # Optional EOF marker (some clients expect it)
-            yield ""
+            return {
+                "success": True,
+                "response": getattr(llm_response, "content", str(llm_response)),
+                "documents_found": len(docs),
+                "processing_time": round(time.time() - start, 2),
+                "query": query,
+            }
 
         except Exception as e:
-            logger.error("❌ Chatbot async streaming error", exc_info=True)
-            yield "[ERROR] Something went wrong while processing your request."
+            logger.error("❌ Chatbot sync error: %s", e, exc_info=True)
+            return {
+                "success": False,
+                "response": "Something went wrong while processing your request.",
+                "error": str(e),
+                "documents_found": 0,
+                "processing_time": round(time.time() - start, 2),
+                "query": query,
+            }
 
     # ---------- internals ----------
 
