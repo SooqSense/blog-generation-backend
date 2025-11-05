@@ -26,7 +26,9 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 # Import local services
-from .service.linkedin_post_generator import LinkedInPostGenerator
+from .service.agent.agent import generate_linkedin_post
+from management_app.blog_generator.service.blog_writing.agents.contextual_image_agent import ContextualImagePromptAgent
+from management_app.image_generator.service.image_generator import generate_image
 
 
 @extend_schema(
@@ -41,6 +43,23 @@ from .service.linkedin_post_generator import LinkedInPostGenerator
                 'type': 'array',
                 'items': {'type': 'string'},
                 'description': 'Optional keywords to guide LinkedIn post generation.'
+            },
+            'generate_images': {
+                'type': 'boolean',
+                'description': 'Whether to also generate images for the post',
+                'default': False
+            },
+            'image_count': {
+                'type': 'integer',
+                'description': 'How many images to generate (1-5)',
+                'default': 1,
+                'minimum': 1,
+                'maximum': 5
+            },
+            'image_size': {
+                'type': 'string',
+                'description': 'Target image size (e.g., 1920x1080)',
+                'default': '1920x1080'
             }
         },
         'required': ['topic']
@@ -65,6 +84,9 @@ def generate_linkedin_post_api(request):
     try:
         topic = request.data.get("topic", "").strip()
         keywords = request.data.get("keywords", [])
+        generate_images = bool(request.data.get("generate_images", False))
+        image_count = int(request.data.get("image_count", 1) or 1)
+        image_size = request.data.get("image_size", "1920x1080")
 
         if not topic:
             return Response(
@@ -74,11 +96,8 @@ def generate_linkedin_post_api(request):
 
         logger.info(f"Starting LinkedIn post generation for topic: '{topic}'")
 
-        # Initialize the LinkedIn post generator service
-        linkedin_generator = LinkedInPostGenerator()
-        
         # Generate LinkedIn post
-        post_content, file_path = linkedin_generator.generate_post(topic=topic, keywords=keywords)
+        post_content, file_path = generate_linkedin_post(topic=topic, keywords=keywords)
         
         if not post_content:
             logger.error(f"LinkedIn post generation failed for topic: '{topic}'")
@@ -88,6 +107,35 @@ def generate_linkedin_post_api(request):
             )
 
         logger.info(f"Successfully generated LinkedIn post for topic: '{topic}'")
+
+        # Optional: generate images using existing agents/services
+        generated_images = []
+        images_count = 0
+        if generate_images:
+            try:
+                img_agent = ContextualImagePromptAgent(use_custom_llm=False)
+                prompt_info = img_agent.generate_prompt(
+                    topic=topic,
+                    section_title="LinkedIn Post",
+                    section_content=post_content,
+                    blog_type="LinkedIn",
+                )
+                base_prompt = prompt_info.get("prompt") or f"Professional image illustrating: {topic}"
+                images_data, total_generated, failed = generate_image(
+                    prompt=base_prompt,
+                    size=image_size,
+                    output_dir="linkedin_images",
+                    topic=topic,
+                    keywords=keywords,
+                    image_type="linkedin",
+                    count=max(1, min(int(image_count), 5)),
+                    generation_method="flux",
+                )
+                generated_images = [img["image_url"] for img in images_data if img.get("image_url")]
+                images_count = len(generated_images)
+                logger.info(f"Generated {images_count} LinkedIn image(s)")
+            except Exception as gen_e:
+                logger.warning(f"Image generation skipped due to error: {gen_e}")
 
         # Get organization information
         organization_name = get_user_selected_organization(request)
@@ -107,12 +155,39 @@ def generate_linkedin_post_api(request):
         linkedin_post.save()
         logger.info(f"Saved LinkedIn post to database with ID: {linkedin_post.id}")
 
+        # Persist image generation metadata in posting content table
+        if generate_images and images_count > 0:
+            try:
+                posting_record = LinkedinPostingContent(
+                    user_id=request.user.id,
+                    username=request.user.username,
+                    email=request.user.email,
+                    linkedin_profile_id=getattr(request.user, 'linkedin_profile_id', '') or "",
+                    linkedin_username=request.user.username,
+                    content=post_content,
+                    post_date=timezone.now(),
+                    linkedin_post_id=str(linkedin_post.id),
+                    post_status="generated",
+                    image_urls=generated_images,
+                    images_count=images_count,
+                    post_type="image",
+                    organization_id=organization_id,
+                    organization_name=organization_name,
+                    created_at=timezone.now(),
+                )
+                posting_record.save()
+                logger.info(f"Saved LinkedIn generated images record ID: {posting_record.id}")
+            except Exception as save_img_e:
+                logger.warning(f"Failed to save image generation record: {save_img_e}")
+
         return Response({
             "status": "success",
             "message": f"Professional LinkedIn post generated successfully for '{topic}'!",
             "topic": topic,
             "linkedin_post": post_content,
             "keywords": keywords,
+            "images": generated_images,
+            "images_count": images_count,
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
@@ -494,11 +569,30 @@ def get_linkedin_post_api(request, post_id):
             }, status=status.HTTP_404_NOT_FOUND)
         
         serializer = LinkedinPostDetailSerializer(linkedin_post)
+        post_data = serializer.data.copy()
+        
+        # Try to get associated images from LinkedinPostingContent
+        try:
+            posting_content = LinkedinPostingContent.objects.filter(
+                linkedin_post_id=str(post_id),
+                organization_name=organization_name
+            ).first()
+            
+            if posting_content and posting_content.image_urls:
+                post_data['image_urls'] = posting_content.image_urls if isinstance(posting_content.image_urls, list) else [posting_content.image_urls]
+                post_data['images_count'] = posting_content.images_count
+            else:
+                post_data['image_urls'] = []
+                post_data['images_count'] = 0
+        except Exception as e:
+            logger.warning(f"Could not fetch images for post {post_id}: {str(e)}")
+            post_data['image_urls'] = []
+            post_data['images_count'] = 0
         
         return Response({
             'success': True,
             'message': 'LinkedIn post retrieved successfully',
-            'data': serializer.data
+            'data': post_data
         }, status=status.HTTP_200_OK)
         
     except Exception as e:

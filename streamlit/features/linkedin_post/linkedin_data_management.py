@@ -23,35 +23,54 @@ class LinkedInDataManagement(DataManagementUI):
         """Get the API delete method for LinkedIn posts"""
         return self.api.delete_posts(ids)
     
-    def download_pdf(self, item_id: int):
-        """Download LinkedIn post as PDF using Streamlit download service"""
+    def download_markdown(self, item: Dict[str, Any]):
+        """Download LinkedIn post as Markdown file with embedded images"""
+        item_id = item.get('id')
+        if not item_id:
+            st.error("Post ID not found")
+            return False
+            
         try:
-            # Get LinkedIn post details
+            # Get full post details including content
             post_data = self.api.get_post(item_id)
-            if post_data and 'success' in post_data and post_data['success']:
-                post_info = post_data['data']
-                
-                # Generate PDF using the download service
-                pdf_bytes = download_service.generate_linkedin_post_pdf(post_info)
-                
-                # Create filename
-                topic = post_info.get('topic', 'linkedin_post').replace(' ', '_')
-                filename = f"linkedin_post_{topic}_{item_id}.pdf"
-                
-                # Use Streamlit's download button
-                st.download_button(
-                    label="📄 Download PDF",
-                    data=pdf_bytes,
-                    file_name=filename,
-                    mime="application/pdf",
-                    key=f"download_linkedin_{item_id}"
-                )
-                return True
-            else:
+            if not post_data or not post_data.get('success'):
                 st.error("Failed to retrieve LinkedIn post data")
                 return False
+            
+            post_info = post_data.get('data', {})
+            content = post_info.get('content', '')
+            topic = post_info.get('topic', 'linkedin_post').strip() or 'linkedin_post'
+            
+            # Get images from API response
+            images = post_info.get('image_urls', [])
+            if not images and 'image_urls' in item and item['image_urls']:
+                # Fallback to images in item if not in API response
+                images = item['image_urls'] if isinstance(item['image_urls'], list) else [item['image_urls']]
+            
+            # Generate markdown content
+            safe_topic = topic.replace(" ", "_")[:60]
+            md_lines = [f"# {topic}", "", content, ""]
+            
+            if images:
+                md_lines.append("## Images")
+                md_lines.append("")
+                for idx, url in enumerate(images, 1):
+                    md_lines.append(f"![image_{idx}]({url})")
+            
+            md_text = "\n".join(md_lines).strip() + "\n"
+            
+            # Create download button
+            st.download_button(
+                label="📄 Download Markdown",
+                data=md_text.encode("utf-8"),
+                file_name=f"{safe_topic}.md",
+                mime="text/markdown",
+                key=f"download_md_{item_id}"
+            )
+            return True
+            
         except Exception as e:
-            st.error(f"Error generating PDF: {str(e)}")
+            st.error(f"Error generating Markdown: {str(e)}")
             return False
     
     def supports_image_download(self) -> bool:
@@ -104,9 +123,9 @@ class LinkedInDataManagement(DataManagementUI):
         """Display action buttons for the card with LinkedIn-specific actions"""
         st.markdown("**Actions:**")
         
-        # Download PDF button
-        if st.button("📥 PDF", key=f"pdf_card_{index}", help="Download as PDF"):
-            self.download_single_item_pdf(item)
+        # Markdown download button
+        if st.button("📄 Markdown", key=f"md_card_{index}", help="Download as Markdown"):
+            self.download_markdown(item)
         
         # LinkedIn-specific actions
         if 'status' in item and item['status'] == 'draft':

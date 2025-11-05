@@ -117,9 +117,11 @@ def chat_api(request):
         result = project_chatbot.ask(query)
         
         if not result["success"]:
-            logger.error(f"Chat failed: {result['message']}")
+            # The new agent.py returns "response" for errors, not "message"
+            error_msg = result.get("response") or result.get("error", "Unknown error")
+            logger.error(f"Chat failed: {error_msg}")
             return Response(
-                {"error": result["message"]},
+                {"error": error_msg, "status": "error"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -132,7 +134,7 @@ def chat_api(request):
             content=result["response"],
             created_at=timezone.now(),
             processing_time=result.get("processing_time", 0),
-            tokens_used=result.get("tokens_used", 0),
+            tokens_used=0,  # New sync-only agent doesn't provide token count
         )
         assistant_message.save()
 
@@ -148,8 +150,8 @@ def chat_api(request):
             "is_new_session": not bool(request.data.get("session_id")),
             "response": result["response"],
             "processing_time": result.get("processing_time", 0),
-            "tokens_used": result.get("tokens_used", 0),
-            "model_used": result.get("model_used", "unknown"),
+            "tokens_used": 0,  # New sync-only agent doesn't provide token count
+            "model_used": project_chatbot.config.model,  # Get model from config
             "total_messages": chat_session.total_messages,
             "documents_found": result.get("documents_found", 0),
         }, status=status.HTTP_200_OK)
