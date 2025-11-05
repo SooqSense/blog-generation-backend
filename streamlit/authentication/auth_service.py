@@ -320,9 +320,6 @@ class StreamlitAuthManager:
     
     def logout(self):
         """Logout and clear session state"""
-        # Clean up WebSocket connections before logout
-        self._cleanup_websocket_connections()
-        
         st.session_state.authenticated = False
         st.session_state.user = None
         st.session_state.token = None
@@ -330,19 +327,6 @@ class StreamlitAuthManager:
         st.session_state.user_organizations = []
         logger.info("User logged out successfully")
         st.rerun()
-    
-    def _cleanup_websocket_connections(self):
-        """Clean up all active WebSocket connections"""
-        try:
-            # Clean up unified WebSocket connection on logout
-            if 'ws_manager' in st.session_state and st.session_state.ws_manager:
-                st.session_state.ws_manager.stop()
-                st.session_state.ws_manager = None
-                st.session_state.ws_initialized = False
-                print("🔌 Unified WebSocket connection cleaned up on logout")
-                
-        except Exception as e:
-            print(f"⚠️ Error during WebSocket cleanup on logout: {e}")
     
     def is_authenticated(self) -> bool:
         """Check if user is authenticated"""

@@ -47,6 +47,14 @@ class LinkedInPostFeature:
                 help="Enter keywords separated by commas"
             )
             
+            col_a, col_b, col_c = st.columns([1,1,1])
+            with col_a:
+                generate_images = st.checkbox("Generate images", value=False, help="Also create S3-hosted images")
+            with col_b:
+                image_count = st.number_input("Image count", min_value=1, max_value=5, value=1, step=1)
+            with col_c:
+                image_size = st.selectbox("Image size", ["1920x1080", "1024x1024", "1792x1024", "1024x1792"], index=0)
+
             submitted = st.form_submit_button("💼 Generate Post", use_container_width=True)
             
             if submitted:
@@ -60,13 +68,19 @@ class LinkedInPostFeature:
                     keyword_list = [k.strip() for k in keywords.split(',') if k.strip()]
                 
                 # Generate post
-                self.generate_linkedin_post(topic, keyword_list)
+                self.generate_linkedin_post(topic, keyword_list, generate_images, int(image_count), image_size)
     
-    def generate_linkedin_post(self, topic: str, keywords: list):
+    def generate_linkedin_post(self, topic: str, keywords: list, generate_images: bool, image_count: int, image_size: str):
         """Generate LinkedIn post using API"""
         with st.spinner("💼 Generating LinkedIn post..."):
             try:
-                response = self.api.generate_post(topic=topic, keywords=keywords)
+                response = self.api.generate_post(
+                    topic=topic,
+                    keywords=keywords,
+                    generate_images=generate_images,
+                    image_count=image_count,
+                    image_size=image_size,
+                )
                 
                 if response and response.get("status") == "success":
                     self.display_generated_post(response)
@@ -113,3 +127,12 @@ class LinkedInPostFeature:
         
         if "keywords" in post_data:
             st.info(f"**Keywords:** {', '.join(post_data['keywords'])}")
+
+        # Display generated images if available
+        images = post_data.get("images") or []
+        if images:
+            st.subheader("🖼️ Generated Images")
+            for url in images:
+                st.image(url, use_column_width=True)
+
+        # Markdown download is available in Data Management tab to avoid duplication
