@@ -41,3 +41,39 @@ class BlogAPI:
     def get(self, endpoint: str, params: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """Generic GET request"""
         return self.client.get(endpoint, params=params)
+
+    def generate_seo_html(self, blog_id: int) -> Optional[Dict[str, Any]]:
+        """Generate SEO-optimized HTML content for a blog post
+        
+        Args:
+            blog_id: ID of the blog post to optimize
+            
+        Returns:
+            SEO optimization results including HTML content and metadata
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Use the endpoint from config or construct it
+        base_endpoint = get_api_endpoint('blog_seo_html')
+        if base_endpoint:
+            endpoint = f"{base_endpoint.rstrip('/')}/{blog_id}/"
+        else:
+            # Fallback to direct construction
+            endpoint = f"blogs/generate-seo-html/{blog_id}/"
+        
+        print(f"🔗 [STREAMLIT] SEO endpoint: {endpoint}")
+        print(f"📝 [STREAMLIT] Blog ID: {blog_id}")
+        logger.info(f"🔗 SEO endpoint: {endpoint}")
+        logger.info(f"📝 Blog ID: {blog_id}")
+        
+        # SEO generation can take 5-10 minutes, use extended timeout
+        # POST request with empty data (blog_id is in URL)
+        print(f"📤 [STREAMLIT] Sending SEO generation request to {endpoint} (timeout: {self.blog_timeout}s)")
+        response = self.client.post(endpoint, data={}, timeout=self.blog_timeout)
+        print(f"📥 [STREAMLIT] SEO API response received: {response is not None}")
+        logger.info(f"📥 SEO API response received: {response is not None}")
+        if response:
+            print(f"📊 [STREAMLIT] Response status: {response.get('status', 'N/A')}")
+            logger.info(f"📊 Response status: {response.get('status', 'N/A')}")
+        return response

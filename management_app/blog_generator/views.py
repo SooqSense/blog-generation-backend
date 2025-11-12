@@ -201,6 +201,7 @@ def generate_blog_api(request):
         response_data = {
             "status": "success",
             "message": f"{blog_type} blog generated successfully.",
+            "blog_id": blog.id,  # Include blog ID for SEO optimization
             "topic": topic,
             "blog_type": blog_type,
             "length_min": length_min,
@@ -373,5 +374,138 @@ def delete_blog_posts_api(request):
         logger.error(f"Error deleting blog posts: {str(e)}")
         return Response({
             'error': 'Failed to delete blog posts'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    responses={
+        200: OpenApiResponse(
+            description="SEO optimization completed successfully.",
+            examples={
+                'application/json': {
+                    'status': 'success',
+                    'blog_id': 123,
+                    'html_content': '<html>...</html>',
+                    'seo_metadata': {...},
+                    'structured_data': {...},
+                    'message': 'SEO optimization completed successfully'
+                }
+            }
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Blog post not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Generate SEO-optimized HTML content for a blog post. This endpoint processes the blog through the SEO Specialist Agent and applies all 30 SEO rules, returning optimized HTML with metadata, structured data, and social media tags.",
+)
+@api_view(["POST"])
+@require_organization_access()
+def generate_seo_html_api(request, blog_id):
+    """
+    Generate SEO-optimized HTML content for a blog post.
+    
+    This endpoint:
+    1. Retrieves the blog post by ID
+    2. Runs SEO Specialist Agent to analyze and optimize content
+    3. Generates SEO metadata (title, description, keywords, slug, canonical)
+    4. Converts Markdown to sanitized HTML
+    5. Adds alt text to images
+    6. Implements internal linking
+    7. Generates structured data (JSON-LD schemas)
+    8. Creates Open Graph and Twitter Card metadata
+    9. Updates the blog instance with SEO data
+    10. Returns complete SEO-optimized HTML and metadata
+    """
+    try:
+        user = request.user
+        organization_name = get_user_selected_organization(request)
+        
+        # Get blog post with organization filter
+        try:
+            blog_post = BlogGeneral.objects.get(
+                id=blog_id,
+                organization_name=organization_name
+            )
+        except BlogGeneral.DoesNotExist:
+            return Response({
+                'error': 'Blog post not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if already SEO optimized (optional: allow re-optimization)
+        # if blog_post.seo_optimized:
+        #     return Response({
+        #         'status': 'success',
+        #         'message': 'Blog already SEO optimized',
+        #         'blog_id': blog_id,
+        #         'html_content': blog_post.html_content,
+        #         'seo_metadata': {
+        #             'seo_title': blog_post.seo_title,
+        #             'meta_description': blog_post.seo_meta_description,
+        #             'keywords': blog_post.seo_keywords,
+        #             'slug': blog_post.seo_slug,
+        #             'canonical_url': blog_post.canonical_url,
+        #             'reading_time_minutes': blog_post.reading_time_minutes,
+        #             'word_count': blog_post.word_count,
+        #         },
+        #         'structured_data': blog_post.structured_data,
+        #     }, status=status.HTTP_200_OK)
+        
+        logger.info(f"Generating SEO HTML for blog ID {blog_id}")
+        
+        # Initialize SEO processor
+        from .service.seo.seo_processor import SEOProcessor
+        
+        seo_processor = SEOProcessor(use_custom_llm=False)
+        
+        # Process blog for SEO
+        seo_results = seo_processor.process_blog_for_seo(
+            blog_instance=blog_post,
+            ping_search_engines=False,  # Set to True to ping search engines
+        )
+        
+        # Update blog instance with SEO data
+        seo_processor.update_blog_with_seo_data(
+            blog_instance=blog_post,
+            seo_results=seo_results,
+        )
+        
+        # Prepare response
+        seo_metadata = seo_results.get("seo_metadata", {})
+        structured_data = seo_results.get("structured_data", {})
+        
+        response_data = {
+            "status": "success",
+            "message": "SEO optimization completed successfully",
+            "blog_id": blog_id,
+            "html_content": seo_results.get("html_content", ""),
+            "full_html": seo_results.get("full_html", ""),
+            "seo_metadata": {
+                "seo_title": seo_metadata.get("seo_title", ""),
+                "meta_description": seo_metadata.get("meta_description", ""),
+                "keywords": seo_metadata.get("keywords", []),
+                "slug": seo_metadata.get("slug", ""),
+                "canonical_url": seo_metadata.get("canonical_url", ""),
+                "reading_time_minutes": seo_metadata.get("reading_time_minutes", 0),
+                "word_count": seo_metadata.get("word_count", 0),
+                "content_hash": seo_metadata.get("content_hash", ""),
+            },
+            "structured_data": structured_data,
+            "social_metadata": seo_metadata.get("social_metadata", {}),
+            "html_validation": seo_results.get("html_validation", {}),
+            "optimization_applied": seo_results.get("optimization_applied", {}),
+            "seo_score": seo_metadata.get("seo_score", 0),
+        }
+        
+        logger.info(f"✅ SEO HTML generated successfully for blog ID {blog_id}")
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Error generating SEO HTML for blog {blog_id}: {str(e)}", exc_info=True)
+        return Response({
+            'error': f'Failed to generate SEO HTML: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import re
 import time
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -11,6 +12,8 @@ from api_client import blog_api
 from base.markdown_processor import MarkdownProcessor
 # Import data management
 from .blog_data_management import BlogDataManagement
+
+logger = logging.getLogger(__name__)
 
 
 class BlogGenerationFeature:
@@ -235,6 +238,22 @@ class BlogGenerationFeature:
                         # Store result in session state
                         st.session_state["blog_result"] = response
                         st.session_state["blog_generation_done"] = True
+                        # Extract blog_id if available (might need to fetch from list)
+                        blog_id_from_response = None
+                        if "id" in response:
+                            blog_id_from_response = response["id"]
+                        elif "blog_id" in response:
+                            blog_id_from_response = response["blog_id"]
+                        
+                        # Store blog_id as int in session state
+                        if blog_id_from_response:
+                            try:
+                                blog_id_int = int(blog_id_from_response)
+                                st.session_state["blog_id"] = blog_id_int
+                                print(f"✅ [STREAMLIT] Stored blog_id={blog_id_int} in session state after blog generation")
+                            except (ValueError, TypeError):
+                                print(f"⚠️ [STREAMLIT] Could not convert blog_id to int: {blog_id_from_response}")
+                                st.session_state["blog_id"] = blog_id_from_response
                     else:
                         error_msg = "Blog generated but no content received"
                         status_placeholder.error(f"❌ **Error**: {error_msg}")
@@ -262,9 +281,6 @@ class BlogGenerationFeature:
             st.warning("⚠️ Blog generation was interrupted. Please try again.")
     
 
-    # ----------------------------
-    # DISPLAY METHODS
-    # ----------------------------
 
     # ----------------------------
     # DISPLAY METHODS
