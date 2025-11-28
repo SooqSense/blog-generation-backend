@@ -58,6 +58,7 @@ class PDFDocumentSerializer(serializers.ModelSerializer):
             'pinecone_namespace',
             'file_size',
             'word_count',
+            'loom_links',
             'created_at',
             'updated_at'
         ]
@@ -97,6 +98,7 @@ class PDFDocumentListSerializer(serializers.ModelSerializer):
             'pinecone_indexed',
             'file_size',
             'word_count',
+            'loom_links',
             'created_at',
             'updated_at'
         ]
