@@ -128,6 +128,7 @@ class PineconeService:
         file_url: str,
         directory_name: str = None,
         document_links: Optional[List[str]] = None,
+        loom_links: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Index a document's content in Pinecone with directory support."""
         try:
@@ -140,6 +141,34 @@ class PineconeService:
 
             # Always use single PDFS namespace for all documents
             namespace = self.config.PDFS_NAMESPACE
+            
+            # Ensure loom_links is a list
+            loom_links_input = loom_links or []
+            
+            # Pinecone metadata only supports list of strings, not list of objects.
+            # We need to serialize the link objects into strings.
+            loom_links_list = []
+            for link in loom_links_input:
+                if isinstance(link, dict):
+                    # Format as "Description: URL"
+                    desc = link.get('description', '').strip()
+                    url = link.get('url', '').strip()
+                    if desc and url:
+                        loom_links_list.append(f"{desc}: {url}")
+                    elif url:
+                        loom_links_list.append(url)
+                elif isinstance(link, str):
+                    loom_links_list.append(link)
+            
+            # Filter out Loom links from document_links to avoid mixing
+            # Only keep non-Loom links in the links field
+            document_links_list = document_links or []
+            filtered_document_links = [
+                link for link in document_links_list 
+                if not (isinstance(link, str) and 'loom.com' in link.lower())
+            ]
+            
+            logger.info(f"📊 Metadata: {len(filtered_document_links)} general links, {len(loom_links_list)} Loom links (serialized)")
 
             for i, chunk in enumerate(chunks):
                 chunk_id = f"{document_id}_chunk_{i}"
@@ -156,9 +185,11 @@ class PineconeService:
                     "file_url": file_url,
                     "directory_name": directory_name or "default",
                     "indexed_at": datetime.utcnow().isoformat(),
-                    "links": document_links or [],
+                    "links": filtered_document_links,
+                    "loom_links": loom_links_list,
                 }
                 vectors.append({"id": chunk_id, "values": embeddings, "metadata": metadata})
+
 
             self.index.upsert(vectors=vectors, namespace=namespace)
             logger.info(f"✅ Indexed {len(vectors)} chunks for {file_name} in single PDFS namespace")
@@ -173,6 +204,7 @@ class PineconeService:
         except Exception as e:
             logger.error(f"❌ Failed to index document {file_name}: {e}")
             return {"success": False, "error": str(e), "chunks_indexed": 0, "document_id": document_id}
+
 
     # -------------------------------------------------------------------------
     # Search
@@ -212,6 +244,7 @@ class PineconeService:
                         "file_url": meta["file_url"],
                         "username": meta["username"],
                         "links": meta.get("links", []),
+                        "loom_links": meta.get("loom_links", []),
                     })
 
             relevant_docs.sort(key=lambda x: (x["file_name"], x["chunk_index"]))

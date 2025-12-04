@@ -131,6 +131,7 @@ class ProjectChatbot:
                     "chunk_index": r.get("chunk_index"),
                     "score": r.get("score"),
                     "links": r.get("links", []) or [],
+                    "loom_links": r.get("loom_links", []) or [],
                 },
             )
             for r in results
@@ -146,11 +147,20 @@ class ProjectChatbot:
         # collect unique links
         seen = set()
         links = []
+        loom_links = []
+        
         for d in docs:
+            # Collect general links
             for l in d.metadata.get("links", []):
                 if l and l not in seen:
                     seen.add(l)
                     links.append(l)
+            
+            # Collect Loom links
+            for l in d.metadata.get("loom_links", []):
+                if l and l not in seen:
+                    seen.add(l)
+                    loom_links.append(l)
 
         # assemble small labeled blocks so the model can cite implicitly
         blocks = []
@@ -163,10 +173,19 @@ class ProjectChatbot:
             blocks, self.config.max_input_tokens, self._encoding
         )
         links_section = ""
+        
+        # Build comprehensive links section
+        link_parts = []
+        if loom_links:
+            link_parts.append("Relevant Videos/Demos:\n" + "\n".join(f"- {u}" for u in loom_links))
+        
         if links:
-            links_text = "Relevant Links from Documents:\n" + "\n".join(f"- {u}" for u in links)
+            link_parts.append("Other Relevant Resources:\n" + "\n".join(f"- {u}" for u in links))
+            
+        if link_parts:
+            links_text = "\n\n".join(link_parts)
             links_section = "\n\n" + self._trim_to_budget(
-                [links_text], 800, self._encoding  # small extra budget for links
+                [links_text], 1000, self._encoding  # increased budget for links
             )
 
         return context_text, links_section

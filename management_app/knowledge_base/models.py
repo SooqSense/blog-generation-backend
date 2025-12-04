@@ -85,6 +85,7 @@ class PDFDocument(models.Model):
     # Metadata
     file_size = models.IntegerField(default=0)  # File size in bytes
     word_count = models.IntegerField(default=0)  # Number of words in content
+    loom_links = models.JSONField(default=list, blank=True)  # Extracted Loom video links
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 

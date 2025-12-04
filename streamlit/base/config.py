@@ -18,6 +18,8 @@ API_ENDPOINTS = {
     'blog_generation': f"{API_BASE_URL}/blogs/generate-blog/",
     'blog_list': f"{API_BASE_URL}/blogs/list/",
     'blog_delete': f"{API_BASE_URL}/blogs/delete/",
+    'blog_get': f"{API_BASE_URL}/blogs/get/",
+    'blog_seo_html': f"{API_BASE_URL}/blogs/generate-seo-html/",  # Base URL, blog_id will be appended
     
     # Image Generation
     'image_generation': f"{API_BASE_URL}/image-generation/generate/",
@@ -88,6 +90,7 @@ APP_CONFIG = {
 FEATURES = [
     "🏠 Home",
     "📝 Blog Generation", 
+    "🔍 SEO Optimization",
     "🎨 Image Generation",
     "💼 LinkedIn Posts",
     "🎯 Upwork Proposals",

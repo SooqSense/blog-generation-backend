@@ -8,6 +8,7 @@ import streamlit as st
 # Simple import mapping
 FEATURE_IMPORTS = {
     "BlogGenerationFeature": "features.blog_generation.blog_generation_feat.BlogGenerationFeature",
+    "SEOOptimizationFeature": "features.seo_optimization.seo_optimization_feat.SEOOptimizationFeature",
     "ImageGenerationFeature": "features.image_generation.image_generation_feat.ImageGenerationFeature",
     "LinkedInPostFeature": "features.linkedin_post.linkedin_post_feat.LinkedInPostFeature",
     "NewsFeature": "features.news.news_feat.NewsFeature",

@@ -6,7 +6,7 @@ Refactored to use modular components for better maintainability.
 import streamlit as st
 from base.config import API_BASE_URL, API_ENDPOINTS, APP_CONFIG, print_config_status
 from base.auth import AuthHandler
-from base.ui_components import UIComponents, CustomCSS
+from ui_components.ui_components import UIComponents, CustomCSS
 from base.feature_router import FeatureRouter
 
 class StreamlitApp:

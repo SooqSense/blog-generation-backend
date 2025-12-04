@@ -22,6 +22,7 @@ class FeatureRouter:
         # Map feature names to their classes
         feature_mapping = {
             "📝 Blog Generation": ("BlogGenerationFeature", "Blog Generation"),
+            "🔍 SEO Optimization": ("SEOOptimizationFeature", "SEO Optimization"),
             "🎨 Image Generation": ("ImageGenerationFeature", "Image Generation"),
             "💼 LinkedIn Posts": ("LinkedInPostFeature", "LinkedIn Posts"),
             "🎯 Upwork Proposals": ("UpworkProposalGeneratorFeature", "Upwork Proposals"),
@@ -89,6 +90,10 @@ class FeatureRouter:
             },
             "📝 Blog Generation": {
                 "description": "Create professional blog posts with AI",
+                "requires_auth": True
+            },
+            "🔍 SEO Optimization": {
+                "description": "Generate SEO-optimized HTML for blog posts",
                 "requires_auth": True
             },
             "🎨 Image Generation": {

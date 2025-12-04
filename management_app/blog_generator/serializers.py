@@ -46,6 +46,7 @@ class SourceSerializer(serializers.Serializer):
 class BlogResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
+    blog_id = serializers.IntegerField(required=False, help_text="ID of the generated blog post")
     topic = serializers.CharField()
     blog_type = serializers.CharField()
     length_min = serializers.IntegerField()
@@ -78,7 +79,7 @@ class BlogListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "topic", "username", "email",
             "organization_id", "organization_name",
-            "image_urls", "created_at"
+            "image_urls", "created_at", "seo_optimized"
         ]
         read_only_fields = ["id", "created_at"]
 
@@ -89,12 +90,33 @@ class BlogDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "user_id", "username", "email",
             "topic", "content", "image_urls",
-            "organization_id", "organization_name", "created_at"
+            "organization_id", "organization_name", "created_at",
+            # SEO fields
+            "seo_title", "seo_meta_description", "seo_keywords", "seo_slug", "canonical_url",
+            "reading_time_minutes", "word_count", "content_hash",
+            "html_content", "og_title", "og_description", "og_image_url", "twitter_card_type",
+            "structured_data", "seo_optimized", "is_published", "published_at",
+            "robots_index", "is_ai_generated", "tags", "categories", "updated_at"
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class BlogDeleteSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     message = serializers.CharField()
     deleted_count = serializers.IntegerField(required=False)
+
+
+class SEOHTMLResponseSerializer(serializers.Serializer):
+    """Serializer for SEO HTML generation response."""
+    status = serializers.CharField()
+    message = serializers.CharField()
+    blog_id = serializers.IntegerField()
+    html_content = serializers.CharField(help_text="SEO-optimized HTML body content")
+    full_html = serializers.CharField(help_text="Complete HTML document with head section")
+    seo_metadata = serializers.DictField(help_text="SEO metadata (title, description, keywords, etc.)")
+    structured_data = serializers.DictField(help_text="JSON-LD structured data schemas")
+    social_metadata = serializers.DictField(help_text="Open Graph and Twitter Card metadata")
+    html_validation = serializers.DictField(help_text="HTML structure validation results")
+    optimization_applied = serializers.DictField(help_text="Details of optimizations applied")
+    seo_score = serializers.IntegerField(help_text="Overall SEO score (0-100)")

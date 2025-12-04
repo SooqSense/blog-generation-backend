@@ -65,9 +65,15 @@ Response: No relevant information found in the indexed documents for this query.
         context_parts = []
         for i, doc in enumerate(relevant_docs, 1):
             links_info = ""
+            # Add general links
             if doc.get('links') and len(doc['links']) > 0:
                 links_list = "\n  ".join([f"- {link}" for link in doc['links']])
-                links_info = f"\n- Links: \n  {links_list}"
+                links_info += f"\n- Links: \n  {links_list}"
+            
+            # Add Loom links
+            if doc.get('loom_links') and len(doc['loom_links']) > 0:
+                loom_list = "\n  ".join([f"- {link}" for link in doc['loom_links']])
+                links_info += f"\n- Loom Videos: \n  {loom_list}"
             
             context_parts.append(f"""Document Chunk {i}:
 - File: {doc['file_name']} ({doc['file_type']})
@@ -87,7 +93,7 @@ Return ONLY the exact content from the document chunks above that answers the us
 
 Format your response as:
 1. Present the exact relevant content from the document chunks (verbatim)
-2. Include any relevant links from the documents when applicable
+2. Include any relevant links from the documents when applicable. **Look for ANY relevant resources (videos, demos, code links, documentation) requested by the user.**
 3. End with source attribution showing:
    - File name and type
    - File URL
@@ -139,7 +145,8 @@ Answer the question based on the information above.
 - Be clear and professional.
 - Highlight project names, technologies, challenges, or results if available.
 - If there are multiple projects, summarize them.
-- When relevant links are available from the documents, naturally integrate them into your response where they add value (e.g., "You can view more details at [link]" or "For additional information, see [link]").
+- **CRITICAL: If the user asks for resources (videos, demos, code, links), explicitly look for them in the 'Relevant Videos/Demos' or 'Other Relevant Resources' sections, or within the text context. Provide the specific URL for the requested item.**
+- When relevant links are available from the documents, naturally integrate them into your response where they add value (e.g., "You can view the demo here: [link]" or "See the documentation at [link]").
 - Provide a comprehensive response without mentioning sources or file names.
 - Focus on delivering the information in a natural, conversational way.
 """
