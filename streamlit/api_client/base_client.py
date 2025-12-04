@@ -53,6 +53,13 @@ class APIClient:
         # Use provided timeout or default
         request_timeout = timeout if timeout is not None else self.timeout
 
+        # Log request details for SEO endpoint
+        if 'generate-seo-html' in endpoint:
+            print(f"🌐 [STREAMLIT] Making {method} request to: {url}")
+            print(f"🌐 [STREAMLIT] Headers: {list(headers.keys())}")
+            print(f"🌐 [STREAMLIT] Timeout: {request_timeout}s")
+            print(f"🌐 [STREAMLIT] Request kwargs: {list(kwargs.keys())}")
+
         try:
             response = requests.request(
                 method=method,
@@ -61,14 +68,24 @@ class APIClient:
                 timeout=request_timeout,
                 **kwargs
             )
+            
+            # Log response for SEO endpoint
+            if 'generate-seo-html' in endpoint:
+                print(f"📡 [STREAMLIT] Response status code: {response.status_code}")
+                print(f"📡 [STREAMLIT] Response headers: {dict(response.headers)}")
+            
             response.raise_for_status()
             return response.json()
         except requests.exceptions.Timeout:
             timeout_minutes = request_timeout // 60
-            st.error(f"⏰ Request timeout after {timeout_minutes} minutes. AI content generation can take time. Please try again.")
+            error_msg = f"⏰ Request timeout after {timeout_minutes} minutes. AI content generation can take time. Please try again."
+            print(f"❌ [STREAMLIT] Request timeout: {url}")
+            st.error(error_msg)
             return None
-        except requests.exceptions.ConnectionError:
-            st.error("🔌 Connection error. Please check if the backend server is running.")
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "🔌 Connection error. Please check if the backend server is running."
+            print(f"❌ [STREAMLIT] Connection error: {url} - {str(e)}")
+            st.error(error_msg)
             return None
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
@@ -77,10 +94,15 @@ class APIClient:
                     st.session_state.authenticated = False
                 st.rerun()
             else:
-                st.error(f"❌ API request failed: {e.response.status_code} - {e.response.text}")
+                error_msg = f"❌ API request failed: {e.response.status_code} - {e.response.text}"
+                print(f"❌ [STREAMLIT] HTTP error: {url} - Status: {e.response.status_code}")
+                print(f"❌ [STREAMLIT] Response text: {e.response.text[:500]}")
+                st.error(error_msg)
             return None
         except Exception as e:
-            st.error(f"❌ Unexpected error: {str(e)}")
+            error_msg = f"❌ Unexpected error: {str(e)}"
+            print(f"❌ [STREAMLIT] Unexpected error: {url} - {type(e).__name__}: {str(e)}")
+            st.error(error_msg)
             return None
 
     def _make_pdf_request(self, method: str, endpoint: str, **kwargs):

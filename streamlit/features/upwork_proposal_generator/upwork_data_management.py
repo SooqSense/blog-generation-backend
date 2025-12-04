@@ -5,8 +5,8 @@ Handles Upwork proposal data management functionality
 
 import streamlit as st
 from typing import List, Dict, Any
-from base.data_management_ui import DataManagementUI
-from base.download_service import download_service
+from ui_components.data_management_ui import DataManagementUI
+from services.download_service import download_service
 
 
 class UpworkDataManagement(DataManagementUI):

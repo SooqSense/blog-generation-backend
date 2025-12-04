@@ -5,7 +5,7 @@ Handles image generation data management functionality
 
 import streamlit as st
 from typing import List, Dict, Any
-from base.data_management_ui import DataManagementUI
+from ui_components.data_management_ui import DataManagementUI
 
 
 class ImageDataManagement(DataManagementUI):
@@ -39,7 +39,7 @@ class ImageDataManagement(DataManagementUI):
                 st.subheader("📸 Download Images")
                 
                 # Import download service
-                from base.download_service import download_service
+                from services.download_service import download_service
                 
                 try:
                     # Generate ZIP file

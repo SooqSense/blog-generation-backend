@@ -5,7 +5,7 @@ Handles AI trends data management functionality
 
 import streamlit as st
 from typing import List, Dict, Any
-from base.data_management_ui import DataManagementUI
+from ui_components.data_management_ui import DataManagementUI
 
 
 class TrendsDataManagement(DataManagementUI):

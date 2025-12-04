@@ -71,6 +71,19 @@ def _is_sooqsense_admin(user):
     return False
 
 
+def _extract_loom_links(links: list) -> list:
+    """Extract Loom video links from a list of URLs."""
+    if not links:
+        return []
+    
+    loom_links = []
+    for link in links:
+        if isinstance(link, str) and 'loom.com' in link.lower():
+            loom_links.append(link)
+    
+    return loom_links
+
+
 def _ensure_default_directories(organization_id=None, organization_name=None):
     """Ensure default directories exist in the database for the specified organization."""
     default_directories = [
@@ -375,6 +388,10 @@ def upload_document_api(request):
         pinecone_namespace = None
         chunks_indexed = 0
         pinecone_error = None
+        
+        # Get extracted data from the extraction service
+        extracted_links = extraction_result.get('links', [])
+        loom_link_objects = extraction_result.get('loom_links', [])
 
         # Index document to Pinecone if service is available
         if PINECONE_AVAILABLE and pinecone_service and pinecone_service.is_available():
@@ -390,7 +407,8 @@ def upload_document_api(request):
                     username=request.user.username,
                     file_url=uploaded_url,
                     directory_name=directory.name,
-                    document_links=extraction_result.get('links', [])
+                    document_links=extracted_links,
+                    loom_links=loom_link_objects
                 )
                 
                 if pinecone_result['success']:
@@ -428,6 +446,7 @@ def upload_document_api(request):
             pinecone_namespace=pinecone_namespace,
             file_size=file_size,
             word_count=extraction_result['word_count'],
+            loom_links=loom_link_objects,
             created_at=timezone.now(),
         )
         pdf_document.save()

@@ -165,9 +165,26 @@ class DocumentExtractor:
                 result['word_count'] = word_count
                 result['file_type'] = file_type
                 
-                # Extract links from the content
+                # Extract links from the content (inline URLs)
                 extracted_links = self.extract_links(result['content'])
+                
+                # Add hyperlinks from PDF annotations if available
+                # Hyperlinks are now objects with {description, url}
+                if 'hyperlinks' in result and result['hyperlinks']:
+                    for link_obj in result['hyperlinks']:
+                        # Extract URL from link object
+                        link_url = link_obj.get('url') if isinstance(link_obj, dict) else link_obj
+                        # Avoid duplicates and ensure it's a valid link
+                        if link_url and link_url not in extracted_links:
+                            extracted_links.append(link_url)
+                    logger.info(f"📎 Added {len(result['hyperlinks'])} hyperlinks from PDF annotations")
+                
                 result['links'] = extracted_links
+                
+                # Extract Loom link objects from hyperlinks
+                loom_link_objects = self._extract_loom_link_objects(result.get('hyperlinks', []))
+                result['loom_links'] = loom_link_objects
+                logger.info(f"📹 Extracted {len(loom_link_objects)} Loom link objects from {filename}")
                 
                 logger.info(f"✅ Successfully extracted {word_count} words and {len(extracted_links)} links from {filename}")
             else:
@@ -185,33 +202,188 @@ class DocumentExtractor:
                 'file_type': 'unknown'
             }
     
+    def _extract_loom_link_objects(self, hyperlinks: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Extract Loom link objects from hyperlinks.
+        
+        Args:
+            hyperlinks: List of link objects with {description, url}
+            
+        Returns:
+            List of Loom link objects
+        """
+        loom_links = []
+        
+        if not hyperlinks:
+            return loom_links
+        
+        for link_obj in hyperlinks:
+            if isinstance(link_obj, dict):
+                url = link_obj.get('url', '')
+                if 'loom.com' in url.lower():
+                    loom_links.append(link_obj)
+        
+        return loom_links
+    
+    def _extract_pdf_hyperlinks(self, pdf_reader, return_by_page: bool = False) -> List[Dict[str, str]] | Dict[int, List[Dict[str, str]]]:
+        """Extract hyperlinks from PDF annotations with their descriptions.
+        
+        Args:
+            pdf_reader: PyPDF2.PdfReader instance
+            return_by_page: If True, returns dict mapping page_num -> [link_objects], else returns flat list
+            
+        Returns:
+            List of link objects {description, url} or Dict mapping page numbers to lists of link objects
+        """
+        if return_by_page:
+            links_by_page = {}
+        else:
+            links = []
+        
+        try:
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                page_links = []
+                seen_urls = set()
+                
+                if "/Annots" in page:
+                    annots = page["/Annots"]
+                    for annot in annots:
+                        try:
+                            obj = annot.get_object()
+                            if "/A" in obj and "/URI" in obj["/A"]:
+                                uri = obj["/A"]["/URI"]
+                                # Handle both string and bytes
+                                if isinstance(uri, bytes):
+                                    uri = uri.decode('utf-8', errors='ignore')
+                                
+                                if uri:
+                                    # Extract description from /Contents or /Rect text
+                                    description = ""
+                                    if "/Contents" in obj:
+                                        desc = obj["/Contents"]
+                                        if isinstance(desc, bytes):
+                                            description = desc.decode('utf-8', errors='ignore')
+                                        else:
+                                            description = str(desc)
+                                    
+                                    # If no description, try to get it from the annotation's appearance
+                                    if not description and "/Subj" in obj:
+                                        subj = obj["/Subj"]
+                                        if isinstance(subj, bytes):
+                                            description = subj.decode('utf-8', errors='ignore')
+                                        else:
+                                            description = str(subj)
+                                    
+                                    # Fallback: use a portion of the URL as description
+                                    if not description:
+                                        description = uri.split('/')[-1][:50] if '/' in uri else uri[:50]
+                                    
+                                    link_obj = {
+                                        "description": description.strip(),
+                                        "url": uri
+                                    }
+                                    
+                                    if return_by_page:
+                                        if uri not in seen_urls:
+                                            page_links.append(link_obj)
+                                            seen_urls.add(uri)
+                                    else:
+                                        if uri not in [l["url"] for l in links]:
+                                            links.append(link_obj)
+                        except Exception:
+                            # Skip malformed annotations
+                            continue
+                
+                if return_by_page and page_links:
+                    links_by_page[page_num] = page_links
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Could not extract hyperlinks from PDF annotations: {str(e)}")
+        
+        return links_by_page if return_by_page else links
+    
     def _extract_pdf_content(self, file_content: bytes, filename: str) -> Dict[str, Any]:
-        """Extract content from PDF files."""
+        """Extract content from PDF files with context-aware link injection."""
         if not PDF_AVAILABLE:
             return {
                 'success': False,
                 'error': 'PDF extraction libraries not available',
-                'content': ''
+                'content': '',
+                'hyperlinks': []
             }
         
         try:
             content_parts = []
+            all_hyperlinks = []
             
             # Try with pdfplumber first (better for complex PDFs)
             try:
                 pdf_file = io.BytesIO(file_content)
                 with pdfplumber.open(pdf_file) as pdf:
-                    for page in pdf.pages:
+                    # Extract text and hyperlinks page by page
+                    for page_num, page in enumerate(pdf.pages):
                         text = page.extract_text()
+                        page_links = []
+                        
+                        # Extract hyperlinks using pdfplumber's spatial awareness
+                        if hasattr(page, 'hyperlinks') and page.hyperlinks:
+                            for link in page.hyperlinks:
+                                uri = link.get('uri')
+                                if not uri:
+                                    continue
+                                    
+                                # Extract text associated with the link using its bounding box
+                                description = ""
+                                try:
+                                    # link object has 'top', 'bottom', 'x0', 'x1'
+                                    # We crop the page to this area to get the text
+                                    link_bbox = (link['x0'], link['top'], link['x1'], link['bottom'])
+                                    cropped = page.crop(link_bbox)
+                                    description = cropped.extract_text()
+                                except Exception:
+                                    pass
+                                
+                                # Clean up description
+                                if description:
+                                    description = description.strip().replace('\n', ' ')
+                                
+                                # Fallback if no text found
+                                if not description:
+                                    description = uri.split('/')[-1][:50] if '/' in uri else uri[:50]
+                                
+                                link_obj = {
+                                    "description": description,
+                                    "url": uri
+                                }
+                                
+                                # Avoid duplicates on the page
+                                if link_obj not in page_links:
+                                    page_links.append(link_obj)
+                                
+                                # Add to global list (avoid duplicates)
+                                if link_obj not in all_hyperlinks:
+                                    all_hyperlinks.append(link_obj)
+                        
                         if text:
-                            content_parts.append(text.strip())
+                            page_text = text.strip()
+                            
+                            # Inject links found on this page
+                            if page_links:
+                                links_section = "\n\n--- Related Links ---\n" + "\n".join(
+                                    f"• {link['description']}: {link['url']}" for link in page_links
+                                )
+                                page_text += links_section
+                                logger.debug(f"📎 Injected {len(page_links)} links into page {page_num + 1}")
+                            
+                            content_parts.append(page_text)
                 
                 if content_parts:
                     content = '\n\n'.join(content_parts)
                     return {
                         'success': True,
                         'content': content,
-                        'method': 'pdfplumber'
+                        'method': 'pdfplumber',
+                        'hyperlinks': all_hyperlinks
                     }
             except Exception as e:
                 logger.warning(f"⚠️ pdfplumber failed for {filename}: {str(e)}, trying PyPDF2")
@@ -221,38 +393,60 @@ class DocumentExtractor:
                 pdf_file = io.BytesIO(file_content)
                 pdf_reader = PyPDF2.PdfReader(pdf_file)
                 
+                # Extract hyperlinks by page
+                links_by_page = self._extract_pdf_hyperlinks(pdf_reader, return_by_page=True)
+                all_hyperlinks = self._extract_pdf_hyperlinks(pdf_reader, return_by_page=False)
+                
+                # Extract text page by page and inject links
                 for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
                     text = page.extract_text()
                     if text:
-                        content_parts.append(text.strip())
+                        page_text = text.strip()
+                        
+                        # Inject links found on this page
+                        if page_num in links_by_page and links_by_page[page_num]:
+                            page_links = links_by_page[page_num]
+                            links_section = "\n\n--- Related Links ---\n" + "\n".join(
+                                f"• {link['description']}: {link['url']}" for link in page_links
+                            )
+                            page_text += links_section
+                            logger.debug(f"📎 Injected {len(page_links)} links into page {page_num + 1}")
+                        
+                        content_parts.append(page_text)
                 
                 if content_parts:
                     content = '\n\n'.join(content_parts)
                     return {
                         'success': True,
                         'content': content,
-                        'method': 'PyPDF2'
+                        'method': 'PyPDF2',
+                        'hyperlinks': all_hyperlinks
                     }
                 else:
                     return {
                         'success': False,
                         'error': 'No text content found in PDF',
-                        'content': ''
+                        'content': '',
+                        'hyperlinks': all_hyperlinks
                     }
                     
             except Exception as e:
                 return {
                     'success': False,
                     'error': f'PyPDF2 extraction failed: {str(e)}',
-                    'content': ''
+                    'content': '',
+                    'hyperlinks': []
                 }
             
         except Exception as e:
+            logger.error(f"❌ Unexpected error extracting content from {filename}: {str(e)}")
             return {
                 'success': False,
-                'error': f'PDF extraction error: {str(e)}',
-                'content': ''
+                'error': f'Unexpected error: {str(e)}',
+                'content': '',
+                'word_count': 0,
+                'file_type': 'unknown'
             }
     
     def _extract_docx_content(self, file_content: bytes, filename: str) -> Dict[str, Any]:
