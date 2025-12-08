@@ -15,41 +15,53 @@ logger = logging.getLogger(__name__)
     request={
         'type': 'object',
         'properties': {
-            'email': {
+            'token': {
                 'type': 'string',
-                'format': 'email',
-                'description': 'User email address'
-            },
-            'password': {
-                'type': 'string',
-                'description': 'User password'
+                'description': 'Clerk JWT token from frontend authentication'
             }
         },
-        'required': ['email', 'password']
+        'required': ['token']
     },
     responses={
         200: OpenApiResponse(
-            description="Login successful",
+            description="Authentication successful - User verified and synced with database",
             examples={
                 'application/json': {
                     'success': True,
-                    'message': 'Login successful',
-                    'token': 'jwt_token_here',
+                    'message': 'User authenticated successfully',
                     'user': {
                         'id': 1,
                         'username': 'user123',
                         'email': 'user@example.com',
-                        'clerk_user_id': 'clerk_123'
+                        'first_name': 'John',
+                        'last_name': 'Doe',
+                        'clerk_user_id': 'user_2abc123xyz',
+                        'organization_ids': ['org_123', 'org_456'],
+                        'organization_names': ['sooqsense', 'acme-corp'],
+                        'organization_roles': ['admin', 'member'],
+                        'organization_id': 'org_123',
+                        'organization_name': 'sooqsense',
+                        'organization_role': 'admin',
+                        'created_at': '2024-01-01T00:00:00Z'
                     }
                 }
             }
         ),
         400: OpenApiResponse(
-            description="Invalid credentials",
+            description="Invalid or missing token",
             examples={
                 'application/json': {
                     'success': False,
-                    'message': 'Invalid email or password'
+                    'message': 'Token is required'
+                }
+            }
+        ),
+        401: OpenApiResponse(
+            description="Invalid or expired token",
+            examples={
+                'application/json': {
+                    'success': False,
+                    'message': 'Invalid or expired token'
                 }
             }
         ),
@@ -57,72 +69,34 @@ logger = logging.getLogger(__name__)
             description="Internal server error"
         )
     },
-    description="Authenticate user with email and password, return Clerk JWT token"
-)
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    """DEPRECATED: This endpoint should not be used with proper Clerk authentication.
+    description="""
+    **Primary Authentication Endpoint for Clerk Integration**
     
-    Proper Clerk workflow:
-    1. Frontend authenticates with Clerk directly
-    2. Clerk returns JWT token
-    3. Frontend sends Clerk JWT to /auth/verify/ endpoint
-    4. Backend verifies Clerk JWT and creates/updates local user
+    This endpoint verifies Clerk JWT tokens and synchronizes user data with the backend database.
+    
+    **Authentication Flow:**
+    1. Frontend authenticates user with Clerk (using Clerk's SDK)
+    2. Clerk returns a JWT token to the frontend
+    3. Frontend sends the JWT token to this endpoint via POST request
+    4. Backend verifies the token with Clerk's JWKS
+    5. Backend creates or updates the user in the database
+    6. Backend returns the user data to the frontend
+    
+    **Token Format:**
+    Send the token in the request body as:
+    ```json
+    {
+        "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    ```
+    
+    **Response:**
+    Returns complete user profile including organization memberships.
+    The user data can be used to maintain session state on the frontend.
+    
+    **Note:** This endpoint does NOT require authentication (AllowAny).
+    It's the entry point for establishing authenticated sessions.
     """
-    return Response({
-        'success': False,
-        'message': 'This endpoint is deprecated. Please use Clerk authentication on the frontend and send the JWT token to /auth/verify/ endpoint.',
-        'instructions': {
-            'step1': 'Authenticate with Clerk on frontend',
-            'step2': 'Get JWT token from Clerk',
-            'step3': 'Send JWT token to /auth/verify/ endpoint',
-            'step4': 'Backend will verify token and create/update user'
-        }
-    }, status=status.HTTP_400_BAD_REQUEST)
-
-
-@extend_schema(
-    request={
-        'type': 'object',
-        'properties': {
-            'token': {
-                'type': 'string',
-                'description': 'JWT token to verify'
-            }
-        },
-        'required': ['token']
-    },
-    responses={
-        200: OpenApiResponse(
-            description="Token verification successful",
-            examples={
-                'application/json': {
-                    'success': True,
-                    'message': 'Token is valid',
-                    'user': {
-                        'id': 1,
-                        'username': 'user123',
-                        'email': 'user@example.com',
-                        'clerk_user_id': 'clerk_123',
-                        'organization_id': 'org_123',
-                        'organization_name': 'My Company',
-                        'organization_role': 'admin'
-                    }
-                }
-            }
-        ),
-        400: OpenApiResponse(
-            description="Invalid token",
-            examples={
-                'application/json': {
-                    'success': False,
-                    'message': 'Invalid or expired token'
-                }
-            }
-        )
-    },
-    description="Verify JWT token and return user information"
 )
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -173,7 +147,7 @@ def verify_token_view(request):
         
         return Response({
             'success': True,
-            'message': 'Token is valid',
+            'message': 'User authenticated successfully',
             'user': user_data
         }, status=status.HTTP_200_OK)
         

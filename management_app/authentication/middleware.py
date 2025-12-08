@@ -27,15 +27,21 @@ class ClerkJWTAuthenticationMiddleware(MiddlewareMixin):
         # Skip authentication for certain paths
         skip_paths = [
             '/admin/',
+            '/admin',
             '/docs/',
+            '/docs',
             '/schema/',
-            '/auth/login/',
-            '/auth/verify/',
+            '/schema',
+            '/auth/verify/',  # Allow unauthenticated access to verify endpoint
+            '/auth/verify',
             '/static/',
+            '/static',
             '/media/',
+            '/media',
         ]
         
-        if any(request.path.startswith(path) for path in skip_paths):
+        # Check if path matches any skip path (with or without trailing slash)
+        if any(request.path.startswith(path) or request.path == path.rstrip('/') for path in skip_paths):
             return None
         
         # Get JWT token from Authorization header
