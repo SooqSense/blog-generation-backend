@@ -149,27 +149,35 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "AI Blog Generator",
+    "TITLE": "AI Blog Generator API",
     "DESCRIPTION": """
-    This API generates complete, high-quality blog posts in Markdown format using a multi-agent AI system.
+    **Backend API for AI-powered content generation with Clerk Authentication**
     
-    **How it works:**
-    1. You provide a blog topic
-    2. Our system activates multiple AI agents to collaboratively create your blog:
-       - The **Planner** agent researches and outlines the structure
-       - The **Writer** agent drafts the content based on the plan
-       - The **Editor** agent refines and improves the final text
-       - The **Designer** agent creates a banner image
-    3. The complete blog is saved as a Markdown file with the embedded image
-    4. You receive the path to the finished blog post
+    This API provides endpoints for generating blog posts, LinkedIn content, AI news, and images.
     
-    Just enter your topic and click Execute!
+    ## Authentication
     
-    **Authentication:**
-    - Use JWT tokens for authentication
-    - Register via /auth/register/ endpoint
-    - Login via /auth/login/ endpoint
-    - Also supports Google and LinkedIn authentication
+    This API uses **Clerk** for authentication. Follow these steps:
+    
+    1. **Authenticate with Clerk** on your frontend using Clerk's SDK
+    2. **Get JWT token** from Clerk after successful authentication
+    3. **Send token to `/auth/verify/`** endpoint to sync user with backend
+    4. **Use the same JWT token** in the Authorization header for all subsequent requests
+    
+    ### How to Authorize in Swagger UI:
+    
+    1. Click the **"Authorize"** button (lock icon) at the top right
+    2. In the "Value" field, enter: `Bearer YOUR_CLERK_JWT_TOKEN`
+    3. Click "Authorize" and then "Close"
+    4. Now you can test all protected endpoints
+    
+    **Note:** Replace `YOUR_CLERK_JWT_TOKEN` with the actual JWT token from Clerk.
+    
+    ## Getting Started
+    
+    1. First, call `POST /auth/verify/` with your Clerk JWT token to sync your user
+    2. Then use the same token in the Authorization header for other endpoints
+    3. Generate blogs, LinkedIn posts, images, and more!
     """,
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
@@ -179,20 +187,24 @@ SPECTACULAR_SETTINGS = {
         "defaultModelsExpandDepth": -1,
         "defaultModelExpandDepth": 1,
         "docExpansion": "list",
-        "filter": False,
+        "filter": True,
         "displayRequestDuration": True,
         "tryItOutEnabled": True,
+        "persistAuthorization": True,  # Keep authorization between page refreshes
     },
     "COMPONENT_SPLIT_REQUEST": True,
-    "SECURITY": [{"Bearer": []}],
-    "SECURITY_DEFINITIONS": {
-        "Bearer": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "Authorization",
-            "description": "Enter: **Bearer <JWT token>**",
+    # OpenAPI 3.0 Security Scheme
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Enter your Clerk JWT token. The token will be automatically prefixed with 'Bearer '."
+            }
         }
     },
+    "SECURITY": [{"BearerAuth": []}],
 }
 
 # Logging Configuration for Development
@@ -355,9 +367,6 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-# Streamlit App Configuration
-STREAMLIT_APP_URL = os.getenv("STREAMLIT_APP_URL", "http://localhost:8501")
 
 # LangSmith Configuration for AI Cost Tracking
 LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"

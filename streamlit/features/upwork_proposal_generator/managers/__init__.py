@@ -1,1 +1,0 @@
-# Upwork Proposal Generator Managers

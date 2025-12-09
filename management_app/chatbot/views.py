@@ -13,6 +13,9 @@ from django.contrib.auth import get_user_model
 # Import models
 from .models import ChatSession, ChatMessage
 
+# Import serializers
+from .serializers import ChatRequestSerializer, ChatResponseSerializer, UserSessionsResponseSerializer
+
 # Set up logging
 # Import organization access control
 from management_app.authentication.services.access_control import require_organization_access
@@ -25,24 +28,9 @@ from .service.agent.agent import project_chatbot
 
 
 @extend_schema(
-    request={
-        'type': 'object',
-        'properties': {
-            'query': {
-                'type': 'string',
-                'description': 'User\'s question or query about their project portfolio documents.'
-            },
-            'session_id': {
-                'type': 'string',
-                'description': 'Chat session ID. If not provided, a new session will be created.'
-            }
-        },
-        'required': ['query']
-    },
+    request=ChatRequestSerializer,
     responses={
-        200: OpenApiResponse(
-            description="Chat response generated successfully.",
-        ),
+        200: ChatResponseSerializer,
         400: OpenApiResponse(
             description="Bad Request - Invalid query or session."
         ),
@@ -169,9 +157,7 @@ def chat_api(request):
 
 @extend_schema(
     responses={
-        200: OpenApiResponse(
-            description="User chat sessions retrieved successfully.",
-        ),
+        200: UserSessionsResponseSerializer,
         401: OpenApiResponse(
             description="Unauthorized - Invalid or missing token."
         ),
