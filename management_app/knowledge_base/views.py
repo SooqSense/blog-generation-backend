@@ -84,7 +84,7 @@ def _extract_loom_links(links: list) -> list:
     return loom_links
 
 
-def _ensure_default_directories(organization_id=None, organization_name=None):
+def _ensure_default_directories(organization_id=None, organization_name=None, user_id=None):
     """Ensure default directories exist in the database for the specified organization."""
     default_directories = [
         {
@@ -107,12 +107,13 @@ def _ensure_default_directories(organization_id=None, organization_name=None):
                 'description': dir_data['description'],
                 'is_default': dir_data['is_default'],
                 'organization_id': organization_id,
-                'organization_name': organization_name
+                'organization_name': organization_name,
+                'created_by_user_id': user_id  # Set the user who triggered creation
             }
         )
         
         if created:
-            logger.info(f"✅ Created default directory: {directory.name} for organization: {organization_name}")
+            logger.info(f"✅ Created default directory: {directory.name} for organization: {organization_name} by user ID: {user_id}")
         else:
             logger.debug(f"📁 Default directory already exists: {directory.name} for organization: {organization_name}")
 
@@ -138,7 +139,7 @@ def list_directories_api(request):
         organization_name = getattr(request, 'selected_organization', None)
         
         # Ensure default directories exist for this organization
-        _ensure_default_directories(organization_id, organization_name)
+        _ensure_default_directories(organization_id, organization_name, request.user.id)
         
         # Get all directories for this organization
         directories = Directory.objects.filter(organization_id=organization_id)
@@ -303,7 +304,7 @@ def upload_document_api(request):
         organization_name = getattr(request, 'selected_organization', None)
         
         # Ensure default directories exist for this organization
-        _ensure_default_directories(organization_id, organization_name)
+        _ensure_default_directories(organization_id, organization_name, request.user.id)
         
         if 'file' not in request.FILES:
             return Response(

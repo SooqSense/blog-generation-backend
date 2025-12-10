@@ -344,13 +344,43 @@ def list_images_api(request):
 
 
 @extend_schema(
-    description="Delete multiple images by IDs",
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'ids': {
+                    'type': 'array',
+                    'items': {'type': 'integer'},
+                    'description': 'Array of image IDs to delete',
+                    'example': [1, 2, 3]
+                }
+            },
+            'required': ['ids']
+        }
+    },
     responses={
-        200: OpenApiResponse(description="Images deleted successfully"),
-        400: OpenApiResponse(description="Invalid request data"),
+        200: OpenApiResponse(
+            description="Images deleted successfully",
+            examples={
+                'application/json': {
+                    'success': True,
+                    'message': 'Successfully deleted 3 images',
+                    'deleted_count': 3
+                }
+            }
+        ),
+        400: OpenApiResponse(
+            description="Invalid request data",
+            examples={
+                'application/json': {
+                    'error': 'No image IDs provided'
+                }
+            }
+        ),
         401: OpenApiResponse(description="Authentication required"),
         403: OpenApiResponse(description="Organization access required"),
     },
+    description="Delete multiple images by providing an array of image IDs. Only images belonging to the user's organization can be deleted."
 )
 @api_view(['DELETE'])
 @require_organization_access()

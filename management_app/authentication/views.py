@@ -224,12 +224,12 @@ def profile_view(request):
     request={
         'type': 'object',
         'properties': {
-            'organization_name': {
+            'organization_id': {
                 'type': 'string',
-                'description': 'Organization name to switch to'
+                'description': 'Organization ID to switch to'
             }
         },
-        'required': ['organization_name']
+        'required': ['organization_id']
     },
     responses={
         200: OpenApiResponse(
@@ -269,41 +269,60 @@ def switch_organization_view(request):
     """Switch user's active organization context"""
     try:
         user = request.user
-        organization_name = request.data.get('organization_name')
         
-        if not organization_name:
+        logger.info("=" * 80)
+        logger.info("SWITCH ORGANIZATION REQUEST")
+        logger.info("=" * 80)
+        logger.info(f"  User: {user.username} (ID: {user.id})")
+        logger.info(f"  Request data: {request.data}")
+        logger.info("=" * 80)
+        
+        # Accept both camelCase (from frontend) and snake_case parameter names
+        organization_id = request.data.get('organization_id') or request.data.get('organizationId')
+        
+        if not organization_id:
+            logger.warning("❌ Organization ID is missing from request")
             return Response({
                 'success': False,
-                'message': 'Organization name is required'
+                'message': 'Organization ID is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Check if user is a member of this organization
-        user_orgs = user.organization_names or []
+        logger.info(f"  Requested organization_id: {organization_id}")
         
-        if organization_name not in user_orgs:
-            logger.warning(f"User {user.username} tried to switch to unauthorized org: {organization_name}")
+        # Check if user is a member of this organization
+        user_org_ids = user.organization_ids or []
+        
+        logger.info(f"  User's organization_ids: {user_org_ids}")
+        logger.info(f"  User's organization_names: {user.organization_names or []}")
+        
+        if organization_id not in user_org_ids:
+            logger.warning(f"❌ User {user.username} tried to switch to unauthorized org: {organization_id}")
+            logger.warning(f"   Available organizations: {user_org_ids}")
             return Response({
                 'success': False,
                 'message': 'User is not a member of this organization',
-                'available_organizations': user_orgs
+                'available_organizations': user_org_ids
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get the index of the organization
-        org_index = user_orgs.index(organization_name)
+        org_index = user_org_ids.index(organization_id)
+        logger.info(f"  Organization index: {org_index}")
         
         # Update user's current organization context
-        org_ids = user.organization_ids or []
+        org_names = user.organization_names or []
         org_roles = user.organization_roles or []
         
-        if org_index < len(org_ids):
-            user.organization_id = org_ids[org_index]
+        user.organization_id = organization_id
+        
+        if org_index < len(org_names):
+            user.organization_name = org_names[org_index]
         if org_index < len(org_roles):
             user.organization_role = org_roles[org_index]
         
-        user.organization_name = organization_name
         user.save()
         
-        logger.info(f"✅ User {user.username} switched to organization: {organization_name}")
+        logger.info(f"✅ User {user.username} switched to organization: {organization_id} ({user.organization_name})")
+        logger.info("=" * 80)
         
         return Response({
             'success': True,
