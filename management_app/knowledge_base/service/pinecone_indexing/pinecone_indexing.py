@@ -282,38 +282,84 @@ class PineconeService:
             if file_name:
                 filter_criteria["file_name"] = file_name
             
-            # Query to find all vectors with this document_id (and optionally file_name)
-            query_response = self.index.query(
-                vector=[0] * self.config.DIMENSION,  # Dummy vector
-                filter=filter_criteria,
-                top_k=10000,  # Large number to get all chunks
-                namespace=ns,
-                include_metadata=False
-            )
+            logger.info(f"🔍 Searching for vectors with filter: {filter_criteria} in namespace: {ns}")
             
-            if query_response and 'matches' in query_response:
-                vector_ids = [match['id'] for match in query_response['matches']]
+            # Use delete with filter directly (Pinecone supports this)
+            try:
+                # Delete by filter
+                delete_response = self.index.delete(
+                    filter=filter_criteria,
+                    namespace=ns
+                )
                 
-                if vector_ids:
-                    # Delete the vectors
-                    self.index.delete(ids=vector_ids, namespace=ns)
-                    filter_info = f"document_id={document_id}"
-                    if file_name:
-                        filter_info += f", file_name={file_name}"
-                    logger.info(f"✅ Deleted {len(vector_ids)} vectors for {filter_info} from namespace: {ns}")
+                filter_info = f"document_id={document_id}"
+                if file_name:
+                    filter_info += f", file_name={file_name}"
                     
-                    return {
-                        "success": True,
-                        "vectors_deleted": len(vector_ids),
-                        "document_id": document_id,
-                        "file_name": file_name,
-                        "namespace": ns
-                    }
+                logger.info(f"✅ Deleted vectors for {filter_info} from namespace: {ns}")
+                
+                return {
+                    "success": True,
+                    "vectors_deleted": "unknown",  # Pinecone doesn't return count with filter delete
+                    "document_id": document_id,
+                    "file_name": file_name,
+                    "namespace": ns,
+                    "message": "Vectors deleted successfully using filter"
+                }
+                
+            except Exception as delete_error:
+                # If filter delete fails, fall back to query + delete by IDs
+                logger.warning(f"⚠️ Filter delete failed, trying query approach: {delete_error}")
+                
+                # Generate a dummy embedding for querying
+                dummy_text = "search query"
+                dummy_vector = self.generate_embeddings(dummy_text)
+                
+                # Query to find all vectors with this document_id
+                query_response = self.index.query(
+                    vector=dummy_vector,
+                    filter=filter_criteria,
+                    top_k=10000,  # Large number to get all chunks
+                    namespace=ns,
+                    include_metadata=False
+                )
+                
+                if query_response and 'matches' in query_response:
+                    vector_ids = [match['id'] for match in query_response['matches']]
+                    
+                    if vector_ids:
+                        # Delete the vectors by IDs
+                        self.index.delete(ids=vector_ids, namespace=ns)
+                        filter_info = f"document_id={document_id}"
+                        if file_name:
+                            filter_info += f", file_name={file_name}"
+                        logger.info(f"✅ Deleted {len(vector_ids)} vectors for {filter_info} from namespace: {ns}")
+                        
+                        return {
+                            "success": True,
+                            "vectors_deleted": len(vector_ids),
+                            "document_id": document_id,
+                            "file_name": file_name,
+                            "namespace": ns
+                        }
+                    else:
+                        filter_info = f"document_id={document_id}"
+                        if file_name:
+                            filter_info += f", file_name={file_name}"
+                        logger.warning(f"⚠️ No vectors found for {filter_info} in namespace: {ns}")
+                        return {
+                            "success": True,
+                            "vectors_deleted": 0,
+                            "document_id": document_id,
+                            "file_name": file_name,
+                            "namespace": ns,
+                            "message": "No vectors found to delete"
+                        }
                 else:
                     filter_info = f"document_id={document_id}"
                     if file_name:
                         filter_info += f", file_name={file_name}"
-                    logger.warning(f"⚠️ No vectors found for {filter_info} in namespace: {ns}")
+                    logger.warning(f"⚠️ No vectors found for {filter_info}")
                     return {
                         "success": True,
                         "vectors_deleted": 0,
@@ -322,19 +368,6 @@ class PineconeService:
                         "namespace": ns,
                         "message": "No vectors found to delete"
                     }
-            else:
-                filter_info = f"document_id={document_id}"
-                if file_name:
-                    filter_info += f", file_name={file_name}"
-                logger.warning(f"⚠️ No vectors found for {filter_info}")
-                return {
-                    "success": True,
-                    "vectors_deleted": 0,
-                    "document_id": document_id,
-                    "file_name": file_name,
-                    "namespace": ns,
-                    "message": "No vectors found to delete"
-                }
                 
         except Exception as e:
             logger.error(f"❌ Failed to delete document {document_id} from Pinecone: {e}")

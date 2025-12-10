@@ -301,6 +301,7 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
+    "x-selected-organization",  # Custom header for organization selection
 ]
 
 # Celery Configuration
