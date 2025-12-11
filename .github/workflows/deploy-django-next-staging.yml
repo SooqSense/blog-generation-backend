@@ -29,12 +29,16 @@ jobs:
           workload_identity_provider: projects/798090991303/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: github-actions-deployer@artilence.iam.gserviceaccount.com
           project_id: ${{ env.PROJECT_ID }}
+          token_format: access_token
+          access_token_lifetime: 3600s
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      - name: Authenticate Docker to Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+          echo "Docker authentication configured for Artifact Registry"
 
       - name: Build & Push Docker Image (Daphne/ASGI)
         run: |
