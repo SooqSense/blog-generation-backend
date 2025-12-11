@@ -20,7 +20,8 @@ from management_app.authentication.services.access_control import require_organi
 # Import serializers
 from .serializers import (
     LinkedinPostListSerializer, LinkedinPostDetailSerializer, LinkedinPostDeleteSerializer,
-    LinkedinPostingContentListSerializer, LinkedinPostingContentDeleteSerializer, ErrorResponseSerializer
+    LinkedinPostingContentListSerializer, LinkedinPostingContentDeleteSerializer, ErrorResponseSerializer,
+    GenerateLinkedinPostRequestSerializer, PostOnLinkedinRequestSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -32,50 +33,21 @@ from management_app.image_generator.service.image_generator import generate_imag
 
 
 @extend_schema(
-    request={
-        'type': 'object',
-        'properties': {
-            'topic': {
-                'type': 'string',
-                'description': 'The topic for the LinkedIn post.'
-            },
-            'keywords': {
-                'type': 'array',
-                'items': {'type': 'string'},
-                'description': 'Optional keywords to guide LinkedIn post generation.'
-            },
-            'generate_images': {
-                'type': 'boolean',
-                'description': 'Whether to also generate images for the post',
-                'default': False
-            },
-            'image_count': {
-                'type': 'integer',
-                'description': 'How many images to generate (1-5)',
-                'default': 1,
-                'minimum': 1,
-                'maximum': 5
-            },
-            'image_size': {
-                'type': 'string',
-                'description': 'Target image size (e.g., 1920x1080)',
-                'default': '1920x1080'
-            }
-        },
-        'required': ['topic']
-    },
+    request=GenerateLinkedinPostRequestSerializer,
     responses={
         200: OpenApiResponse(
             description="LinkedIn post generated successfully.",
         ),
         400: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Bad Request - Invalid input."
         ),
         500: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Internal Server Error."
         ),
     },
-    description="Generate a professional LinkedIn post based on the given topic.",
+    description="Generate a professional LinkedIn post based on the given topic. Optionally generate images to accompany the post.",
 )
 @api_view(["POST"])
 @require_organization_access()
@@ -201,36 +173,25 @@ def generate_linkedin_post_api(request):
 
 
 @extend_schema(
-    request={
-        'type': 'object',
-        'properties': {
-            'content': {
-                'type': 'string',
-                'description': 'The content to post on LinkedIn.'
-            },
-            'image_urls': {
-                'type': 'array',
-                'items': {'type': 'string'},
-                'description': 'Optional list of image URLs to include with the post.'
-            }
-        },
-        'required': ['content']
-    },
+    request=PostOnLinkedinRequestSerializer,
     responses={
         200: OpenApiResponse(
             description="Content posted to LinkedIn successfully.",
         ),
         400: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Bad Request - Invalid input or missing LinkedIn access token."
         ),
         401: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Unauthorized - Invalid or expired LinkedIn access token."
         ),
         500: OpenApiResponse(
+            response=ErrorResponseSerializer,
             description="Internal Server Error or LinkedIn API error."
         ),
     },
-    description="Post content to LinkedIn using the user's stored LinkedIn access token.",
+    description="Post content to LinkedIn using the user's stored LinkedIn access token. Optionally include images with the post.",
 )
 @api_view(["POST"])
 @require_organization_access()
@@ -603,19 +564,39 @@ def get_linkedin_post_api(request, post_id):
 
 
 @extend_schema(
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'post_id': {
+                    'type': 'integer',
+                    'description': 'Single LinkedIn post ID to delete'
+                },
+                'post_ids': {
+                    'type': 'array',
+                    'items': {'type': 'integer'},
+                    'description': 'Array of LinkedIn post IDs to delete',
+                    'example': [1, 2, 3]
+                }
+            },
+            'description': 'Provide either post_id for single deletion or post_ids for bulk deletion'
+        }
+    },
     responses={
         200: OpenApiResponse(
             response=LinkedinPostDeleteSerializer,
             description="LinkedIn post(s) deleted successfully."
         ),
         400: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Bad Request."
+            response=ErrorResponseSerializer,
+            description="Bad Request - Either post_id or post_ids must be provided."
         ),
         500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
+            response=ErrorResponseSerializer,
+            description="Internal Server Error."
         ),
     },
-    description="Delete one or more LinkedIn posts. Provide post_id for single deletion or post_ids array for bulk deletion.",
+    description="Delete one or more LinkedIn posts. Provide post_id for single deletion or post_ids array for bulk deletion. Only posts belonging to the user's organization can be deleted.",
 )
 @api_view(["DELETE"])
 @require_organization_access()
@@ -707,19 +688,39 @@ def list_linkedin_posting_content_api(request):
 
 
 @extend_schema(
+    request={
+        'application/json': {
+            'type': 'object',
+            'properties': {
+                'content_id': {
+                    'type': 'integer',
+                    'description': 'Single LinkedIn posting content ID to delete'
+                },
+                'content_ids': {
+                    'type': 'array',
+                    'items': {'type': 'integer'},
+                    'description': 'Array of LinkedIn posting content IDs to delete',
+                    'example': [1, 2, 3]
+                }
+            },
+            'description': 'Provide either content_id for single deletion or content_ids for bulk deletion'
+        }
+    },
     responses={
         200: OpenApiResponse(
             response=LinkedinPostingContentDeleteSerializer,
             description="LinkedIn posting content deleted successfully."
         ),
         400: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Bad Request."
+            response=ErrorResponseSerializer,
+            description="Bad Request - Either content_id or content_ids must be provided."
         ),
         500: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Internal Server Error."
+            response=ErrorResponseSerializer,
+            description="Internal Server Error."
         ),
     },
-    description="Delete one or more LinkedIn posting content. Provide content_id for single deletion or content_ids array for bulk deletion.",
+    description="Delete one or more LinkedIn posting content records. Provide content_id for single deletion or content_ids array for bulk deletion. Only posting content belonging to the user's organization can be deleted. Note: This only deletes the database record, not the actual LinkedIn post.",
 )
 @api_view(["DELETE"])
 @require_organization_access()
