@@ -61,9 +61,9 @@ jobs:
             --set-env-vars="DEBUG=False,DJANGO_SETTINGS_MODULE=management_app.config.settings" \
             --set-env-vars="BACKEND_API_BASE_URL=https://sooqsense-django-production-798090991303.asia-south2.run.app" \
             --set-env-vars="DB_HOST=ep-holy-hat-adj6g712-pooler.c-2.us-east-1.aws.neon.tech" \
-            --set-env-vars="DB_PORT=5432" \
-            --set-env-vars="DB_NAME=neondb" \
-            --set-env-vars="DB_USER=neondb_owner" \
+            --set-env-vars="DB_PORT=${{ secrets.DB_PORT }}" \
+            --set-env-vars="DB_NAME=${{ secrets.DB_NAME }}" \
+            --set-env-vars="DB_USER=${{ secrets.DB_USER }}" \
             --set-env-vars="DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
             --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
             --set-env-vars="SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" \
