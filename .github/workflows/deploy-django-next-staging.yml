@@ -64,35 +64,35 @@ jobs:
             --set-env-vars="DB_PORT=5432" \
             --set-env-vars="DB_NAME=neondb" \
             --set-env-vars="DB_USER=neondb_owner" \
-            --set-env-vars="DB_PASSWORD=npg_zy0JNK3kohmb" \
-            --set-env-vars="OPENAI_API_KEY=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" \
-            --set-env-vars="SERPER_API_KEY=da3cefd9584b4016a82e1e116b2badfcb07e5df1" \
-            --set-env-vars="PINECONE_API_KEY=pcsk_EJHEg_B99xZ7vPcUkDSsD3Gj7KFwCeKgQCWKPvxX5894Cvy72z7DnXfdYCzN35pdp9M5K" \
-            --set-env-vars="PINECONE_INDEX_NAME=artilence-production" \
-            --set-env-vars="S3_BUCKET_NAME=sooqsense" \
-            --set-env-vars="AWS_REGION=us-east-1" \
-            --set-env-vars="AWS_ACCESS_KEY_ID=AKIAT7JJVEEMYAEX2UGD" \
-            --set-env-vars="AWS_SECRET_ACCESS_KEY=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" \
-            --set-env-vars="REDIS_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
-            --set-env-vars="CELERY_BROKER_URL=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
-            --set-env-vars="CELERY_RESULT_BACKEND=rediss://default:Ab6DAAIjcDE4YjIzMmJjYWY3NjE0NWIxYWIwNTg4MmNiMjkyNTc0Y3AxMA@ideal-calf-48771.upstash.io:6379" \
-            --set-env-vars="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_Y2xpbWJpbmctcm9vc3Rlci02MC5jbGVyay5hY2NvdW50cy5kZXYk" \
-            --set-env-vars="CLERK_SECRET_KEY=sk_test_VQ0vUgco3WhaI3iqA6okF3zCGV0XTAjpdnz0rJxgfi" \
-            --set-env-vars="CLERK_BACKEND_AVAILABLE=https://api.clerk.com" \
-            --set-env-vars="CLERK_FRONTEND_URL=https://climbing-rooster-60.clerk.accounts.dev" \
-            --set-env-vars="CLERK_JWKS_URL=https://climbing-rooster-60.clerk.accounts.dev/.well-known/jwks.json" \
-            --set-env-vars="GOOGLE_CLIENT_ID=229772932214-hil3ggbh30c83ag635c6ao6a4h91dvfo.apps.googleusercontent.com" \
-            --set-env-vars="GOOGLE_CLIENT_SECRET=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" \
-            --set-env-vars="GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback" \
-            --set-env-vars="LINKEDIN_CLIENT_ID=77bbsr8z46dzgg" \
-            --set-env-vars="LINKEDIN_CLIENT_SECRET=WPL_AP1.cPzBTYa3NNJXpstR.a2D98w==" \
-            --set-env-vars="LINKEDIN_REDIRECT_URI=http://localhost:8000/auth/linkedin/callback" \
-            --set-env-vars="LANGSMITH_TRACING=true" \
-            --set-env-vars="LANGSMITH_API_KEY=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" \
-            --set-env-vars="LANGSMITH_PROJECT=sooqsense-blog-generation" \
-            --set-env-vars="LANGSMITH_ENDPOINT=https://api.smith.langchain.com" \
-            --set-env-vars="LANGSMITH_WORKSPACE_ID=2979498f-fb22-57f7-a758-9cbbe3d40dca" \
-            --set-env-vars="FAL_KEY=e59e15f3-ee4e-4847-9650-8e1bf514b772:c9aec65bceac24694cd7dff0ddba0533"
+            --set-env-vars="DB_PASSWORD=${{ secrets.DB_PASSWORD }}" \
+            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --set-env-vars="SERPER_API_KEY=${{ secrets.SERPER_API_KEY }}" \
+            --set-env-vars="PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" \
+            --set-env-vars="PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" \
+            --set-env-vars="S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}" \
+            --set-env-vars="AWS_REGION=${{ secrets.AWS_REGION }}" \
+            --set-env-vars="AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --set-env-vars="AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --set-env-vars="REDIS_URL=${{ secrets.REDIS_URL }}" \
+            --set-env-vars="CELERY_BROKER_URL=${{ secrets.CELERY_BROKER_URL }}" \
+            --set-env-vars="CELERY_RESULT_BACKEND=${{ secrets.CELERY_RESULT_BACKEND }}" \
+            --set-env-vars="NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" \
+            --set-env-vars="CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }}" \
+            --set-env-vars="CLERK_BACKEND_AVAILABLE=${{ secrets.CLERK_BACKEND_AVAILABLE }}" \
+            --set-env-vars="CLERK_FRONTEND_URL=${{ secrets.CLERK_FRONTEND_URL }}" \
+            --set-env-vars="CLERK_JWKS_URL=${{ secrets.CLERK_JWKS_URL }}" \
+            --set-env-vars="GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --set-env-vars="GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --set-env-vars="GOOGLE_REDIRECT_URI=${{ secrets.GOOGLE_REDIRECT_URI }}" \
+            --set-env-vars="LINKEDIN_CLIENT_ID=${{ secrets.LINKEDIN_CLIENT_ID }}" \
+            --set-env-vars="LINKEDIN_CLIENT_SECRET=${{ secrets.LINKEDIN_CLIENT_SECRET }}" \
+            --set-env-vars="LINKEDIN_REDIRECT_URI=${{ secrets.LINKEDIN_REDIRECT_URI }}" \
+            --set-env-vars="LANGSMITH_TRACING=${{ secrets.LANGSMITH_TRACING }}" \
+            --set-env-vars="LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}" \
+            --set-env-vars="LANGSMITH_PROJECT=${{ secrets.LANGSMITH_PROJECT }}" \
+            --set-env-vars="LANGSMITH_ENDPOINT=${{ secrets.LANGSMITH_ENDPOINT }}" \
+            --set-env-vars="LANGSMITH_WORKSPACE_ID=${{ secrets.LANGSMITH_WORKSPACE_ID }}" \
+            --set-env-vars="FAL_KEY=${{ secrets.FAL_KEY }}"
 
       - name: Get Service URL
         run: |
