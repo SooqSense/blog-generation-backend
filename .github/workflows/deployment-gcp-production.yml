@@ -55,7 +55,7 @@ jobs:
             --region=${{ env.REGION }} \
             --platform=managed \
             --allow-unauthenticated \
-            --port=8080 \
+            --port=8000 \
             --memory=4Gi \
             --cpu=2 \
             --timeout=3000 \
