@@ -25,10 +25,12 @@ jobs:
 
       # Authenticate using Workload Identity Federation (no JSON keys!)
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/798090991303/locations/global/workloadIdentityPools/github-pool/providers/github
           service_account: github-actions-deployer@artilence.iam.gserviceaccount.com
+          token_format: access_token
 
       # Set up gcloud CLI
       - name: Set up Cloud SDK
@@ -36,7 +38,9 @@ jobs:
 
       # Configure Docker to use gcloud as credential helper
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        run: |
+          echo '${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin https://${{ env.REGION }}-docker.pkg.dev
+          echo "Docker authenticated successfully"
 
       # Build and push Docker image to Artifact Registry
       - name: Build & Push Docker Image (Daphne/ASGI)
