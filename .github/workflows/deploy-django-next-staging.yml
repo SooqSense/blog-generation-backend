@@ -8,7 +8,7 @@ on:
 env:
   PROJECT_ID: artilence
   REGION: asia-south2
-  REPOSITORY: sooqsense-bloggenerator
+  REPOSITORY: blog-generation-backend
   SERVICE_NAME: sooqsense-django-production
   IMAGE_NAME: django
 
