@@ -26,6 +26,7 @@ services:
       # For development: use host.docker.internal to connect to host's database
       # All other DB settings (NAME, USER, PASSWORD, PORT) come from .env file
       DB_HOST: host.docker.internal
+      DOCKER_ENV: "true"
     depends_on:
       - redis
     command: >

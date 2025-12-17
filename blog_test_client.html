@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Generation Test Client - Parallel Processing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ef4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #10b981;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .control-panel {
+            background: #f8fafc;
+            padding: 30px;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .output-panel {
+            padding: 30px;
+            overflow-y: auto;
+            max-height: 800px;
+        }
+
+        .progress-section {
+            margin-bottom: 30px;
+        }
+
+        .progress-section h3 {
+            color: #1e293b;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .batch-progress {
+            background: #f1f5f9;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .batch-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-card .label {
+            font-size: 0.9em;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        .progress-bar-container {
+            background: #e2e8f0;
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+
+        .sections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .section-card {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .section-card.processing {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .section-card.completed {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .section-card.error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 1.1em;
+        }
+
+        .section-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-idle {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .badge-research {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-writing {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-image {
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        .badge-completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .section-content {
+            font-size: 0.95em;
+            color: #1e293b;
+            line-height: 1.8;
+            min-height: 150px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-family: 'Georgia', serif;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .section-content:empty::before {
+            content: 'Waiting for content...';
+            color: #94a3b8;
+            font-style: italic;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .section-content.streaming {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            animation: contentPulse 2s infinite;
+        }
+
+        @keyframes contentPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            }
+
+            50% {
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            }
+        }
+
+        .section-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .section-content::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+
+        .section-content::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .section-content::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .section-content.streaming::after {
+            content: '▋';
+            color: #3b82f6;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+
+            0%,
+            49% {
+                opacity: 1;
+            }
+
+            50%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        .section-image {
+            margin-top: 10px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .section-image img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .log-section {
+            margin-top: 30px;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-timestamp {
+            color: #94a3b8;
+            margin-right: 10px;
+        }
+
+        .log-type {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .log-type.status {
+            color: #3b82f6;
+        }
+
+        .log-type.toc {
+            color: #8b5cf6;
+        }
+
+        .log-type.section {
+            color: #10b981;
+        }
+
+        .log-type.error {
+            color: #ef4444;
+        }
+
+        .log-type.complete {
+            color: #10b981;
+        }
+
+        .final-blog {
+            margin-top: 30px;
+            padding: 30px;
+            background: #f8fafc;
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .final-blog h3 {
+            color: #1e293b;
+            margin-bottom: 20px;
+        }
+
+        .blog-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            line-height: 1.8;
+            font-size: 1em;
+        }
+
+        .blog-content h1 {
+            color: #1e293b;
+            margin-bottom: 20px;
+        }
+
+        .blog-content h2 {
+            color: #334155;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+
+        .blog-content p {
+            margin-bottom: 15px;
+            color: #475569;
+        }
+
+        .error-message {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #ef4444;
+        }
+
+        .success-message {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #10b981;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Parallel Blog Generation Test Client</h1>
+            <p>Real-time WebSocket streaming with concurrent section processing</p>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="control-panel">
+                <h2 style="margin-bottom: 20px; color: #1e293b;">Configuration</h2>
+
+                <div class="form-group">
+                    <label for="wsUrl">WebSocket URL</label>
+                    <input type="text" id="wsUrl" value="ws://localhost:8000/ws/stream/"
+                        placeholder="ws://localhost:8000/ws/stream/">
+                </div>
+
+                <div class="form-group">
+                    <label for="topic">Blog Topic</label>
+                    <input type="text" id="topic" value="The Future of Artificial Intelligence in Healthcare"
+                        placeholder="Enter blog topic">
+                </div>
+
+                <div class="form-group">
+                    <label for="blogType">Blog Type</label>
+                    <select id="blogType">
+                        <option value="Guide">Guide</option>
+                        <option value="News">News</option>
+                        <option value="Tutorial">Tutorial</option>
+                        <option value="Analysis">Analysis</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="keywords">Keywords (comma-separated)</label>
+                    <input type="text" id="keywords" value="AI, healthcare, machine learning"
+                        placeholder="keyword1, keyword2">
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="generateImages" checked>
+                    <label for="generateImages">Generate Images</label>
+                </div>
+
+                <button class="btn btn-primary" id="connectBtn" onclick="connect()">Connect WebSocket</button>
+                <button class="btn btn-primary" id="generateBtn" onclick="generateBlog()" disabled>Generate
+                    Blog</button>
+                <button class="btn btn-danger" id="clearBtn" onclick="clearOutput()">Clear Output</button>
+            </div>
+
+            <div class="output-panel">
+                <div class="progress-section">
+                    <h3>📊 Generation Progress</h3>
+                    <div class="batch-progress" id="batchProgress" style="display: none;">
+                        <h4 style="margin-bottom: 10px;">Batch Status</h4>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+                        </div>
+                        <div class="batch-stats">
+                            <div class="stat-card">
+                                <div class="value" id="totalSections">0</div>
+                                <div class="label">Total Sections</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="value" id="completedSections">0</div>
+                                <div class="label">Completed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="value" id="inProgressSections">0</div>
+                                <div class="label">In Progress</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="value" id="failedSections">0</div>
+                                <div class="label">Failed</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="progress-section">
+                    <h3>📝 Section Progress</h3>
+                    <div class="sections-grid" id="sectionsGrid"></div>
+                </div>
+
+                <div class="log-section">
+                    <h4 style="margin-bottom: 15px; color: #e2e8f0;">Event Log</h4>
+                    <div id="logOutput"></div>
+                </div>
+
+                <div class="final-blog" id="finalBlog" style="display: none;">
+                    <h3>✅ Generated Blog</h3>
+                    <div class="blog-content" id="blogContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let sections = {};
+        let startTime = null;
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected', 'status');
+                return;
+            }
+
+            log(`Connecting to ${url}...`, 'status');
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                log('✅ WebSocket connected', 'status');
+                updateConnectionStatus(true);
+                document.getElementById('generateBtn').disabled = false;
+            };
+
+            ws.onclose = () => {
+                log('❌ WebSocket disconnected', 'status');
+                updateConnectionStatus(false);
+                document.getElementById('generateBtn').disabled = true;
+            };
+
+            ws.onerror = (error) => {
+                log(`❌ WebSocket error: ${error}`, 'error');
+                updateConnectionStatus(false);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    log(`Error parsing message: ${error}`, 'error');
+                }
+            };
+        }
+
+        function generateBlog() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Please connect to WebSocket first');
+                return;
+            }
+
+            const topic = document.getElementById('topic').value;
+            if (!topic) {
+                alert('Please enter a blog topic');
+                return;
+            }
+
+            // Reset state
+            sections = {};
+            startTime = Date.now();
+            document.getElementById('sectionsGrid').innerHTML = '';
+            document.getElementById('finalBlog').style.display = 'none';
+            document.getElementById('batchProgress').style.display = 'block';
+
+            const keywords = document.getElementById('keywords').value
+                .split(',')
+                .map(k => k.trim())
+                .filter(k => k);
+
+            const message = {
+                type: 'blog_generation',
+                message_id: generateUUID(),
+                topic: topic,
+                blog_type: document.getElementById('blogType').value,
+                keywords: keywords,
+                generate_images: document.getElementById('generateImages').checked,
+                length_min: 800,
+                length_max: 1500
+            };
+
+            log(`🚀 Starting blog generation: "${topic}"`, 'status');
+            ws.send(JSON.stringify(message));
+        }
+
+        function handleMessage(data) {
+            const type = data.type;
+
+            switch (type) {
+                case 'ping':
+                    // Respond to keepalive
+                    ws.send(JSON.stringify({ type: 'pong' }));
+                    break;
+
+                case 'task_queued':
+                    log(`✅ ${data.message} (Task ID: ${data.task_id})`, 'status');
+                    break;
+
+                case 'status':
+                    log(`📊 ${data.stage}: ${data.message}`, 'status');
+                    break;
+
+                case 'toc':
+                    handleTOC(data);
+                    break;
+
+                case 'section_start':
+                    handleSectionStart(data);
+                    break;
+
+                case 'section_progress':
+                    handleSectionProgress(data);
+                    break;
+
+                case 'section_token':
+                    handleSectionToken(data);
+                    break;
+
+                case 'image':
+                    handleImage(data);
+                    break;
+
+                case 'section_complete':
+                    handleSectionComplete(data);
+                    break;
+
+                case 'batch_status':
+                    handleBatchStatus(data);
+                    break;
+
+                case 'section_error':
+                    handleSectionError(data);
+                    break;
+
+                case 'complete':
+                    handleComplete(data);
+                    break;
+
+                case 'error':
+                    handleError(data);
+                    break;
+
+                default:
+                    log(`Unknown message type: ${type}`, 'error');
+            }
+        }
+
+        function handleTOC(data) {
+            log(`📋 TOC generated with ${data.total_sections} sections`, 'toc');
+
+            const grid = document.getElementById('sectionsGrid');
+            grid.innerHTML = '';
+
+            data.sections.forEach(section => {
+                sections[section.id] = {
+                    id: section.id,
+                    title: section.title,
+                    index: section.index,
+                    stage: 'idle',
+                    content: '',
+                    image_url: null,
+                    error: null
+                };
+
+                const card = createSectionCard(section.id);
+                grid.appendChild(card);
+            });
+
+            document.getElementById('totalSections').textContent = data.total_sections;
+        }
+
+        function handleSectionStart(data) {
+            log(`🚀 Section ${data.index}: ${data.section_title} (${data.section_id})`, 'section');
+            updateSectionStage(data.section_id, 'processing');
+        }
+
+        function handleSectionProgress(data) {
+            log(`📊 [${data.section_id}] ${data.stage}: ${data.message}`, 'section');
+            updateSectionStage(data.section_id, data.stage);
+        }
+
+        function handleSectionToken(data) {
+            if (sections[data.section_id]) {
+                sections[data.section_id].content += data.content;
+                updateSectionContent(data.section_id, true); // Pass true to indicate streaming
+            }
+        }
+
+        function handleImage(data) {
+            log(`🖼️ Image generated for ${data.section_title}`, 'section');
+            if (sections[data.section_id]) {
+                sections[data.section_id].image_url = data.image_url;
+                updateSectionImage(data.section_id);
+            }
+        }
+
+        function handleSectionComplete(data) {
+            log(`✅ Section completed: ${data.section_title}`, 'section');
+            updateSectionStage(data.section_id, 'completed');
+        }
+
+        function handleBatchStatus(data) {
+            const progress = (data.completed / data.total) * 100;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+            document.getElementById('completedSections').textContent = data.completed;
+            document.getElementById('inProgressSections').textContent = data.in_progress;
+            document.getElementById('failedSections').textContent = data.failed;
+
+            log(`📊 Batch: ${data.completed}/${data.total} completed, ${data.failed} failed`, 'status');
+        }
+
+        function handleSectionError(data) {
+            log(`❌ Section error: ${data.section_title} - ${data.error} (Retry ${data.retry_attempt}/${data.max_retries})`, 'error');
+
+            if (sections[data.section_id]) {
+                sections[data.section_id].error = data.error;
+                sections[data.section_id].retry_attempt = data.retry_attempt;
+                updateSectionStage(data.section_id, 'error');
+            }
+        }
+
+        function handleComplete(data) {
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            log(`🎉 Blog generation completed in ${elapsed}s!`, 'complete');
+            log(`✅ ${data.data.successful_sections}/${data.data.total_sections} sections successful`, 'complete');
+
+            if (data.data.total_time_seconds) {
+                log(`⏱️ Server processing time: ${data.data.total_time_seconds}s`, 'complete');
+            }
+
+            // Display final blog
+            if (data.data.content) {
+                document.getElementById('finalBlog').style.display = 'block';
+                document.getElementById('blogContent').innerHTML = marked.parse(data.data.content);
+            }
+        }
+
+        function handleError(data) {
+            log(`❌ Error: ${data.message}`, 'error');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = data.message;
+            document.getElementById('sectionsGrid').prepend(errorDiv);
+        }
+
+        function createSectionCard(sectionId) {
+            const section = sections[sectionId];
+            const card = document.createElement('div');
+            card.className = 'section-card';
+            card.id = `card-${sectionId}`;
+            card.innerHTML = `
+                <div class="section-header">
+                    <div class="section-title">${section.title}</div>
+                    <span class="section-badge badge-idle" id="badge-${sectionId}">Idle</span>
+                </div>
+                <div class="section-content" id="content-${sectionId}"></div>
+                <div class="section-image" id="image-${sectionId}"></div>
+            `;
+            return card;
+        }
+
+        function updateSectionStage(sectionId, stage) {
+            const card = document.getElementById(`card-${sectionId}`);
+            const badge = document.getElementById(`badge-${sectionId}`);
+
+            if (!card || !badge) return;
+
+            // Update card class
+            card.className = 'section-card';
+            if (stage === 'completed') {
+                card.classList.add('completed');
+            } else if (stage === 'error') {
+                card.classList.add('error');
+            } else {
+                card.classList.add('processing');
+            }
+
+            // Update badge
+            badge.className = 'section-badge';
+            switch (stage) {
+                case 'research':
+                    badge.classList.add('badge-research');
+                    badge.textContent = 'Researching';
+                    break;
+                case 'writing':
+                    badge.classList.add('badge-writing');
+                    badge.textContent = 'Writing';
+                    break;
+                case 'image_generation':
+                    badge.classList.add('badge-image');
+                    badge.textContent = 'Generating Image';
+                    break;
+                case 'completed':
+                    badge.classList.add('badge-completed');
+                    badge.textContent = 'Completed';
+                    break;
+                case 'error':
+                    badge.classList.add('badge-error');
+                    badge.textContent = 'Error';
+                    break;
+                default:
+                    badge.classList.add('badge-idle');
+                    badge.textContent = 'Processing';
+            }
+
+            if (sections[sectionId]) {
+                sections[sectionId].stage = stage;
+            }
+        }
+
+        function updateSectionContent(sectionId, isStreaming = false) {
+            const contentDiv = document.getElementById(`content-${sectionId}`);
+            if (contentDiv && sections[sectionId]) {
+                const content = sections[sectionId].content;
+                contentDiv.textContent = content;
+
+                // Add streaming animation
+                if (isStreaming) {
+                    contentDiv.classList.add('streaming');
+                    // Auto-scroll to bottom to show new content
+                    contentDiv.scrollTop = contentDiv.scrollHeight;
+                } else {
+                    contentDiv.classList.remove('streaming');
+                }
+
+                // Update character count in badge if content exists
+                if (content.length > 0) {
+                    const badge = document.getElementById(`badge-${sectionId}`);
+                    if (badge && sections[sectionId].stage !== 'completed') {
+                        const charCount = content.length;
+                        const wordCount = content.trim().split(/\s+/).length;
+                        badge.textContent = `Writing (${wordCount} words)`;
+                    }
+                }
+            }
+        }
+
+        function updateSectionImage(sectionId) {
+            const imageDiv = document.getElementById(`image-${sectionId}`);
+            if (imageDiv && sections[sectionId] && sections[sectionId].image_url) {
+                imageDiv.innerHTML = `<img src="${sections[sectionId].image_url}" alt="${sections[sectionId].title}">`;
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                indicator.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                indicator.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function log(message, type = 'info') {
+            const logOutput = document.getElementById('logOutput');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-type ${type}">[${type.toUpperCase()}]</span>
+                <span>${message}</span>
+            `;
+
+            logOutput.appendChild(entry);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('logOutput').innerHTML = '';
+            document.getElementById('sectionsGrid').innerHTML = '';
+            document.getElementById('finalBlog').style.display = 'none';
+            document.getElementById('batchProgress').style.display = 'none';
+            sections = {};
+            log('Output cleared', 'status');
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Simple markdown parser (basic implementation)
+        const marked = {
+            parse: function (markdown) {
+                return markdown
+                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/^(.+)$/gim, '<p>$1</p>')
+                    .replace(/<p><h/g, '<h')
+                    .replace(/<\/h([1-6])><\/p>/g, '</h$1>');
+            }
+        };
+
+        // Auto-connect on load
+        window.addEventListener('load', () => {
+            log('Page loaded - Ready to connect', 'status');
+        });
+    </script>
+</body>
+
+</html>

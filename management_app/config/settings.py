@@ -311,6 +311,9 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # Override with Docker-friendly URLs if we're in Docker environment
 if os.environ.get("DOCKER_ENV") == "true":
     REDIS_URL = "redis://redis:6379/0"
+    # Force Celery to use the Docker Redis URL, ignoring .env values which might be localhost
+    os.environ["CELERY_BROKER_URL"] = REDIS_URL
+    os.environ["CELERY_RESULT_BACKEND"] = REDIS_URL
 
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
@@ -329,6 +332,10 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 # Celery Beat Configuration (for scheduled tasks) - Use database scheduler
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# Redis Configuration for direct connections (Pub/Sub)
+REDIS_HOST = os.environ.get("REDIS_HOST", "redis" if os.environ.get("DOCKER_ENV") == "true" else "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 
 # Environment Configuration (needed for other configs below)
 
@@ -383,7 +390,8 @@ import ssl
 
 
 def get_redis_config():
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    # Use the REDIS_URL defined earlier (which handles Docker env correctly)
+    redis_url = REDIS_URL
 
     if redis_url.startswith("rediss://"):
         # For SSL Redis connections (like Upstash)
