@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Blog Generator - Premium Streaming</title>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #020617;
+            --card-bg: rgba(15, 23, 42, 0.6);
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.4);
+            --accent: #a855f7;
+            --text-main: #f1f5f9;
+            --text-dim: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 40px 20px;
+            background-image:
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 32px;
+            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 50px 40px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 30%, #a855f7 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -2px;
+            margin-bottom: 15px;
+        }
+
+        /* New TOC Styling */
+        .toc-container {
+            margin-bottom: 40px;
+            padding: 24px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .toc-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1em;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toc-content {
+            font-size: 0.95em;
+            line-height: 1.7;
+            color: var(--text-dim);
+            white-space: pre-wrap;
+        }
+
+        .header p {
+            color: var(--text-dim);
+            font-size: 1.1em;
+            font-weight: 300;
+        }
+
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 25px;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--error);
+            box-shadow: 0 0 12px var(--error);
+            transition: all 0.3s;
+        }
+
+        .status-indicator.connected {
+            background: var(--success);
+            box-shadow: 0 0 12px var(--success);
+        }
+
+        .controls {
+            padding: 30px 40px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: grid;
+            gap: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: var(--text-dim);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 16px 20px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            color: white;
+            font-size: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-glow);
+            transform: translateY(-1px);
+        }
+
+        .controls-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 16px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 18px 30px;
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+            color: white;
+            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px -5px rgba(99, 102, 241, 0.6);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+
+        .progress-bar-container {
+            background: rgba(255, 255, 255, 0.05);
+            height: 6px;
+            width: 100%;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #a855f7);
+            width: 0%;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+        }
+
+        .streaming-container {
+            padding: 50px 40px;
+            max-height: 700px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        .streaming-content {
+            font-family: 'Inter', sans-serif;
+            font-size: 18px;
+            line-height: 1.8;
+            color: var(--text-main);
+        }
+
+        .streaming-content h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2em;
+            font-weight: 700;
+            color: #fff;
+            margin: 50px 0 25px;
+            letter-spacing: -1px;
+        }
+
+        .streaming-content p {
+            margin-bottom: 1.5em;
+            color: #cbd5e1;
+        }
+
+        .streaming-content img {
+            width: 100%;
+            border-radius: 24px;
+            margin: 30px 0;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section-wrapper {
+            margin-bottom: 60px;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 20px;
+            background: var(--primary);
+            margin-left: 4px;
+            border-radius: 2px;
+            animation: blink 1s infinite;
+            vertical-align: middle;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        @keyframes blink {
+
+            0%,
+            49% {
+                opacity: 1;
+            }
+
+            50%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        .status-bar {
+            padding: 25px 40px;
+            background: rgba(0, 0, 0, 0.4);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-text {
+            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .badge-generating {
+            background: rgba(99, 102, 241, 0.15);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .badge-complete {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 100px 40px;
+            color: var(--text-dim);
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 24px;
+            color: var(--primary);
+            opacity: 0.5;
+        }
+
+        .streaming-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .streaming-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        /* New status badge for sections */
+        .section-status {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--primary);
+            margin-bottom: 8px;
+            opacity: 0.7;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .section-status::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>AI Blog Generator</h1>
+            <p>High-performance word-by-word streaming architecture</p>
+            <div class="connection-status" id="connectionStatus" onclick="connect()" style="cursor: pointer;">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">System Offline</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="form-group">
+                <label>Blog Topic</label>
+                <input type="text" id="topic" value="The Impact of Generative AI on Modern Software Engineering"
+                    placeholder="Enter an ambitious topic...">
+            </div>
+
+            <div class="controls-row">
+                <div class="form-group">
+                    <label>Style</label>
+                    <select id="blogType">
+                        <option value="Analysis">Deep Analysis</option>
+                        <option value="News">Industry News</option>
+                        <option value="Guide">Step-by-Step Guide</option>
+                        <option value="Tutorial">Technical Tutorial</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Keywords</label>
+                    <input type="text" id="keywords" value="LLM, Productivity, Future, Innovation"
+                        placeholder="AI, Cloud, Scaling">
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" id="clearBtn" onclick="clearAll()">🗑️ Clear</button>
+                <button class="btn btn-primary" id="generateBtn" onclick="generateBlog()" disabled>🚀 Build
+                    Blog</button>
+            </div>
+        </div>
+
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <div class="streaming-container" id="streamingContainer">
+            <div class="empty-state" id="emptyState">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                <h3>Waiting for Command</h3>
+                <p>Define your topic and keywords to initiate the generation sequence.</p>
+            </div>
+            <div class="streaming-content" id="streamingContent" style="display: none;">
+                <div id="tocPreview" class="toc-container" style="display: none;">
+                    <div class="toc-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                        Generation Plan
+                    </div>
+                    <div id="tocText" class="toc-content"></div>
+                </div>
+                <div id="sectionsContainer"></div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-text" id="statusMessage">System Ready</div>
+            <div class="status-badge" id="statusBadge" style="display: none;">Idle</div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let isGenerating = false;
+        let state = {
+            sections: {},
+            sectionOrder: [],
+            totalSections: 0,
+            completedSections: 0,
+            tocContent: '',
+            status: 'Ready',
+            badge: { type: '', text: '' },
+            progress: 0,
+            needsUpdate: false
+        };
+
+        // UI Loop: Renders at the browser's native refresh rate
+        function renderLoop() {
+            if (state.needsUpdate) {
+                updateUI();
+                state.needsUpdate = false;
+            }
+            requestAnimationFrame(renderLoop);
+        }
+        requestAnimationFrame(renderLoop);
+
+        function updateUI() {
+            // Update TOC
+            const tocPreview = document.getElementById('tocPreview');
+            const tocText = document.getElementById('tocText');
+            if (state.tocContent) {
+                tocPreview.style.display = 'block';
+                if (tocText.textContent !== state.tocContent) {
+                    tocText.textContent = state.tocContent;
+                }
+            }
+
+            // Update Sections
+            const container = document.getElementById('sectionsContainer');
+            state.sectionOrder.forEach(id => {
+                let sectionEl = document.getElementById(`section-${id}`);
+                if (!sectionEl) {
+                    sectionEl = document.createElement('div');
+                    sectionEl.className = 'section-wrapper';
+                    sectionEl.id = `section-${id}`;
+                    container.appendChild(sectionEl);
+                }
+
+                const s = state.sections[id];
+                if (s.needsRender) {
+                    let statusHtml = '';
+                    if (s.status && s.status !== 'complete') {
+                        const statusText = s.status.charAt(0).toUpperCase() + s.status.slice(1);
+                        statusHtml = `<div class="section-status">${statusText}...</div>`;
+                    }
+
+                    let html = `${statusHtml}<h2>${s.title}</h2>`;
+                    if (s.content) html += marked.parse(s.content);
+                    if (s.rendering) html += '<span class="cursor"></span>';
+                    if (s.image_url && s.completed) html += `<img src="${s.image_url}" alt="Visual for ${s.title}" />`;
+
+                    sectionEl.innerHTML = html;
+                    s.needsRender = false;
+                }
+            });
+
+            // Status & Progress
+            document.getElementById('statusMessage').textContent = state.status;
+            document.getElementById('progressBar').style.width = `${state.progress}%`;
+
+            const badge = document.getElementById('statusBadge');
+            if (state.badge.text) {
+                badge.style.display = 'inline-block';
+                badge.className = `status-badge badge-${state.badge.type}`;
+                badge.textContent = state.badge.text;
+            } else {
+                badge.style.display = 'none';
+            }
+
+            // Auto-Scroll
+            const scrollContainer = document.getElementById('streamingContainer');
+            if (scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 150) {
+                scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            }
+        }
+
+        function connect() {
+            // Robust URL detection
+            let protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            let host = window.location.host || 'localhost:8000';
+            const url = `${protocol}://${host}/ws/stream/`;
+
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                console.log("WebSocket already open or connecting...");
+                return;
+            }
+
+            console.log("Initiating connection to:", url);
+            state.status = 'Connecting...';
+            state.needsUpdate = true;
+
+            try {
+                ws = new WebSocket(url);
+            } catch (e) {
+                console.error("Failed to create WebSocket:", e);
+                state.status = 'Connection Failed';
+                state.needsUpdate = true;
+                return;
+            }
+
+            ws.onopen = () => {
+                console.log("WebSocket connected successfully");
+                state.status = 'System Online';
+                updateConnectionStatus(true);
+                document.getElementById('generateBtn').disabled = false;
+                state.needsUpdate = true;
+            };
+
+            ws.onclose = (event) => {
+                console.log("WebSocket closed:", event.code, event.reason);
+                state.status = 'System Offline';
+                updateConnectionStatus(false);
+                document.getElementById('generateBtn').disabled = true;
+                state.needsUpdate = true;
+
+                // Exponential backoff or simple delay
+                if (!event.wasClean) {
+                    setTimeout(connect, 3000);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.error("WS Error details:", err);
+                state.status = 'Connection Error';
+                state.needsUpdate = true;
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    console.error('WS JSON Parse Error:', error, event.data);
+                }
+            };
+        }
+
+        function clearAll() {
+            state.sections = {};
+            state.sectionOrder = [];
+            state.totalSections = 0;
+            state.completedSections = 0;
+            state.tocContent = '';
+            state.status = 'Ready';
+            state.badge = { type: '', text: '' };
+            state.progress = 0;
+            isGenerating = false;
+
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('streamingContent').style.display = 'none';
+            document.getElementById('sectionsContainer').innerHTML = '';
+            document.getElementById('tocText').textContent = '';
+            state.needsUpdate = true;
+        }
+
+        function generateBlog() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return connect();
+
+            const topic = document.getElementById('topic').value;
+            if (!topic) return alert('Enter a topic');
+
+            clearAll();
+            isGenerating = true;
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('streamingContent').style.display = 'block';
+            state.badge = { type: 'generating', text: 'Processing' };
+
+            const keywords = document.getElementById('keywords').value.split(',').map(k => k.trim()).filter(k => k);
+            const message = {
+                type: 'blog_generation',
+                message_id: 'blog_' + Date.now(),
+                topic: topic,
+                blog_type: document.getElementById('blogType').value,
+                keywords: keywords
+            };
+
+            ws.send(JSON.stringify(message));
+            state.status = `Initiating: ${topic}`;
+            state.needsUpdate = true;
+        }
+
+        function handleMessage(data) {
+            const type = data.type;
+
+            switch (type) {
+                case 'status':
+                    state.status = data.message || data.status;
+                    state.needsUpdate = true;
+                    break;
+
+                case 'toc_token':
+                    state.tocContent += data.content;
+                    state.needsUpdate = true;
+                    break;
+
+                case 'toc_complete':
+                    state.totalSections = data.total_sections || 0;
+                    data.sections.forEach((s) => {
+                        if (!state.sections[s.id]) {
+                            state.sections[s.id] = {
+                                index: s.index,
+                                title: s.title,
+                                content: '',
+                                rendering: false,
+                                completed: false,
+                                status: 'research',
+                                needsRender: true
+                            };
+                            if (!state.sectionOrder.includes(s.id)) state.sectionOrder.push(s.id);
+                        }
+                    });
+                    state.sectionOrder.sort((a, b) => state.sections[a].index - state.sections[b].index);
+                    state.needsUpdate = true;
+                    break;
+
+                case 'section_start':
+                    if (!state.sections[data.section_id]) {
+                        state.sections[data.section_id] = {
+                            index: data.index,
+                            title: data.title,
+                            content: '',
+                            rendering: true,
+                            completed: false,
+                            status: 'research',
+                            needsRender: true
+                        };
+                        if (!state.sectionOrder.includes(data.section_id)) {
+                            state.sectionOrder.push(data.section_id);
+                            state.sectionOrder.sort((a, b) => state.sections[a].index - state.sections[b].index);
+                        }
+                    } else {
+                        state.sections[data.section_id].rendering = true;
+                        state.sections[data.section_id].needsRender = true;
+                    }
+                    state.needsUpdate = true;
+                    break;
+
+                case 'section_progress':
+                    if (state.sections[data.section_id]) {
+                        state.sections[data.section_id].status = data.phase;
+                        state.sections[data.section_id].needsRender = true;
+                    }
+                    state.needsUpdate = true;
+                    break;
+
+                case 'section_token':
+                    if (state.sections[data.section_id]) {
+                        state.sections[data.section_id].content += data.content;
+                        state.sections[data.section_id].status = 'writing';
+                        state.sections[data.section_id].needsRender = true;
+                    }
+                    state.needsUpdate = true;
+                    break;
+
+                case 'section_complete':
+                    if (state.sections[data.section_id]) {
+                        state.sections[data.section_id].completed = true;
+                        state.sections[data.section_id].rendering = false;
+                        state.sections[data.section_id].status = 'complete';
+                        state.sections[data.section_id].content = data.content || state.sections[data.section_id].content;
+                        state.sections[data.section_id].needsRender = true;
+                        state.completedSections++;
+                        state.progress = (state.completedSections / (state.totalSections || 8)) * 100;
+                    }
+                    state.needsUpdate = true;
+                    break;
+
+                case 'image':
+                    if (state.sections[data.section_id]) {
+                        state.sections[data.section_id].image_url = data.image_url;
+                        state.sections[data.section_id].needsRender = true;
+                    }
+                    state.needsUpdate = true;
+                    break;
+
+                case 'complete':
+                    isGenerating = false;
+                    state.badge = { type: 'complete', text: 'Finalized' };
+                    state.status = 'Generation Complete';
+                    state.progress = 100;
+                    state.needsUpdate = true;
+                    break;
+
+                case 'error':
+                    isGenerating = false;
+                    state.badge = { type: 'error', text: 'Failed' };
+                    state.status = `Error: ${data.message}`;
+                    state.needsUpdate = true;
+                    break;
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            indicator.className = 'status-indicator' + (connected ? ' connected' : '');
+            text.textContent = connected ? 'System Online' : 'System Offline';
+        }
+
+        window.onload = () => setTimeout(connect, 500);
+    </script>
+</body>
+
+</html>

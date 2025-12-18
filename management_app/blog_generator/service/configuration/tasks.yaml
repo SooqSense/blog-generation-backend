@@ -1,0 +1,38 @@
+planning_task:
+  description: |
+    1. Prioritize the latest trends, key players, and noteworthy news on {topic}.
+    2. Identify the target audience, considering their interests and pain points.
+    3. Develop a detailed content outline including an introduction, key points, and a call to action.
+    4. Include SEO keywords and relevant data or sources.
+  expected_output: A comprehensive content plan document with an outline, audience analysis, SEO keywords, and resources.
+  agent: planner
+  output_file: planner_output.md
+
+writing_task:
+  description: |
+    1. Use the content plan to craft a compelling blog post on {topic}.
+    2. Incorporate SEO keywords naturally.
+    3. Sections/Subtitles are properly named in an engaging manner.
+    4. Ensure the post is structured with an engaging introduction, insightful body, and a summarizing conclusion.
+    5. Proofread for grammatical errors and alignment with the brand's voice.
+  expected_output: A well-written blog post in markdown format, ready for publication, each section should have 2 or 3 paragraphs.
+  agent: writer
+  output_file: writer_output.md
+
+editing_task:
+  description: Proofread the given blog post for grammatical errors and alignment with the brand's voice.
+  expected_output: A well-written blog post in markdown format, without the word markdown in the beginning ready for publication, each section should have 2 or 3 paragraphs.
+  agent: editor
+  output_file: final_blog_post.md
+
+designing_task:
+  description: |
+    1. Analyze the blog topic thoroughly to understand key visual elements.
+    2. Create a detailed, descriptive image prompt for DALL-E 3 to generate a banner image.
+    3. The prompt should be vivid, specific, and include details about style, mood, colors, and composition.
+    4. At the end of your response, include a line starting with "BANNER IMAGE PROMPT:" followed by your complete prompt.
+    5. Color palette should be vibrant and warm. 
+    6. My company is Artilence add that to image
+    7. My company main color is #04C996 , black and white should be present in image
+  expected_output: A detailed image generation prompt for DALL-E 3 that will be used to create a visually striking banner image related to the blog topic.
+  agent: designer 
