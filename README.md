@@ -2,17 +2,47 @@
 
 This directory contains the Django web application implementation of the AI Blog Generator system. The application provides a RESTful API for generating blog posts, LinkedIn content, daily AI news, images, and comprehensive user authentication - all stored in a PostgreSQL database.
 
+## 🚀 New: Real-Time Streaming Blog Generation
+
+The blog generator now features a **parallel streaming architecture** that delivers content in real-time (ChatGPT-style) while processing multiple sections simultaneously:
+
+- **⚡ True Streaming:** Words appear instantly as they are generated via WebSocket connections
+- **🔄 Parallel Processing:** Multiple blog sections are researched and written concurrently using Celery workers
+- **🎨 AI Images:** Context-aware images generated for each section using Flux/Fal.ai
+- **💾 Auto-Save:** Completed blogs are automatically saved to PostgreSQL with full metadata
+- **📊 Real-time Progress:** Live updates on section completion, token streaming, and image generation
+
+See the [Frontend Integration Guide](FRONTEND_INTEGRATION_GUIDE.md) for details on integrating the WebSocket streaming client.
+
 ## Directory Structure
 
 ```
 blog-generation-backend/
 ├── management_app/            # Django web application
-│   ├── api/                   # Main API application
-│   │   ├── migrations/        # Database migration files
-│   │   ├── models.py          # Database models
-│   │   ├── serializers.py     # API request/response serializers
-│   │   ├── views.py           # API endpoints implementation
-│   │   └── urls.py            # API routing
+│   ├── blog_generator/        # Blog generation app (NEW: Streaming architecture)
+│   │   ├── service/
+│   │   │   └── blog_writing/
+│   │   │       ├── blog_writer.py      # Core parallel streaming engine
+│   │   │       ├── agents/             # CrewAI agents for TOC, research, writing
+│   │   │       ├── tasks/              # Agent task definitions
+│   │   │       └── prompts/            # LLM prompt templates
+│   │   ├── models.py          # BlogGeneral model with SEO fields
+│   │   ├── serializers.py     # API serializers
+│   │   └── views.py           # Blog generation endpoints
+│   │
+│   ├── extras/                # WebSocket consumers (NEW)
+│   │   └── consumers.py       # StreamingWebSocketConsumer for real-time updates
+│   │
+│   ├── config/                # Main Django project settings
+│   │   ├── celery/
+│   │   │   └── tasks/
+│   │   │       └── blog_generator_tasks/
+│   │   │           └── blog_generation_task.py  # Celery task for parallel generation
+│   │   ├── settings.py        # Project configuration
+│   │   ├── urls.py            # Main URL routing
+│   │   ├── asgi.py            # ASGI configuration for WebSockets
+│   │   ├── wsgi.py            # WSGI configuration
+│   │   └── celery.py          # Celery configuration
 │   │
 │   ├── authentication/        # User authentication application
 │   │   ├── migrations/        # Authentication migration files
@@ -21,26 +51,11 @@ blog-generation-backend/
 │   │   ├── views.py           # Authentication endpoints
 │   │   └── urls.py            # Authentication routing
 │   │
-│   ├── config/                # Main Django project settings
-│   │   ├── settings.py        # Project configuration
-│   │   ├── urls.py            # Main URL routing
-│   │   ├── wsgi.py            # WSGI configuration
-│   │   └── celery.py          # Celery configuration for background tasks
-│   │
 │   ├── manage.py              # Django management command
 │   └── .env                   # Environment variables (create this file)
 │
-├── tools/                     # Shared tools and utilities
-│   ├── ai/                    # AI tools and generators
-│   │   ├── blog_generator/    # Blog generation functionality
-│   │   ├── daily_news/        # Daily AI news generation
-│   │   ├── linkedin_post_generator/ # LinkedIn post generation
-│   │   ├── image_generation/  # Image generation tools
-│   │   ├── trends_ai/         # Trending topics analysis
-│   │   └── schedule_linkedin_post/ # LinkedIn post scheduling
-│   │
-│   └── README.md              # Tools documentation
-│
+├── blog_streaming_client.html # Test client for WebSocket streaming (NEW)
+├── FRONTEND_INTEGRATION_GUIDE.md  # Next.js integration guide (NEW)
 ├── blog_images/               # Generated images storage
 ├── requirements.txt           # Python dependencies
 ├── Dockerfile                 # Docker configuration
@@ -270,16 +285,97 @@ redis-server
 ```
 
 10. Start Celery worker (in a separate terminal):
+
+**For MacOS (Recommended to avoid fork() crashes):**
 ```bash
-cd management_app
-celery -A config worker --loglevel=info
+celery -A management_app.config.celery worker --loglevel=info --pool=threads --concurrency=10
 ```
 
-11. Start Celery beat scheduler (in another separate terminal):
+**For Linux/Production:**
 ```bash
-cd management_app
-celery -A config beat --loglevel=info
+celery -A management_app.config.celery worker --loglevel=info --concurrency=4
 ```
+
+> **Note:** MacOS users should use `--pool=threads` to prevent `SIGABRT` crashes caused by Objective-C runtime conflicts with process forking. The threads pool is safe and performant for local development.
+
+11. Start Celery beat scheduler (in another separate terminal - for scheduled tasks):
+```bash
+celery -A management_app.config.celery beat --loglevel=info
+```
+
+12. Start Django server:
+```bash
+python manage.py runserver
+```
+
+13. (Optional) Test the WebSocket streaming:
+- Open `blog_streaming_client.html` in your browser
+- Or integrate with your Next.js frontend using the [Frontend Integration Guide](FRONTEND_INTEGRATION_GUIDE.md)
+
+## WebSocket Streaming Architecture
+
+The blog generator uses a real-time streaming architecture for instant content delivery:
+
+### WebSocket Endpoint
+```
+ws://localhost:8000/ws/stream/
+```
+
+### Request Format
+```json
+{
+  "type": "blog_generation",
+  "message_id": "unique-uuid",
+  "topic": "The Future of AI",
+  "blog_type": "Guide",
+  "keywords": ["AI", "technology"],
+  "generate_images": true,
+  "length_min": 800,
+  "length_max": 1500
+}
+```
+
+### Response Events
+
+The WebSocket sends real-time events as the blog is generated:
+
+| Event Type | Description | Payload |
+|------------|-------------|---------|
+| `task_queued` | Task sent to Celery worker | `{task_id, celery_task_id, message}` |
+| `status` | General status update | `{message}` |
+| `toc` | Table of contents generated | `{total_sections, sections: [{id, title, index}]}` |
+| `section_start` | Section generation started | `{section_id, section_title}` |
+| `section_token` | Real-time content token (word-by-word) | `{section_id, content}` |
+| `section_progress` | Section status update | `{section_id, section_title, phase, message}` |
+| `section_complete` | Section finished | `{section_id, section_title}` |
+| `image` | Image generated for section | `{section_id, section_title, image_url}` |
+| `complete` | Full blog generation complete | `{message, data: {content, sections, image_urls}}` |
+| `error` | Error occurred | `{message}` |
+
+### Architecture Flow
+
+```
+Frontend (WebSocket) 
+    ↓
+StreamingWebSocketConsumer (consumers.py)
+    ↓
+Celery Task Queue (Redis)
+    ↓
+generate_blog_parallel_task (Celery Worker)
+    ↓
+BlogWriter (Parallel Section Processing)
+    ├─→ TOC Agent (CrewAI)
+    ├─→ Research Agents (Parallel)
+    ├─→ Writer Agents (Streaming via LLM.astream())
+    └─→ Image Generation (Fal.ai)
+    ↓
+Redis Pub/Sub (Real-time updates)
+    ↓
+WebSocket Consumer → Frontend
+    ↓
+PostgreSQL (Auto-save on completion)
+```
+
 
 ## API Endpoints
 

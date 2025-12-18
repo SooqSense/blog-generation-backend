@@ -21,11 +21,6 @@ django_asgi_app = get_asgi_application()
 websocket_urlpatterns = [
     # Main streaming endpoint for all features
     re_path(r"^ws/stream/$", StreamingWebSocketConsumer.as_asgi()),
-    # Feature-specific endpoints (all use the same consumer)
-    re_path(r"^ws/chat/$", StreamingWebSocketConsumer.as_asgi()),
-    re_path(r"^ws/blog/$", StreamingWebSocketConsumer.as_asgi()),
-    re_path(r"^ws/linkedin/$", StreamingWebSocketConsumer.as_asgi()),
-    re_path(r"^ws/upwork/$", StreamingWebSocketConsumer.as_asgi()),
 ]
 
 application = ProtocolTypeRouter({
