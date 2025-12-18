@@ -1,532 +1,102 @@
-import uuid
 import json
-import logging
 import asyncio
-from django.utils import timezone
+import logging
 from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
+from management_app.config.celery.tasks.blog_generator_tasks.blog_generation_task import generate_blog_parallel_task
 
-# Import models
-from management_app.chatbot.models import ChatSession, ChatMessage
 
-# Set up logging
 logger = logging.getLogger(__name__)
-User = get_user_model()
-
-# Import local services
-from management_app.chatbot.service.agent.agent import project_chatbot
-
 
 class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
-    """Centralized WebSocket consumer for real-time streaming across all features"""
-    
+    """
+    WebSocket consumer that listens for events from Django Channels Groups and streams them to the client.
+    Uses 'blog_{task_id}' group for targeted updates.
+    """
+
     async def connect(self):
-        """Handle WebSocket connection - Authentication handled by middleware"""
-        path = self.scope.get('path', 'unknown')
-        logger.info(f"WebSocket connection attempt - Path: {path}")
-        
-        # Get user from scope (set by ClerkWebSocketAuthMiddleware)
-        self.user = self.scope.get("user")
-        
-        # Get organization from headers if available
-        headers = dict(self.scope.get("headers", []))
-        self.organization = headers.get(b"x-selected-organization", b"").decode()
-        
-        # Check if user is authenticated
-        is_authenticated = self.user and not self.user.is_anonymous
-        
-        logger.info(f"WebSocket connected - Path: {path}, User: {getattr(self.user, 'username', 'Anonymous')}, Authenticated: {is_authenticated}, Org: {self.organization}")
-        
-        # Store connection info for reuse
-        self.connection_info = {
-            'path': path,
-            'user_id': getattr(self.user, 'id', None),
-            'username': getattr(self.user, 'username', 'Anonymous'),
-            'is_authenticated': is_authenticated,
-            'organization': self.organization
-        }
-        
-        # Initialize connection state
-        self.is_connected = True
-        self.active_tasks = set()
-        
-        # Accept the connection
+        """Handles WebSocket connection."""
         await self.accept()
-        
-        # Start keepalive ping to prevent timeouts
-        self.keepalive_task = asyncio.create_task(self._keepalive_ping())
-    
-    async def _keepalive_ping(self):
-        """Send periodic pings to keep connection alive"""
-        try:
-            while self.is_connected:
-                await asyncio.sleep(15)  # Ping every 15 seconds for better connection stability
-                if self.is_connected:
-                    try:
-                        await self.send(text_data=json.dumps({
-                            'type': 'ping',
-                            'timestamp': timezone.now().isoformat()
-                        }))
-                        print(f"🏓 [KEEPALIVE] Ping sent - Active tasks: {len(self.active_tasks)}")
-                    except Exception as e:
-                        logger.warning(f"Keepalive ping failed: {e}")
-                        self.is_connected = False
-                        break
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"Keepalive error: {e}")
-            self.is_connected = False
-    
+        logger.info(f"WebSocket connected: {self.scope['path']}")
+
     async def disconnect(self, close_code):
-        """Handle WebSocket disconnection"""
-        self.is_connected = False
-        
-        # Cancel keepalive task
-        if hasattr(self, 'keepalive_task'):
-            self.keepalive_task.cancel()
-            try:
-                await self.keepalive_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Cancel all active tasks gracefully
-        for task in self.active_tasks:
-            if not task.done():
-                try:
-                    task.cancel()
-                    # Give tasks a moment to clean up
-                    await asyncio.sleep(0.1)
-                except Exception as e:
-                    logger.warning(f"Error cancelling task: {e}")
-        
-        logger.info(f"WebSocket disconnected - Code: {close_code}")
-    
+        """Handles WebSocket disconnection."""
+        logger.info(f"WebSocket disconnected ({close_code})")
+
     async def receive(self, text_data):
-        """Handle incoming WebSocket messages"""
+        """Handles receiving messages from the frontend."""
         try:
             data = json.loads(text_data)
-            message_type = data.get('type')
+            msg_type = data.get("type")
             
-            if message_type == 'chat_message':
-                await self.handle_chat_message(data)
-            elif message_type == 'blog_generation':
+            if msg_type in ["generate_blog", "blog_generation"]:
                 await self.handle_blog_generation(data)
-            elif message_type == 'linkedin_post':
-                await self.handle_linkedin_post(data)
-            elif message_type == 'upwork_proposal':
-                await self.handle_upwork_proposal(data)
-            elif message_type == 'ping':
-                await self.send(text_data=json.dumps({'type': 'pong'}))
-            elif message_type == 'pong':
-                # Client responded to our ping
-                pass
-            else:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Unknown message type'
-                }))
-                
-        except json.JSONDecodeError:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Invalid JSON format'
-            }))
+            elif msg_type == "cancel":
+                await self.send_json({"type": "status", "message": "Cancellation not implemented via WebSocket yet"})
         except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Internal server error'
-            }))
-    
-    async def handle_chat_message(self, data):
-        """Handle chat message and stream response"""
-        query = data.get('query', '').strip()
-        session_id = data.get('session_id', '').strip()
-        message_id = data.get('message_id', 'default')
-        
-        if not query:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Query is required',
-                'message_id': message_id
-            }))
-            return
-        
-        try:
-            # Get or create chat session (only if user is authenticated)
-            if self.user and not (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous):
-                self.chat_session = await self.get_or_create_session(session_id)
-                if self.chat_session:
-                    await self.save_message('user', query)
-            
-            # Stream AI response
-            await self.stream_ai_response(query, 'chatbot', message_id)
-            
-        except Exception as e:
-            logger.error(f"Error handling chat message: {e}")
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Failed to process chat message'
-            }))
-    
+            logger.error(f"WebSocket receive error: {e}")
+            await self.send_json({"type": "error", "message": "Invalid request format"})
+
     async def handle_blog_generation(self, data):
-        """
-        Handle blog generation using Celery + Redis Pub/Sub architecture.
+        """Trigger Celery task for blog generation and notify the client."""
         
-        This queues the blog generation task to Celery workers and subscribes
-        to Redis Pub/Sub for real-time progress updates.
-        """
-        try:
-            # Extract blog parameters
-            topic = data.get('topic', '').strip()
-            blog_type = data.get('blog_type', 'News')
-            length_min = int(data.get('length_min', 800))
-            length_max = int(data.get('length_max', 1500))
-            target_audience = data.get('target_audience', [])
-            sample_blog_url = data.get('sample_blog_url')
-            generate_images = data.get('generate_images', True)
-            use_custom_llm = data.get('use_custom_llm', False)
-            keywords = data.get('keywords', [])
-            message_id = data.get('message_id', 'default')
+        topic = data.get("topic")
+        task_id = data.get("message_id") or f"blog_{int(asyncio.get_event_loop().time())}"
 
-            if not topic:
-                await self.send(text_data=json.dumps({
-                    'type': 'error', 
-                    'message': 'Topic is required',
-                    'message_id': message_id
-                }))
-                return
-
-            # Generate unique task ID
-            task_id = str(uuid.uuid4())
-            
-            logger.info(f"📋 Queueing blog generation task: {task_id} for topic: {topic}")
-
-            # Add this consumer to the task's channel group for progress updates
-            await self.channel_layer.group_add(
-                f"blog_generation_{task_id}",
-                self.channel_name
-            )
-
-            # Queue task to Celery (non-blocking!)
-            from management_app.config.celery.tasks.blog_generator_tasks import generate_blog_parallel_task
-            
-            celery_task = generate_blog_parallel_task.delay(
-                task_id=task_id,
-                user_id=getattr(self.user, 'id', None),
-                username=getattr(self.user, 'username', 'Test User'),
-                user_email=getattr(self.user, 'email', 'test@example.com'),
-                organization_id=data.get('organization_id'),
-                organization_name=data.get('organization_name'),
-                topic=topic,
-                blog_type=blog_type,
-                length_min=length_min,
-                length_max=length_max,
-                keywords=keywords,
-                target_audience=target_audience,
-                generate_images=generate_images,
-                use_custom_llm=use_custom_llm,
-                max_image_prompts=5
-            )
-
-            # Send task queued confirmation
-            await self.send(text_data=json.dumps({
-                'type': 'task_queued',
-                'task_id': task_id,
-                'celery_task_id': celery_task.id,
-                'message': f'✅ Blog generation task queued successfully!',
-                'message_id': message_id
-            }))
-            
-            logger.info(f"✅ Task queued: {task_id} (Celery ID: {celery_task.id})")
-
-            # Start Redis Pub/Sub listener for this task
-            await self._listen_to_redis_pubsub(task_id, message_id)
-
-        except Exception as e:
-            logger.error(f"Error handling blog generation: {e}", exc_info=True)
-            try:
-                await self.send(text_data=json.dumps({
-                    'type': 'error', 
-                    'message': f'Failed to queue blog generation: {str(e)}',
-                    'message_id': message_id
-                }))
-            except:
-                pass
-
-    async def _listen_to_redis_pubsub(self, task_id, message_id):
-        """
-        Listen to Redis Pub/Sub channel for task progress updates.
-        
-        This runs in the background and forwards all progress updates
-        from the Celery worker to the WebSocket client.
-        """
-        import redis.asyncio as aioredis
-        from django.conf import settings
-        
-        try:
-            # Create async Redis client
-            redis_client = aioredis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                decode_responses=True
-            )
-            
-            pubsub = redis_client.pubsub()
-            await pubsub.subscribe(f'blog_progress_{task_id}')
-            
-            logger.info(f"📡 Subscribed to Redis channel: blog_progress_{task_id}")
-
-            # Listsen for messages
-            # Wait for the first message with a timeout to detect if worker is dead
-            import asyncio
-            
-            while True:
-                if not self.is_connected:
-                    logger.info(f"🔌 WebSocket disconnected, stopping Redis listener for {task_id}")
-                    break
-                    
-                try:
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    
-                    if message:
-                        if message['type'] == 'message':
-                            try:
-                                # Parse the progress update
-                                progress_data = json.loads(message['data'])
-                                event_type = progress_data.get('type')
-                                event_data = progress_data.get('data', {})
-                                
-                                # Add message_id for client tracking
-                                event_data['message_id'] = message_id
-                                
-                                # Forward to WebSocket client
-                                await self.send(text_data=json.dumps({
-                                    'type': event_type,
-                                    **event_data
-                                }))
-                                
-                                logger.debug(f"📤 Forwarded {event_type} to WebSocket for task {task_id}")
-                                
-                                # If task is complete or error, stop listening
-                                if event_type in ['complete', 'error']:
-                                    logger.info(f"✅ Task {task_id} finished with status: {event_type}")
-                                    break
-                                    
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Failed to parse Redis message: {e}")
-                            except Exception as e:
-                                logger.error(f"Error forwarding message: {e}")
-                    
-                    await asyncio.sleep(0.01)  # Small yield to prevent CPU hogging
-                    
-                except Exception as e:
-                    logger.error(f"Error in Redis listener loop: {e}")
-                    break
-
-            # Cleanup
-            await pubsub.unsubscribe(f'blog_progress_{task_id}')
-            await redis_client.close()
-            
-            logger.info(f"🧹 Cleaned up Redis listener for task {task_id}")
-
-        except Exception as e:
-            logger.error(f"Redis Pub/Sub listener error for task {task_id}: {e}", exc_info=True)
-            try:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': f'Lost connection to task progress updates: {str(e)}',
-                    'message_id': message_id
-                }))
-            except:
-                pass
-
-    async def blog_progress(self, event):
-        """
-        Receive progress updates from Django Channels layer (fallback).
-        
-        This is a fallback method in case Redis Pub/Sub fails.
-        """
-        try:
-            await self.send(text_data=json.dumps({
-                'type': event['event_type'],
-                'data': event['data']
-            }))
-        except Exception as e:
-            logger.error(f"Error sending blog progress: {e}")
-    
-    async def handle_linkedin_post(self, data):
-        """Handle LinkedIn post generation streaming"""
-        try:
-            topic = data.get('topic', '')
-            tone = data.get('tone', 'professional')
-            hashtags = data.get('hashtags', [])
-            
-            if not topic:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Topic is required for LinkedIn post generation'
-                }))
-                return
-            
-            await self.stream_ai_response(
-                f"Generate a LinkedIn post about: {topic}, Tone: {tone}, Hashtags: {hashtags}", 
-                'linkedin'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling LinkedIn post generation: {e}")
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Failed to process LinkedIn post generation'
-            }))
-    
-    async def handle_upwork_proposal(self, data):
-        """Handle Upwork proposal generation streaming"""
-        try:
-            job_description = data.get('job_description', '')
-            skills = data.get('skills', [])
-            experience = data.get('experience', '')
-            
-            if not job_description:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Job description is required for Upwork proposal generation'
-                }))
-                return
-            
-            await self.stream_ai_response(
-                f"Generate an Upwork proposal for: {job_description}, Skills: {skills}, Experience: {experience}", 
-                'upwork'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling Upwork proposal generation: {e}")
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Failed to process Upwork proposal generation'
-            }))
-    
-    async def stream_ai_response(self, query, feature_type='general', message_id='default'):
-        """Stream AI response tokens for any feature"""
-        try:
-            full_response_parts = []
-            
-            async for chunk in project_chatbot.ask_stream_async(query):
-                if not chunk or not self.is_connected:
-                    continue
-                
-                text = str(chunk)
-                if not text or text == "":
-                    continue
-                
-                full_response_parts.append(text)
-                
-                try:
-                    await self.send(text_data=json.dumps({
-                        'type': 'token',
-                        'content': text,
-                        'feature_type': feature_type,
-                        'message_id': message_id
-                    }))
-                except Exception as send_error:
-                    logger.error(f"Error sending token: {send_error}")
-                    break
-            
-            # Save complete response
-            if (self.user and 
-                not (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous) and 
-                hasattr(self, 'chat_session') and 
-                self.chat_session):
-                full_response = "".join(full_response_parts)
-                await self.save_message('assistant', full_response)
-                await self.update_session_messages()
-            
-            # Send completion signal
-            try:
-                await self.send(text_data=json.dumps({
-                    'type': 'complete',
-                    'message': 'Response completed',
-                    'feature_type': feature_type,
-                    'message_id': message_id
-                }))
-            except Exception as send_error:
-                logger.warning(f"Could not send completion signal: {send_error}")
-            
-        except Exception as e:
-            logger.error(f"Error streaming AI response: {e}", exc_info=True)
-            try:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': 'Error generating response',
-                    'feature_type': feature_type
-                }))
-            except Exception:
-                logger.error("Could not send error message to closed connection")
-    
-    @database_sync_to_async
-    def get_or_create_session(self, session_id):
-        """Get or create chat session"""
-        if not self.user or (hasattr(self.user, 'is_anonymous') and self.user.is_anonymous):
-            return None
-            
-        try:
-            if session_id:
-                session = ChatSession.objects.filter(
-                    session_id=session_id,
-                    user_id=self.user.id,
-                    is_active=True
-                ).first()
-                
-                if session:
-                    return session
-            
-            new_session_id = session_id or str(uuid.uuid4())
-            session = ChatSession.objects.create(
-                session_id=new_session_id,
-                user_id=self.user.id,
-                username=self.user.username,
-                email=self.user.email,
-                is_active=True,
-                created_at=timezone.now(),
-            )
-            return session
-            
-        except Exception as e:
-            logger.error(f"Error creating session: {e}")
-            return None
-    
-    @database_sync_to_async
-    def save_message(self, message_type, content):
-        """Save chat message"""
-        if not self.chat_session:
+        if not topic:
+            await self.send_json({"type": "error", "message": "Topic is missing"})
             return
-            
-        try:
-            ChatMessage.objects.create(
-                session_id=self.chat_session,
-                message_type=message_type,
-                content=content,
-                created_at=timezone.now(),
-            )
-        except Exception as e:
-            logger.error(f"Error saving message: {e}")
-    
-    @database_sync_to_async
-    def update_session_messages(self):
-        """Update session message count"""
-        if not self.chat_session:
-            return
-            
-        try:
-            self.chat_session.total_messages += 2
-            self.chat_session.updated_at = timezone.now()
-            self.chat_session.save()
-        except Exception as e:
-            logger.error(f"Error updating session: {e}")
 
+        # Join the group for this specific task
+        group_name = f"blog_{task_id}"
+        await self.channel_layer.group_add(group_name, self.channel_name)
+        logger.debug(f"Added channel {self.channel_name} to group {group_name}")
 
-# Keep the old class name for backward compatibility
-ChatWebSocketConsumer = StreamingWebSocketConsumer
+        # Trigger the Celery task to start blog generation
+        user = self.scope.get('user')
+        user_id = 0
+        username = "Anonymous"
+        email = ""
+        org_id = ""
+        org_name = ""
+
+        if user and user.is_authenticated:
+            user_id = user.id
+            username = getattr(user, 'username', str(user))
+            email = getattr(user, 'email', '')
+            org_id = getattr(user, 'organization_id', '')
+            org_name = getattr(user, 'organization_name', '')
+
+        generate_blog_parallel_task.delay(
+            task_id=task_id,
+            user_id=user_id,
+            username=username,
+            email=email,
+            organization_id=org_id,
+            organization_name=org_name,
+            topic=topic,
+            blog_type=data.get("blog_type", "News"),
+            keywords=data.get("keywords", []),
+            target_audience=data.get("target_audience", []),
+            use_custom_llm=data.get("use_custom_llm", False),
+            generate_images=data.get("generate_images", True),
+            length_min=data.get("length_min", 800),
+            length_max=data.get("length_max", 1500)
+        )
+
+        await self.send_json({
+            "type": "task_queued",
+            "task_id": task_id,
+            "message": "Generation task started in background..."
+        })
+
+    async def stream_message(self, event):
+        """
+        Handler for messages sent to the Channels Group.
+        This method is called by the Channel Layer when a message is sent to the group.
+        """
+        # Forward the 'data' part of the event directly to the WebSocket
+        await self.send(text_data=json.dumps(event["data"]))
+
+    async def send_json(self, data):
+        """Helper method to send JSON data to WebSocket."""
+        await self.send(text_data=json.dumps(data))

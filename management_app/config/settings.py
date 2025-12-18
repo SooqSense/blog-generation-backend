@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+
+# Opt out of CrewAI telemetry to avoid 'NoneType' attribute errors in logs
 from dotenv import load_dotenv
 
 # Django Setup Guard - Prevent premature setup during configuration
@@ -336,6 +338,8 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # Redis Configuration for direct connections (Pub/Sub)
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis" if os.environ.get("DOCKER_ENV") == "true" else "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
+REDIS_DB = int(os.environ.get("REDIS_DB", 0))
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD") or None
 
 # Environment Configuration (needed for other configs below)
 

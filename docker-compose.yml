@@ -36,6 +36,47 @@ services:
         python manage.py runserver 0.0.0.0:8000
       "
     profiles: [development]
+    restart: always
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DB_HOST: host.docker.internal
+      DOCKER_ENV: "true"
+    depends_on:
+      - redis
+    command: celery -A management_app.config.celery worker --loglevel=info --pool=threads
+    profiles: [development]
+    restart: always
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DB_HOST: host.docker.internal
+      DOCKER_ENV: "true"
+    depends_on:
+      - redis
+    command: celery -A management_app.config.celery beat --loglevel=info
+    profiles: [development]
+    restart: always
 
   # Staging environment
   web-staging:
