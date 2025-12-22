@@ -38,15 +38,66 @@ from .service.agent.agent import project_chatbot
             description="Internal Server Error."
         ),
     },
-    description="Chat with AI about uploaded documents. Provide a query and optionally a session_id. If no session_id is provided, a new chat session will be created. The AI will search through your uploaded documents and provide relevant answers with source citations.",
+    description="""Chat with AI about uploaded documents. 
+    
+    **Modes:**
+    - **Sync Mode (default)**: Returns complete response immediately
+    - **Streaming Mode**: Returns task_id for WebSocket streaming
+    
+    **Parameters:**
+    - `query` (required): Your question
+    - `session_id` (optional): Existing session ID or leave empty for new session
+    - `stream` (optional): Set to `true` for streaming mode
+    
+    **Streaming Usage:**
+    1. Call this endpoint with `stream=true`
+    2. Connect to WebSocket: `ws://localhost:8000/ws/stream/`
+    3. Send: `{"type": "chat_message", "task_id": "<returned_task_id>", "session_id": "<session_id>", "query": "<query>"}`
+    4. Receive real-time token events
+    """,
 )
 @api_view(["POST"])
 @require_organization_access()
 def chat_api(request):
-    """Chat with AI about uploaded documents."""
+    """Chat with AI about uploaded documents (supports both sync and streaming modes)."""
     try:
         query = request.data.get("query", "").strip()
         session_id = request.data.get("session_id", "").strip()
+        stream = request.data.get("stream", False)  # New parameter
+
+        if not query:
+            return Response(
+                {"error": "Query is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # STREAMING MODE: Return task_id for WebSocket
+        if stream:
+            import time
+            task_id = f"chat_{int(time.time() * 1000)}"
+            
+            if not session_id:
+                session_id = str(uuid.uuid4())
+
+            logger.info(f"Initiating streaming chat: task_id={task_id}, session_id={session_id}")
+
+            return Response({
+                "status": "success",
+                "mode": "streaming",
+                "message": "Streaming task initiated. Connect to WebSocket with this task_id.",
+                "task_id": task_id,
+                "session_id": session_id,
+                "query": query,
+                "websocket_url": "ws://localhost:8000/ws/stream/",
+                "instructions": {
+                    "step1": "Connect to WebSocket URL",
+                    "step2": f"Send: {{\"type\": \"chat_message\", \"task_id\": \"{task_id}\", \"session_id\": \"{session_id}\", \"query\": \"{query}\"}}",
+                    "step3": "Listen for events: status, token, context_found, complete, error"
+                }
+            }, status=status.HTTP_200_OK)
+
+        # SYNC MODE: Original behavior (complete response)
+        logger.info(f"Starting sync chat for user: {request.user.username}, query: {query[:50]}...")
 
         if not query:
             return Response(

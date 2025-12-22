@@ -30,6 +30,8 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             
             if msg_type in ["generate_blog", "blog_generation"]:
                 await self.handle_blog_generation(data)
+            elif msg_type == "chat_message":
+                await self.handle_chat_message(data)
             elif msg_type == "cancel":
                 await self.send_json({"type": "status", "message": "Cancellation not implemented via WebSocket yet"})
         except Exception as e:
@@ -87,6 +89,52 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             "type": "task_queued",
             "task_id": task_id,
             "message": "Generation task started in background..."
+        })
+
+    async def handle_chat_message(self, data):
+        """Trigger Celery task for chatbot streaming."""
+        from management_app.config.celery.tasks.chatbot_tasks.chat_generation_task import generate_chat_response_task
+        
+        query = data.get("query")
+        session_id = data.get("session_id") or f"session_{int(asyncio.get_event_loop().time())}"
+        task_id = data.get("task_id") or f"chat_{int(asyncio.get_event_loop().time())}"
+        
+        if not query:
+            await self.send_json({"type": "error", "message": "Query is missing"})
+            return
+        
+        # Join the group for this specific task
+        group_name = f"chat_{task_id}"
+        await self.channel_layer.group_add(group_name, self.channel_name)
+        logger.debug(f"Added channel {self.channel_name} to group {group_name}")
+        
+        # Get user info
+        user = self.scope.get('user')
+        user_id = 0
+        username = "Anonymous"
+        email = ""
+        
+        if user and user.is_authenticated:
+            user_id = user.id
+            username = getattr(user, 'username', str(user))
+            email = getattr(user, 'email', '')
+        
+        # Trigger the Celery task to start chat streaming
+        generate_chat_response_task.delay(
+            task_id=task_id,
+            session_id=session_id,
+            user_id=user_id,
+            username=username,
+            email=email,
+            query=query,
+            top_k=data.get("top_k", 10)
+        )
+        
+        await self.send_json({
+            "type": "task_queued",
+            "task_id": task_id,
+            "session_id": session_id,
+            "message": "Chat generation started..."
         })
 
     async def stream_message(self, event):

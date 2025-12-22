@@ -76,6 +76,7 @@ app.autodiscover_tasks()
 # Manually include modular task packages
 app.conf.include = [
     'management_app.config.celery.tasks.blog_generator_tasks.blog_generation_task',
+    'management_app.config.celery.tasks.chatbot_tasks.chat_generation_task',
 ]
 
 # Celery configuration

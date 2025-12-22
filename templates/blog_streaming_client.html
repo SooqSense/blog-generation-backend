@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Blog Generator - Premium Streaming</title>
+    <title>AI Content Generator - Blog & Chat Streaming</title>
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link
@@ -423,14 +423,169 @@
                 opacity: 1;
             }
         }
+
+        /* Chat Specific Aesthetics */
+        .chat-history {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            padding: 20px 0;
+        }
+
+        .message {
+            display: flex;
+            gap: 16px;
+            max-width: 85%;
+            animation: messagePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes messagePop {
+            from {
+                opacity: 0;
+                transform: translateY(10px) scale(0.95);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .user .avatar {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        }
+
+        .assistant .avatar {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .message-bubble {
+            padding: 16px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            line-height: 1.6;
+            position: relative;
+        }
+
+        .user .message-bubble {
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+
+        .assistant .message-bubble {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border-bottom-left-radius: 4px;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 4px 8px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-dim);
+            border-radius: 50%;
+            animation: dotWave 1.4s infinite linear;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes dotWave {
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+            }
+
+            30% {
+                transform: translateY(-4px);
+            }
+        }
+
+        .sources-container {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .source-chip {
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .source-chip:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .streaming-container {
+            padding: 30px 40px;
+            min-height: 400px;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
         <div class="header">
-            <h1>AI Blog Generator</h1>
-            <p>High-performance word-by-word streaming architecture</p>
+            <h1>AI Content Generator</h1>
+            <p>High-performance streaming for Blog & Chat</p>
+
+            <!-- Mode Toggle -->
+            <div style="margin: 25px 0; display: flex; gap: 12px; justify-content: center;">
+                <button class="btn btn-secondary" id="blogModeBtn" onclick="switchMode('blog')"
+                    style="flex: 0 1 auto; padding: 12px 24px; background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);">
+                    📝 Blog Generator
+                </button>
+                <button class="btn btn-secondary" id="chatModeBtn" onclick="switchMode('chat')"
+                    style="flex: 0 1 auto; padding: 12px 24px;">
+                    💬 Chat Assistant
+                </button>
+            </div>
+
             <div class="connection-status" id="connectionStatus" onclick="connect()" style="cursor: pointer;">
                 <div class="status-indicator" id="statusIndicator"></div>
                 <span id="statusText">System Offline</span>
@@ -438,34 +593,57 @@
         </div>
 
         <div class="controls">
-            <div class="form-group">
-                <label>Blog Topic</label>
-                <input type="text" id="topic" value="The Impact of Generative AI on Modern Software Engineering"
-                    placeholder="Enter an ambitious topic...">
+            <!-- Blog Mode Controls -->
+            <div id="blogControls">
+                <div class="form-group">
+                    <label>Blog Topic</label>
+                    <input type="text" id="topic" value="The Impact of Generative AI on Modern Software Engineering"
+                        placeholder="Enter an ambitious topic...">
+                </div>
+
+                <div class="controls-row">
+                    <div class="form-group">
+                        <label>Style</label>
+                        <select id="blogType">
+                            <option value="Analysis">Deep Analysis</option>
+                            <option value="News">Industry News</option>
+                            <option value="Guide">Step-by-Step Guide</option>
+                            <option value="Tutorial">Technical Tutorial</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Keywords</label>
+                        <input type="text" id="keywords" value="LLM, Productivity, Future, Innovation"
+                            placeholder="AI, Cloud, Scaling">
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" id="clearBtn" onclick="clearAll()">🗑️ Clear</button>
+                    <button class="btn btn-primary" id="generateBtn" onclick="generateBlog()" disabled>🚀 Build
+                        Blog</button>
+                </div>
             </div>
 
-            <div class="controls-row">
+            <!-- Chat Mode Controls -->
+            <div id="chatControls" style="display: none;">
                 <div class="form-group">
-                    <label>Style</label>
-                    <select id="blogType">
-                        <option value="Analysis">Deep Analysis</option>
-                        <option value="News">Industry News</option>
-                        <option value="Guide">Step-by-Step Guide</option>
-                        <option value="Tutorial">Technical Tutorial</option>
-                    </select>
+                    <label>Your Question</label>
+                    <input type="text" id="chatQuery" value="What documents do you have?"
+                        placeholder="Ask me anything about your documents...">
                 </div>
 
                 <div class="form-group">
-                    <label>Keywords</label>
-                    <input type="text" id="keywords" value="LLM, Productivity, Future, Innovation"
-                        placeholder="AI, Cloud, Scaling">
+                    <label>Session ID (Optional)</label>
+                    <input type="text" id="sessionId" placeholder="Leave empty for new session">
                 </div>
-            </div>
 
-            <div class="btn-group">
-                <button class="btn btn-secondary" id="clearBtn" onclick="clearAll()">🗑️ Clear</button>
-                <button class="btn btn-primary" id="generateBtn" onclick="generateBlog()" disabled>🚀 Build
-                    Blog</button>
+                <div class="btn-group">
+                    <button class="btn btn-secondary" id="clearChatBtn" onclick="clearAll()">🗑️ Clear</button>
+                    <button class="btn btn-primary" id="chatBtn" onclick="sendChatMessage()" disabled>💬 Send
+                        Message</button>
+                </div>
             </div>
         </div>
 
@@ -493,7 +671,10 @@
                     </div>
                     <div id="tocText" class="toc-content"></div>
                 </div>
+                <!-- This will hold both blog sections and chat history -->
                 <div id="sectionsContainer"></div>
+                <!-- Dedicated Chat History Container for Mode Clarity -->
+                <div id="chatHistory" class="chat-history" style="display: none;"></div>
             </div>
         </div>
 
@@ -506,6 +687,7 @@
     <script>
         let ws = null;
         let isGenerating = false;
+        let currentMode = 'blog'; // 'blog' or 'chat'
         let state = {
             sections: {},
             sectionOrder: [],
@@ -517,6 +699,44 @@
             progress: 0,
             needsUpdate: false
         };
+
+        // Chat-specific state
+        let chatState = {
+            messages: [],
+            currentResponse: '',
+            isStreaming: false,
+            sessionId: null,
+            documentsFound: 0
+        };
+
+        // Mode switching
+        function switchMode(mode) {
+            currentMode = mode;
+            const blogControls = document.getElementById('blogControls');
+            const chatControls = document.getElementById('chatControls');
+            const blogModeBtn = document.getElementById('blogModeBtn');
+            const chatModeBtn = document.getElementById('chatModeBtn');
+
+            if (mode === 'blog') {
+                blogControls.style.display = 'block';
+                chatControls.style.display = 'none';
+                blogModeBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #7c3aed 100%)';
+                chatModeBtn.style.background = 'rgba(255, 255, 255, 0.05)';
+                document.getElementById('sectionsContainer').style.display = 'block';
+                document.getElementById('chatHistory').style.display = 'none';
+            } else {
+                blogControls.style.display = 'none';
+                chatControls.style.display = 'block';
+                blogModeBtn.style.background = 'rgba(255, 255, 255, 0.05)';
+                chatModeBtn.style.background = 'linear-gradient(135deg, #6366f1 0%, #7c3aed 100%)';
+                document.getElementById('sectionsContainer').style.display = 'none';
+                document.getElementById('chatHistory').style.display = 'flex';
+            }
+
+            // Don't clear EVERYTHING, just reset the view
+            document.getElementById('emptyState').style.display = (mode === 'chat' && chatState.messages.length > 0) ? 'none' : 'block';
+            document.getElementById('streamingContent').style.display = (mode === 'chat' && chatState.messages.length > 0) ? 'block' : 'none';
+        }
 
         // UI Loop: Renders at the browser's native refresh rate
         function renderLoop() {
@@ -617,6 +837,7 @@
                 state.status = 'System Online';
                 updateConnectionStatus(true);
                 document.getElementById('generateBtn').disabled = false;
+                document.getElementById('chatBtn').disabled = false;
                 state.needsUpdate = true;
             };
 
@@ -625,6 +846,7 @@
                 state.status = 'System Offline';
                 updateConnectionStatus(false);
                 document.getElementById('generateBtn').disabled = true;
+                document.getElementById('chatBtn').disabled = true;
                 state.needsUpdate = true;
 
                 // Exponential backoff or simple delay
@@ -650,11 +872,19 @@
         }
 
         function clearAll() {
-            state.sections = {};
-            state.sectionOrder = [];
-            state.totalSections = 0;
-            state.completedSections = 0;
-            state.tocContent = '';
+            if (currentMode === 'blog') {
+                state.sections = {};
+                state.sectionOrder = [];
+                state.totalSections = 0;
+                state.completedSections = 0;
+                state.tocContent = '';
+                document.getElementById('sectionsContainer').innerHTML = '';
+            } else {
+                chatState.messages = [];
+                chatState.currentResponse = '';
+                document.getElementById('chatHistory').innerHTML = '';
+            }
+
             state.status = 'Ready';
             state.badge = { type: '', text: '' };
             state.progress = 0;
@@ -662,7 +892,6 @@
 
             document.getElementById('emptyState').style.display = 'block';
             document.getElementById('streamingContent').style.display = 'none';
-            document.getElementById('sectionsContainer').innerHTML = '';
             document.getElementById('tocText').textContent = '';
             state.needsUpdate = true;
         }
@@ -693,9 +922,154 @@
             state.needsUpdate = true;
         }
 
+        function sendChatMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return connect();
+
+            const queryInput = document.getElementById('chatQuery');
+            const query = queryInput.value;
+            if (!query) return alert('Enter a question');
+
+            queryInput.value = ''; // Clear input immediately for feel
+
+            chatState.currentResponse = '';
+            chatState.isStreaming = true;
+
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('streamingContent').style.display = 'block';
+            document.getElementById('chatHistory').style.display = 'flex';
+            state.badge = { type: 'generating', text: 'Thinking' };
+
+            let sessionId = document.getElementById('sessionId').value.trim();
+            if (!sessionId) {
+                sessionId = 'session_' + Date.now();
+                document.getElementById('sessionId').value = sessionId;
+            }
+            chatState.sessionId = sessionId;
+
+            // Display user message
+            const chatHistory = document.getElementById('chatHistory');
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'message user';
+            userMsgDiv.innerHTML = `
+                <div class="avatar">👤</div>
+                <div class="message-bubble">${query}</div>
+            `;
+            chatHistory.appendChild(userMsgDiv);
+
+            // Create AI response container (initially shows typing)
+            const aiMsgDiv = document.createElement('div');
+            aiMsgDiv.className = 'message assistant';
+            aiMsgDiv.id = 'ai-current-msg';
+            aiMsgDiv.innerHTML = `
+                <div class="avatar">🤖</div>
+                <div class="message-bubble">
+                    <div id="ai-response-content">
+                        <div class="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                    <div id="sources-container" class="sources-container" style="display: none;"></div>
+                </div>
+            `;
+            chatHistory.appendChild(aiMsgDiv);
+
+            // Scroll to bottom
+            const scrollContainer = document.getElementById('streamingContainer');
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+            const message = {
+                type: 'chat_message',
+                task_id: 'chat_' + Date.now(),
+                session_id: sessionId,
+                query: query,
+                top_k: 10
+            };
+
+            ws.send(JSON.stringify(message));
+            state.status = "Searching knowledge base...";
+            state.needsUpdate = true;
+        }
+
         function handleMessage(data) {
             const type = data.type;
 
+            // Chat-specific events
+            if (currentMode === 'chat') {
+                switch (type) {
+                    case 'task_queued':
+                        state.status = data.message || 'Chat queued...';
+                        state.needsUpdate = true;
+                        break;
+
+                    case 'status':
+                        state.status = data.message || data.status;
+                        state.needsUpdate = true;
+                        break;
+
+                    case 'context_found':
+                        chatState.documentsFound = data.documents_found || 0;
+                        state.status = `Found ${chatState.documentsFound} relevant documents`;
+                        state.needsUpdate = true;
+                        break;
+
+                    case 'token':
+                        chatState.currentResponse += data.content;
+                        const responseContent = document.getElementById('ai-response-content');
+                        if (responseContent) {
+                            // Clear typing indicator on first token
+                            if (chatState.currentResponse.length <= data.content.length) {
+                                responseContent.innerHTML = '';
+                            }
+                            responseContent.innerHTML = marked.parse(chatState.currentResponse + '<span class="cursor"></span>');
+                        }
+                        state.needsUpdate = true;
+                        break;
+
+                    case 'complete':
+                        chatState.isStreaming = false;
+                        const finalContent = document.getElementById('ai-response-content');
+                        if (finalContent) {
+                            finalContent.innerHTML = marked.parse(chatState.currentResponse);
+                        }
+
+                        // Handle sources if available
+                        if (data.sources && data.sources.length > 0) {
+                            const sourcesBox = document.getElementById('sources-container');
+                            sourcesBox.style.display = 'flex';
+                            sourcesBox.innerHTML = '<div style="width:100%; color:var(--text-dim); margin-bottom:4px; font-weight:600;">Relevant Sources:</div>' +
+                                data.sources.map(src => `
+                                    <a href="${src.url || '#'}" target="_blank" class="source-chip">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                        ${src.title || 'View Link'}
+                                    </a>
+                                `).join('');
+                        }
+
+                        // Remove temporary ID to allow next message
+                        const currentMsg = document.getElementById('ai-current-msg');
+                        if (currentMsg) currentMsg.id = '';
+                        document.getElementById('ai-response-content').id = '';
+                        document.getElementById('sources-container').id = '';
+
+                        state.badge = { type: 'complete', text: 'Complete' };
+                        state.status = `Response complete (${data.tokens_generated || 0} tokens, ${data.processing_time || 0}s, TTFT: ${data.first_token_time ? data.first_token_time.toFixed(2) : '?'}s)`;
+                        state.progress = 100;
+                        state.needsUpdate = true;
+                        break;
+
+                    case 'error':
+                        chatState.isStreaming = false;
+                        state.badge = { type: 'error', text: 'Error' };
+                        state.status = data.message || 'An error occurred';
+                        state.needsUpdate = true;
+                        break;
+                }
+                return;
+            }
+
+            // Blog-specific events (existing code)
             switch (type) {
                 case 'status':
                     state.status = data.message || data.status;
@@ -811,7 +1185,22 @@
             text.textContent = connected ? 'System Online' : 'System Offline';
         }
 
-        window.onload = () => setTimeout(connect, 500);
+        window.onload = () => {
+            setTimeout(connect, 500);
+
+            // Add Enter key support
+            document.getElementById('chatQuery').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !isGenerating) {
+                    sendChatMessage();
+                }
+            });
+
+            document.getElementById('topic').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !isGenerating) {
+                    generateBlog();
+                }
+            });
+        };
     </script>
 </body>
 
