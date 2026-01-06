@@ -38,6 +38,7 @@ class ClerkJWTAuthenticationMiddleware(MiddlewareMixin):
             '/static',
             '/media/',
             '/media',
+            '/api/external/',  # Allow External API Key authentication
         ]
         
         # Check if path matches any skip path (with or without trailing slash)

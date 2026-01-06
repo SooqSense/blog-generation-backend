@@ -423,6 +423,68 @@
                 opacity: 1;
             }
         }
+
+        .url-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .url-chip {
+            background: rgba(99, 102, 241, 0.15);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .url-chip button {
+            background: none;
+            border: none;
+            color: #f87171;
+            cursor: pointer;
+            padding: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .url-chip button:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .input-with-btn {
+            display: flex;
+            gap: 12px;
+        }
+
+        .input-with-btn input {
+            flex: 1;
+        }
+
+        .input-with-btn .btn-mini {
+            padding: 0 20px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .input-with-btn .btn-mini:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--primary);
+        }
     </style>
 </head>
 
@@ -460,6 +522,15 @@
                     <input type="text" id="keywords" value="LLM, Productivity, Future, Innovation"
                         placeholder="AI, Cloud, Scaling">
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label>Extraction Source URLs (Firecrawl)</label>
+                <div class="input-with-btn">
+                    <input type="url" id="urlInput" placeholder="https://example.com/article-about-ai">
+                    <button class="btn-mini" onclick="addUrl()">Add Source</button>
+                </div>
+                <div id="urlList" class="url-list"></div>
             </div>
 
             <div class="btn-group">
@@ -515,8 +586,43 @@
             status: 'Ready',
             badge: { type: '', text: '' },
             progress: 0,
+            websiteUrls: [],
             needsUpdate: false
         };
+
+        function addUrl() {
+            const input = document.getElementById('urlInput');
+            const url = input.value.trim();
+            if (url && !state.websiteUrls.includes(url)) {
+                try {
+                    new URL(url); // Validate URL format
+                    state.websiteUrls.push(url);
+                    input.value = '';
+                    renderUrlList();
+                } catch (e) {
+                    alert('Please enter a valid URL (including http:// or https://)');
+                }
+            }
+        }
+
+        function removeUrl(url) {
+            state.websiteUrls = state.websiteUrls.filter(u => u !== url);
+            renderUrlList();
+        }
+
+        function renderUrlList() {
+            const list = document.getElementById('urlList');
+            list.innerHTML = state.websiteUrls.map(url => `
+                <div class="url-chip">
+                    ${url.length > 40 ? url.substring(0, 37) + '...' : url}
+                    <button onclick="removeUrl('${url}')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M18 6L6 18M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
 
         // UI Loop: Renders at the browser's native refresh rate
         function renderLoop() {
@@ -655,6 +761,8 @@
             state.totalSections = 0;
             state.completedSections = 0;
             state.tocContent = '';
+            state.websiteUrls = [];
+            document.getElementById('urlList').innerHTML = '';
             state.status = 'Ready';
             state.badge = { type: '', text: '' };
             state.progress = 0;
@@ -685,7 +793,8 @@
                 message_id: 'blog_' + Date.now(),
                 topic: topic,
                 blog_type: document.getElementById('blogType').value,
-                keywords: keywords
+                keywords: keywords,
+                website_urls: state.websiteUrls
             };
 
             ws.send(JSON.stringify(message));
@@ -699,6 +808,16 @@
             switch (type) {
                 case 'status':
                     state.status = data.message || data.status;
+                    state.needsUpdate = true;
+                    break;
+
+                case 'extraction_complete':
+                    state.status = `Extracted content from ${data.sources_count} source(s)`;
+                    state.needsUpdate = true;
+                    break;
+
+                case 'extraction_error':
+                    state.status = `Extraction Error: ${data.error}`;
                     state.needsUpdate = true;
                     break;
 

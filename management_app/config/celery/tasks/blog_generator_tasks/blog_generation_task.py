@@ -30,6 +30,7 @@ def generate_blog_parallel_task(
     generate_images=True,
     use_custom_llm=False,
     max_image_prompts=5,
+    website_urls=None,
     **kwargs
 ):
     """
@@ -51,6 +52,7 @@ def generate_blog_parallel_task(
             use_custom_llm=use_custom_llm,
             generate_images=generate_images,
             max_image_prompts=max_image_prompts,
+            website_urls=website_urls or [],
         )
         
         # BlogWriter now publishes tokens and status directly to Redis Pub/Sub
@@ -68,6 +70,7 @@ def generate_blog_parallel_task(
                 topic=topic,
                 content=writer.blog_content,
                 image_urls=writer.image_urls,
+                website_urls=website_urls or [],
                 is_ai_generated=True,
                 seo_optimized=True,
                 seo_keywords=keywords or [],

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "management_app.chatbot",
     "management_app.authentication",  # Authentication app
     "management_app.upwork_proposal_generator",  # Upwork proposal generator app
+    "management_app.shared",  # Shared utilities and API Key management
     # Integration apps
     "management_app.langsmith_integration",  # LangSmith integration for AI cost tracking
     "management_app.pinecone_integration",  # Pinecone integration for vector search
@@ -356,6 +357,9 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 # FAL AI Configuration (for FLUX AI image generation)
 FAL_KEY = os.getenv("FAL_KEY")
+
+# Firecrawl Configuration (for website content extraction)
+FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

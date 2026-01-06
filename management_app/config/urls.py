@@ -23,6 +23,9 @@ urlpatterns = [
     path("chat/", include("management_app.chatbot.urls")),
     path("upwork/", include("management_app.upwork_proposal_generator.urls")),
     
+    # Shared / External API
+    path("api/external/", include("management_app.shared.urls")),
+    
     # drf-spectacular URLs
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     # Optional UI:
