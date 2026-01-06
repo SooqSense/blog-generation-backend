@@ -6,7 +6,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    profiles: [development]
+    profiles: [development, staging, production]
 
   db:
     image: postgres:16-alpine
@@ -18,7 +18,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
-    profiles: [development]
+    profiles: [development, staging, production]
     restart: always
 
   # Development environment
@@ -202,6 +202,23 @@ services:
           memory: 4G
     restart: always
     profiles: [production]
+    restart: always
+
+  celery-worker-production:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    env_file:
+      - .env
+    environment:
+      DOCKER_ENV: "true"
+    depends_on:
+      - redis
+      - db
+    command: celery -A management_app.config.celery worker --loglevel=info --pool=threads
+    profiles: [production]
+    restart: always
 
 volumes:
   redis_data:
