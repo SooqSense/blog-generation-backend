@@ -202,7 +202,6 @@ services:
           memory: 4G
     restart: always
     profiles: [production]
-    restart: always
 
   celery-worker-production:
     build:
