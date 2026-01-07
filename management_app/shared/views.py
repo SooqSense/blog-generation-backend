@@ -92,8 +92,7 @@ def external_blog_list_api(request):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
         blogs = BlogGeneral.objects.filter(
-            organization_name=organization_name,
-            is_published=True
+            organization_name=organization_name
         ).order_by('-created_at')
 
         serializer = ExternalBlogSerializer(blogs, many=True)
@@ -128,7 +127,7 @@ def external_blog_detail_api(request, blog_id):
     try:
         organization_name = getattr(request, 'organization_name', None)
         
-        query = models.Q(organization_name=organization_name, is_published=True)
+        query = models.Q(organization_name=organization_name)
         if str(blog_id).isdigit():
             query &= models.Q(id=blog_id)
         else:

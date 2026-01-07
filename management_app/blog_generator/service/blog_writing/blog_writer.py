@@ -44,9 +44,11 @@ class BlogWriter:
         generate_images: bool = True,
         max_image_prompts: int = 5,
         website_urls: Optional[List[str]] = None,
+        blog_id: Optional[int] = None,
     ):
         self.topic = topic
         self.task_id = task_id
+        self.blog_id = blog_id
         self.blog_type = blog_type
         self.length_min = length_min
         self.length_max = length_max
@@ -122,6 +124,7 @@ class BlogWriter:
                     "type": "stream_message", 
                     "data": {
                         "type": event_type,
+                        "blog_id": self.blog_id,
                         **payload
                     }
                 }
@@ -194,7 +197,7 @@ class BlogWriter:
                 
                 # Add website content to research context if available
                 if self.website_content:
-                    research_summary += f"\n\nAdditional Context from Provided Websites:\n{self.website_content[:2000]}"  # Limit to avoid token overflow
+                    research_summary += f"\n\nAdditional Context from Provided Websites:\n{self.website_content}"  # Use full extracted content
 
                 # Optional sources cleanup if the tool returned list-like data
                 try:
@@ -388,6 +391,7 @@ class BlogWriter:
                 "content": self.blog_content,
                 "sources": self.research_sources[:MAX_SOURCES],
                 "image_urls": self.image_urls,
+                "seo_optimized": False,
                 "time": round(time.time() - start_time, 2)
             })
 

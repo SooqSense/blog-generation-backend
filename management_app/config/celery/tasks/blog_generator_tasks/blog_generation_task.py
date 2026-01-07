@@ -6,6 +6,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.conf import settings
 import redis
+from asgiref.sync import sync_to_async
 
 from management_app.blog_generator.service.blog_writing.blog_writer import BlogWriter
 from management_app.blog_generator.models import BlogGeneral
@@ -41,6 +42,31 @@ def generate_blog_parallel_task(
     group_name = f"blog_{task_id}"
 
     async def run_writing():
+
+        # Initial create to get blog_id for the websocket payload
+        blog = None
+        blog_id = None
+        try:
+            blog = await sync_to_async(BlogGeneral.objects.create)(
+                user_id=user_id or 0,
+                username=username,
+                email=email,
+                organization_id=organization_id,
+                organization_name=organization_name,
+                topic=topic,
+                content="", # Placeholder
+                image_urls=[],
+                website_urls=website_urls or [],
+                is_ai_generated=True,
+                seo_optimized=False,
+                seo_keywords=keywords or [],
+                tags=keywords or []
+            )
+            blog_id = blog.id
+            logger.info(f"Created initial blog record: {blog_id}")
+        except Exception as e:
+            logger.error(f"Failed to create initial blog record: {e}")
+
         writer = BlogWriter(
             topic=topic,
             task_id=task_id,
@@ -53,31 +79,23 @@ def generate_blog_parallel_task(
             generate_images=generate_images,
             max_image_prompts=max_image_prompts,
             website_urls=website_urls or [],
+            blog_id=blog_id,
         )
         
         # BlogWriter now publishes tokens and status directly to Redis Pub/Sub
+        # We pass the blog_id to be included in the 'complete' event payload
         await writer.generate_streaming_blog()
         
-        # Final save to DB
-        try:
-            from asgiref.sync import sync_to_async
-            await sync_to_async(BlogGeneral.objects.create)(
-                user_id=user_id or 0,
-                username=username,
-                email=email,
-                organization_id=organization_id,
-                organization_name=organization_name,
-                topic=topic,
-                content=writer.blog_content,
-                image_urls=writer.image_urls,
-                website_urls=website_urls or [],
-                is_ai_generated=True,
-                seo_optimized=True,
-                seo_keywords=keywords or [],
-                tags=keywords or []
-            )
-        except Exception as e:
-            logger.error(f"Failed to save blog to DB: {e}")
+        # Final update to DB with generated content and images
+        if blog:
+            try:
+                blog.content = writer.blog_content
+                blog.image_urls = writer.image_urls
+                blog.seo_optimized = False
+                await sync_to_async(blog.save)()
+                logger.info(f"Updated blog record {blog_id} with final content")
+            except Exception as e:
+                logger.error(f"Failed to update blog {blog_id} in DB: {e}")
 
     # Kick off the async loop
     try:

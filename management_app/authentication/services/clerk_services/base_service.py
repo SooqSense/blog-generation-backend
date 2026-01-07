@@ -89,14 +89,14 @@ class BaseClerkService(ABC):
             title: Title for the debug section
             data: Dictionary of data to log
         """
-        self.logger.info("=" * 80)
-        self.logger.info(f"{title.upper()}")
-        self.logger.info("=" * 80)
+        self.logger.debug("=" * 80)
+        self.logger.debug(f"{title.upper()}")
+        self.logger.debug("=" * 80)
         
         for key, value in data.items():
-            self.logger.info(f"  {key}: {value}")
+            self.logger.debug(f"  {key}: {value}")
         
-        self.logger.info("=" * 80)
+        self.logger.debug("=" * 80)
     
     def handle_api_error(self, operation: str, status_code: int, response_text: str) -> None:
         """

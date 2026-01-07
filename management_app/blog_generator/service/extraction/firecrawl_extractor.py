@@ -156,27 +156,18 @@ class FirecrawlExtractor:
 
     def extract_and_summarize(
         self, 
-        urls: List[str], 
-        max_length: int = 10000
+        urls: List[str]
     ) -> str:
         """
-        Extract content from URLs and return a summarized version suitable for blog context.
+        Extract content from URLs and return the full version suitable for blog context.
 
         Args:
             urls: List of URLs to extract content from
-            max_length: Maximum length of combined content (truncates if exceeded)
 
         Returns:
-            Summarized content string
+            Extracted content string
         """
         result = self.extract_content_from_urls(urls)
         content = result["combined_content"]
-        
-        # Truncate if too long
-        if len(content) > max_length:
-            logger.warning(
-                f"Extracted content ({len(content)} chars) exceeds max_length ({max_length}). Truncating."
-            )
-            content = content[:max_length] + "\n\n[Content truncated...]"
         
         return content

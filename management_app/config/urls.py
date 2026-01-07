@@ -22,6 +22,7 @@ urlpatterns = [
     path("knowledge-base/", include("management_app.knowledge_base.urls")),
     path("chat/", include("management_app.chatbot.urls")),
     path("upwork/", include("management_app.upwork_proposal_generator.urls")),
+    path("analytics/", include("management_app.analytics.urls")),
     
     # Shared / External API
     path("api/external/", include("management_app.shared.urls")),
