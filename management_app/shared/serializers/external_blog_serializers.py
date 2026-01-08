@@ -36,8 +36,8 @@ class ExternalBlogSerializer(serializers.ModelSerializer):
 
     def get_author(self, obj):
         return {
-            "name": obj.username or "Sohaib",
-            "id": f"author_{obj.user_id}" if obj.user_id else "author_1"
+            "name": obj.username if obj.username else "AI Blog Generator",
+            "id": f"user_{obj.user_id}" if obj.user_id else "system_generated"
         }
 
     def get_seo(self, obj):

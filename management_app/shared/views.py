@@ -65,17 +65,28 @@ def generate_api_key_api(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+from rest_framework.pagination import PageNumberPagination
+
+class ExternalBlogPagination(PageNumberPagination):
+    """
+    Pagination class for External Blog API.
+    Provides standard page-based pagination.
+    """
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 @extend_schema(
     responses={
         200: OpenApiResponse(
             response=ExternalBlogSerializer(many=True), 
-            description="List of blogs for the organization."
+            description="Paginated list of blogs for the organization."
         ),
         401: OpenApiResponse(
             description="Unauthorized - Invalid API Key."
         ),
     },
-    description="External API to list all blogs for an organization using an API Key.",
+    description="External API to list all blogs for an organization using an API Key. Returns paginated results.",
 )
 @api_view(["GET"])
 @authentication_classes([ExternalAPIKeyAuthentication])
@@ -83,6 +94,7 @@ def generate_api_key_api(request):
 def external_blog_list_api(request):
     """
     List all blogs for the organization associated with the API Key.
+    Supports standard pagination using 'page' and 'page_size' query parameters.
     """
     try:
         organization_name = getattr(request, 'organization_name', None)
@@ -95,8 +107,12 @@ def external_blog_list_api(request):
             organization_name=organization_name
         ).order_by('-created_at')
 
-        serializer = ExternalBlogSerializer(blogs, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Implement Pagination
+        paginator = ExternalBlogPagination()
+        paginated_blogs = paginator.paginate_queryset(blogs, request)
+        
+        serializer = ExternalBlogSerializer(paginated_blogs, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     except Exception as e:
         logger.error(f"External API list error: {str(e)}", exc_info=True)
