@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.http import HttpResponse
 from django.urls import path, include, re_path
 from drf_spectacular.views import (
     SpectacularAPIView,
@@ -36,5 +37,7 @@ urlpatterns = [
         SpectacularRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
+    # Health check
+    path("health/", lambda r: HttpResponse("OK"), name="health"),
 ]
 
