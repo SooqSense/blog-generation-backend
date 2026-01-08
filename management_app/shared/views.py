@@ -4,6 +4,7 @@ from rest_framework import status, permissions
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
+from rest_framework.pagination import PageNumberPagination
 
 from management_app.blog_generator.models import BlogGeneral
 from .services.authentication.api_key_auth import ExternalAPIKeyAuthentication, generate_api_key
@@ -65,7 +66,6 @@ def generate_api_key_api(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-from rest_framework.pagination import PageNumberPagination
 
 class ExternalBlogPagination(PageNumberPagination):
     """
