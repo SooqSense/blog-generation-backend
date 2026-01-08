@@ -59,7 +59,7 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && daphne management_app.config.asgi:application --port 8000 --bind 0.0.0.0"]
 
 # Production stage
 FROM base AS production
@@ -90,4 +90,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn management_app.config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 2 --timeout 300"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && daphne management_app.config.asgi:application --port 8000 --bind 0.0.0.0"]
