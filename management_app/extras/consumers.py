@@ -80,7 +80,8 @@ class StreamingWebSocketConsumer(AsyncWebsocketConsumer):
             use_custom_llm=data.get("use_custom_llm", False),
             generate_images=data.get("generate_images", True),
             length_min=data.get("length_min", 800),
-            length_max=data.get("length_max", 1500)
+            length_max=data.get("length_max", 1500),
+            website_urls=data.get("website_urls", [])
         )
 
         await self.send_json({

@@ -8,6 +8,7 @@ Provides methods for creating, updating, and managing user data from Clerk.
 from typing import Optional, Dict, Any, List
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.core.cache import cache
 
 from .base_service import BaseClerkService
 from .jwt_service import ClerkJWTAuthService
@@ -78,8 +79,18 @@ class ClerkUserService(BaseClerkService):
                 self.logger.error("No clerk_user_id in JWT payload")
                 return None
             
-            # Fetch additional user data from Clerk API
-            enhanced_user_info = self._enhance_user_info(user_info, clerk_user_id)
+            # Phase 2 Caching: Check Redis first to avoid external API calls
+            cache_key = f"clerk_user_info_{clerk_user_id}"
+            enhanced_user_info = cache.get(cache_key)
+            
+            if not enhanced_user_info:
+                # Fetch additional user data from Clerk API (Slow/External)
+                enhanced_user_info = self._enhance_user_info(user_info, clerk_user_id)
+                # Cache for 15 minutes
+                cache.set(cache_key, enhanced_user_info, timeout=900)
+                self.logger.info(f"✅ Cached Clerk user info for {clerk_user_id}")
+            else:
+                self.logger.info(f"⚡  Cache hit for Clerk user info: {clerk_user_id}")
             
             # Log user processing information
             self.log_debug_info("Processing User from JWT", enhanced_user_info)
@@ -179,7 +190,7 @@ class ClerkUserService(BaseClerkService):
                 user = user_by_email
         
         if user:
-            self.logger.info(f"Found existing user: {user.username} (ID: {user.id})")
+            self.logger.debug(f"Found existing user: {user.username} (ID: {user.id})")
         
         return user
     
@@ -208,7 +219,7 @@ class ClerkUserService(BaseClerkService):
                 user.save()
                 self._log_user_update_success(user)
             else:
-                self.logger.info(f"ℹ️  No updates needed for user: {user.username}")
+                self.logger.debug(f"ℹ️  No updates needed for user: {user.username}")
             
             return user
             

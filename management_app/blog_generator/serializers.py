@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from urllib.parse import urlparse
+import markdown
 from .models import BlogGeneral
 
 
@@ -29,6 +30,12 @@ class BlogRequestSerializer(serializers.Serializer):
     generate_images = serializers.BooleanField(
         default=True,
         help_text="Set to true to generate contextual section images for the blog."
+    )
+    website_urls = serializers.ListField(
+        child=serializers.URLField(),
+        required=False,
+        default=list,
+        help_text="Optional list of website URLs to extract content from using Firecrawl."
     )
 
     def validate(self, data):
@@ -89,7 +96,7 @@ class BlogDetailSerializer(serializers.ModelSerializer):
         model = BlogGeneral
         fields = [
             "id", "user_id", "username", "email",
-            "topic", "content", "image_urls",
+            "topic", "content", "image_urls", "website_urls",
             "organization_id", "organization_name", "created_at",
             # SEO fields
             "seo_title", "seo_meta_description", "seo_keywords", "seo_slug", "canonical_url",
@@ -99,6 +106,19 @@ class BlogDetailSerializer(serializers.ModelSerializer):
             "robots_index", "is_ai_generated", "tags", "categories", "updated_at"
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class BlogUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlogGeneral
+        fields = [
+            "topic", "content", "image_urls", "website_urls",
+            "seo_title", "seo_meta_description", "seo_keywords", "seo_slug",
+            "tags", "categories", "is_published"
+        ]
+        extra_kwargs = {
+            field: {"required": False} for field in fields
+        }
 
 
 class BlogDeleteSerializer(serializers.Serializer):

@@ -691,7 +691,7 @@ The application uses Docker Compose profiles to manage different environments:
 
 ```bash
 # Run the development environment
-docker-compose --profile development up
+docker-compose --profile development up --build
 
 # Run in detached mode
 docker-compose --profile development up -d
@@ -742,16 +742,26 @@ docker-compose build [development|staging|production]
 
 ### Running Commands Inside Containers
 
+For the **Development** environment (using profile `development` and service `web`):
+
 ```bash
-# For Django management commands
-docker-compose exec development python management_app/manage.py makemigrations
-docker-compose exec development python management_app/manage.py migrate
+# Make migrations for all apps
+docker-compose --profile development exec web python manage.py makemigrations
+
+# Apply migrations to the database
+docker-compose --profile development exec web python manage.py migrate
+
+# Make migrations for specific apps (e.g. shared, blog_generator)
+docker-compose --profile development exec web python manage.py makemigrations shared blog_generator
 
 # Access Django shell
-docker-compose exec development python management_app/manage.py shell
+docker-compose --profile development exec web python manage.py shell
 
-# For bash access
-docker-compose exec development bash
+# Access container bash
+docker-compose --profile development exec web bash
+
+# Generate an API Key (using the new management command)
+docker-compose --profile development exec web python manage.py generate_api_key "Key Name" "Organization Name"
 ```
 
 ### Database Management with Docker

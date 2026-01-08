@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     "management_app.chatbot",
     "management_app.authentication",  # Authentication app
     "management_app.upwork_proposal_generator",  # Upwork proposal generator app
+    "management_app.analytics",
+    "management_app.shared",  # Shared utilities and API Key management
     # Integration apps
     "management_app.langsmith_integration",  # LangSmith integration for AI cost tracking
     "management_app.pinecone_integration",  # Pinecone integration for vector search
@@ -60,7 +62,6 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "management_app.authentication.middleware.ClerkJWTAuthenticationMiddleware",  # Clerk JWT authentication
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -357,6 +358,9 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 # FAL AI Configuration (for FLUX AI image generation)
 FAL_KEY = os.getenv("FAL_KEY")
 
+# Firecrawl Configuration (for website content extraction)
+FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
+
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -408,6 +412,15 @@ def get_redis_config():
         return {
             "hosts": [redis_url],
         }
+
+
+# Cache configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+    }
+}
 
 
 CHANNEL_LAYERS = {

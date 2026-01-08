@@ -18,6 +18,7 @@ from .images.blog_images import (
     generate_section_specific_images,
     embed_images_in_blog_content,
 )
+from ..extraction.firecrawl_extractor import FirecrawlExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,12 @@ class BlogWriter:
         use_custom_llm: bool = False,
         generate_images: bool = True,
         max_image_prompts: int = 5,
+        website_urls: Optional[List[str]] = None,
+        blog_id: Optional[int] = None,
     ):
         self.topic = topic
         self.task_id = task_id
+        self.blog_id = blog_id
         self.blog_type = blog_type
         self.length_min = length_min
         self.length_max = length_max
@@ -52,6 +56,7 @@ class BlogWriter:
         self.target_audience = target_audience or []
         self.generate_images = generate_images
         self.max_image_prompts = max_image_prompts
+        self.website_urls = website_urls or []
 
         # Initialize LLM and tools
         self.llm = self._init_llm(use_custom_llm)
@@ -83,6 +88,7 @@ class BlogWriter:
         self.blog_content: str = ""
         self.image_urls: List[str] = []
         self.research_sources: List[Dict[str, str]] = []
+        self.website_content: str = ""  # Store extracted website content
 
     def _init_llm(self, use_custom_llm: bool):
         """Initialize language model based on configuration."""
@@ -118,6 +124,7 @@ class BlogWriter:
                     "type": "stream_message", 
                     "data": {
                         "type": event_type,
+                        "blog_id": self.blog_id,
                         **payload
                     }
                 }
@@ -187,6 +194,10 @@ class BlogWriter:
                 query = f"{title} {self.topic} detailed information and facts"
                 search_results = await self._to_thread(self.search_tool.run, search_query=query)
                 research_summary = str(search_results)
+                
+                # Add website content to research context if available
+                if self.website_content:
+                    research_summary += f"\n\nAdditional Context from Provided Websites:\n{self.website_content}"  # Use full extracted content
 
                 # Optional sources cleanup if the tool returned list-like data
                 try:
@@ -260,6 +271,37 @@ class BlogWriter:
         start_time = time.time()
         try:
             await self._publish("status", {"status": "starting", "message": f"Starting blog: {self.topic}"})
+
+            # Step 0: Extract website content if URLs provided
+            if self.website_urls:
+                await self._publish("status", {"status": "extracting", "message": f"Extracting content from {len(self.website_urls)} website(s)..."})
+                try:
+                    extractor = FirecrawlExtractor()
+                    extraction_result = await self._to_thread(
+                        extractor.extract_content_from_urls,
+                        self.website_urls
+                    )
+                    self.website_content = extraction_result["combined_content"]
+                    
+                    # Add extracted sources to research sources
+                    for source in extraction_result["sources"]:
+                        self.research_sources.append({
+                            "url": source["url"],
+                            "title": source["title"],
+                            "type": "website_extraction"
+                        })
+                    
+                    await self._publish("extraction_complete", {
+                        "sources_count": len(extraction_result["sources"]),
+                        "failed_count": len(extraction_result["failed_urls"]),
+                        "content_length": len(self.website_content)
+                    })
+                    
+                    logger.info(f"Extracted {len(self.website_content)} characters from {len(extraction_result['sources'])} websites")
+                except Exception as e:
+                    logger.error(f"Website extraction failed: {str(e)}")
+                    await self._publish("extraction_error", {"error": str(e)})
+                    # Continue with blog generation even if extraction fails
 
             # Step 1: Streamed TOC for INSTANT response
             await self._publish("status", {"status": "toc", "message": "Planning content..."})
@@ -349,9 +391,11 @@ class BlogWriter:
                 "content": self.blog_content,
                 "sources": self.research_sources[:MAX_SOURCES],
                 "image_urls": self.image_urls,
+                "seo_optimized": False,
                 "time": round(time.time() - start_time, 2)
             })
 
         except Exception as e:
             logger.exception("Generation crash")
             await self._publish("error", {"message": str(e)})
+

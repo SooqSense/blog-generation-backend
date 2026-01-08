@@ -124,7 +124,7 @@ class ClerkJWTAuthService(BaseClerkService):
                 if not self._validate_issuer(payload):
                     return None
                 
-                self.logger.info("Clerk JWT token verified successfully")
+                self.logger.debug("Clerk JWT token verified successfully")
                 return payload
             
             return None
@@ -351,7 +351,7 @@ class ClerkJWTAuthService(BaseClerkService):
             if iat_time:
                 token_age_hours = (current_time - iat_time) / 3600
                 expires_in_hours = (exp_time - current_time) / 3600
-                self.logger.info(
+                self.logger.debug(
                     f"Token age: {token_age_hours:.2f} hours, "
                     f"expires in: {expires_in_hours:.2f} hours"
                 )

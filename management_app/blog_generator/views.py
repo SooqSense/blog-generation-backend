@@ -4,10 +4,10 @@ import sys
 import re
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.decorators import api_view
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework import status, permissions
 from rest_framework.response import Response
-from rest_framework import status
+from asgiref.sync import async_to_sync
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 import logging
 
@@ -15,7 +15,8 @@ import logging
 from .models import BlogGeneral
 from .serializers import (
     BlogRequestSerializer, BlogResponseSerializer, ErrorResponseSerializer,
-    BlogListSerializer, BlogDetailSerializer, BlogDeleteSerializer
+    BlogListSerializer, BlogDetailSerializer, BlogDeleteSerializer,
+    BlogUpdateSerializer
 )
 
 # Import organization access control
@@ -170,15 +171,18 @@ def generate_blog_api(request):
             length_min=length_min,
             length_max=length_max,
             generate_images=generate_images,
+            website_urls=serializer.validated_data.get("website_urls", []),
         )
 
-        result = writer.generate_blog()
-        blog_content = result.get("content", "")
+        # Run async generation blocking until complete
+        async_to_sync(writer.generate_streaming_blog)()
+        
+        blog_content = writer.blog_content
+        image_urls = writer.image_urls
+        research_sources = writer.research_sources
         structured_content = convert_markdown_to_json(blog_content)
 
         clean_blog_content = blog_content.strip()
-        image_urls = result.get("images", [])
-        research_sources = result.get("sources", [])
 
         # Save blog
         organization_name = get_user_selected_organization(request)
@@ -191,6 +195,7 @@ def generate_blog_api(request):
             topic=topic,
             content=clean_blog_content,
             image_urls=image_urls,
+            website_urls=serializer.validated_data.get("website_urls", []),
             organization_id=organization_id,
             organization_name=organization_name,
             created_at=timezone.now(),
@@ -508,4 +513,74 @@ def generate_seo_html_api(request, blog_id):
         return Response({
             'error': f'Failed to generate SEO HTML: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    request=BlogUpdateSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=BlogDetailSerializer, description="Blog updated successfully."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Bad Request - Invalid input."
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Blog not found."
+        ),
+        500: OpenApiResponse(
+            response=ErrorResponseSerializer, description="Internal Server Error."
+        ),
+    },
+    description="Update an existing blog post. Supports partial updates (PATCH) and full updates (PUT).",
+)
+@api_view(["PUT", "PATCH"])
+@require_organization_access()
+def update_blog_api(request, blog_id):
+    """
+    Update an existing blog post.
+    Enforces organization-based access control.
+    """
+    try:
+        organization_name = get_user_selected_organization(request)
+        
+        try:
+            blog = BlogGeneral.objects.get(
+                id=blog_id,
+                organization_name=organization_name
+            )
+        except BlogGeneral.DoesNotExist:
+            return Response({
+                'error': 'Blog post not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Use partial=True for PATCH requests
+        serializer = BlogUpdateSerializer(
+            blog, 
+            data=request.data, 
+            partial=(request.method == 'PATCH')
+        )
+        
+        if not serializer.is_valid():
+            logger.warning(f"Invalid input for blog update: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save()
+        
+        logger.info(f"✅ Updated blog ID {blog_id}: {blog.topic}")
+        
+        # Return the full detail of the updated blog
+        response_serializer = BlogDetailSerializer(blog)
+        return Response({
+            'success': True,
+            'message': 'Blog updated successfully',
+            'data': response_serializer.data
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error updating blog {blog_id}: {str(e)}", exc_info=True)
+        return Response({
+            'error': f'Failed to update blog: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
