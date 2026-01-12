@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import ssl
 
 # Opt out of CrewAI telemetry to avoid 'NoneType' attribute errors in logs
 from dotenv import load_dotenv
@@ -394,7 +395,6 @@ LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
 BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
 # Channels Configuration for WebSocket support
-import ssl
 
 
 def get_redis_config():
@@ -403,9 +403,12 @@ def get_redis_config():
 
     if redis_url.startswith("rediss://"):
         # For SSL Redis connections (like Upstash)
+        # We must provide host as a dictionary to include SSL options
         return {
-            "hosts": [redis_url],
-            "ssl_cert_reqs": None,  # Disable SSL certificate verification
+            "hosts": [{
+                "address": redis_url,
+                "ssl_cert_reqs": ssl.CERT_NONE,
+            }],
         }
     else:
         # For non-SSL Redis connections
