@@ -97,7 +97,7 @@ jobs:
             --set-env-vars="LANGSMITH_PROJECT=${{ secrets.LANGSMITH_PROJECT }}" \
             --set-env-vars="LANGSMITH_ENDPOINT=${{ secrets.LANGSMITH_ENDPOINT }}" \
             --set-env-vars="LANGSMITH_WORKSPACE_ID=${{ secrets.LANGSMITH_WORKSPACE_ID }}" \
-            --set-env-vars="FAL_KEY=${{ secrets.FAL_KEY }}"
+            --set-env-vars="FAL_KEY=${{ secrets.FAL_KEY }}" \
             --set-env-vars="FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}"
 
       - name: Deploy Celery Worker to Cloud Run
@@ -149,7 +149,7 @@ jobs:
             --set-env-vars="LANGSMITH_PROJECT=${{ secrets.LANGSMITH_PROJECT }}" \
             --set-env-vars="LANGSMITH_ENDPOINT=${{ secrets.LANGSMITH_ENDPOINT }}" \
             --set-env-vars="LANGSMITH_WORKSPACE_ID=${{ secrets.LANGSMITH_WORKSPACE_ID }}" \
-            --set-env-vars="FAL_KEY=${{ secrets.FAL_KEY }}"
+            --set-env-vars="FAL_KEY=${{ secrets.FAL_KEY }}" \
             --set-env-vars="FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}"
 
       - name: Get Service URLs
