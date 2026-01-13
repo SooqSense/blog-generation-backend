@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Install requirements first, then force-reinstall redis==4.3.6 to allow CERT_NONE strings
+# We do this AFTER requirements.txt because the file contains redis>=6.0.0 which would otherwise upgrade it back.
+RUN pip install -r requirements.txt && pip install --no-cache-dir "redis==4.3.6"
 
 # Development stage
 FROM base AS development
