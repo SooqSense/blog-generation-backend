@@ -404,15 +404,17 @@ def get_redis_config():
 
     if redis_url.startswith("rediss://"):
         # For SSL Redis connections (like Upstash)
-        # Redis-py requires ssl_cert_reqs query param for rediss:// URLs
-        if "ssl_cert_reqs" not in redis_url:
-            if "?" in redis_url:
-                redis_url += "&ssl_cert_reqs=CERT_REQUIRED"
-            else:
-                redis_url += "?ssl_cert_reqs=CERT_REQUIRED"
+        # We explicitly set ssl_cert_reqs to ssl.CERT_NONE to skip verification
+        # This is passed as a kwarg to aioredis/redis-py via channels key-value args
+        if "?" in redis_url:
+            # Strip any query params to avoid conflicts
+            redis_url = redis_url.split("?")[0]
 
         return {
-            "hosts": [redis_url],
+            "hosts": [{
+                "address": redis_url,
+                "ssl_cert_reqs": ssl.CERT_NONE,
+            }],
         }
     else:
         # For non-SSL Redis connections
@@ -436,3 +438,9 @@ CHANNEL_LAYERS = {
         "CONFIG": get_redis_config(),
     },
 }
+
+# Explicit SSL settings for Celery with Upstash
+if REDIS_URL.startswith("rediss://"):
+    celery_ssl_option = {"ssl_cert_reqs": ssl.CERT_NONE}
+    CELERY_REDIS_BACKEND_USE_SSL = celery_ssl_option
+    CELERY_BROKER_USE_SSL = celery_ssl_option
