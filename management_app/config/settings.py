@@ -404,10 +404,15 @@ def get_redis_config():
 
     if redis_url.startswith("rediss://"):
         # For SSL Redis connections (like Upstash)
+        # Redis-py requires ssl_cert_reqs query param for rediss:// URLs
+        if "ssl_cert_reqs" not in redis_url:
+            if "?" in redis_url:
+                redis_url += "&ssl_cert_reqs=CERT_REQUIRED"
+            else:
+                redis_url += "?ssl_cert_reqs=CERT_REQUIRED"
+
         return {
-            "hosts": [{
-                "address": redis_url,
-            }],
+            "hosts": [redis_url],
         }
     else:
         # For non-SSL Redis connections
