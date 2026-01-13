@@ -395,6 +395,7 @@ LANGSMITH_WORKSPACE_ID = os.getenv("LANGSMITH_WORKSPACE_ID")
 BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000")
 
 # Channels Configuration for WebSocket support
+# Channels Configuration for WebSocket support
 
 
 def get_redis_config():
@@ -403,11 +404,9 @@ def get_redis_config():
 
     if redis_url.startswith("rediss://"):
         # For SSL Redis connections (like Upstash)
-        # We must provide host as a dictionary to include SSL options
         return {
             "hosts": [{
                 "address": redis_url,
-                "ssl_cert_reqs": ssl.CERT_NONE,
             }],
         }
     else:
