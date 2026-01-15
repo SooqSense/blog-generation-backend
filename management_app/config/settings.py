@@ -312,13 +312,14 @@ CORS_ALLOW_HEADERS = [
 # For Docker: use redis service name, for local: use localhost
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
-# Override with Docker-friendly URLs if we're in Docker environment
+# Override with Docker-friendly URLs ONLY if we're in Docker environment 
+# AND we are not using an external SSL Redis (like Upstash)
 if os.environ.get("DOCKER_ENV") == "true":
-    REDIS_URL = "redis://redis:6379/0"
-    # Force Celery to use the Docker Redis URL, ignoring .env values which might be localhost
-    os.environ["CELERY_BROKER_URL"] = REDIS_URL
-    os.environ["CELERY_RESULT_BACKEND"] = REDIS_URL
+    # If the user provided a rediss:// URL or an external host, don't override it
+    if not (REDIS_URL.startswith("rediss://") or "upstash.io" in REDIS_URL):
+        REDIS_URL = "redis://redis:6379/0"
 
+# Always ensure Celery uses the final REDIS_URL
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
 
@@ -398,39 +399,25 @@ BACKEND_API_BASE_URL = os.getenv("BACKEND_API_BASE_URL", "http://localhost:8000"
 # Channels Configuration for WebSocket support
 
 
+def get_redis_url_with_ssl(url):
+    """Helper to ensure rediss:// URLs have the correct ssl_cert_reqs=none parameter."""
+    url = url.strip()
+    if url.startswith("rediss://"):
+        # Use lowercase 'none' which is the standard for redis-py >= 5.0.0
+        # This will ONLY work after upgrading from redis 4.3.6 to 5.x
+        return url.split("?")[0] + "?ssl_cert_reqs=none"
+    return url
+
+# Correctly formatted URLs for all services
+FINAL_REDIS_URL = get_redis_url_with_ssl(REDIS_URL)
+
+# 1. CHANNEL_LAYERS Configuration
 def get_redis_config():
-    # Use the REDIS_URL defined earlier (which handles Docker env correctly)
-    redis_url = REDIS_URL
-
-    if redis_url.startswith("rediss://"):
-        # For SSL Redis connections (like Upstash)
-        # We explicitly set ssl_cert_reqs to ssl.CERT_NONE to skip verification
-        # This is passed as a kwarg to aioredis/redis-py via channels key-value args
-        if "?" in redis_url:
-            # Strip any query params to avoid conflicts
-            redis_url = redis_url.split("?")[0]
-
-        return {
-            "hosts": [{
-                "address": redis_url,
-                "ssl_cert_reqs": ssl.CERT_NONE,
-            }],
-        }
-    else:
-        # For non-SSL Redis connections
-        return {
-            "hosts": [redis_url],
-        }
-
-
-# Cache configuration
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": REDIS_URL,
+    return {
+        "hosts": [FINAL_REDIS_URL],
+        "capacity": 1500,
+        "expiry": 60,
     }
-}
-
 
 CHANNEL_LAYERS = {
     "default": {
@@ -439,8 +426,32 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Explicit SSL settings for Celery with Upstash
-if REDIS_URL.startswith("rediss://"):
-    celery_ssl_option = {"ssl_cert_reqs": ssl.CERT_NONE}
-    CELERY_REDIS_BACKEND_USE_SSL = celery_ssl_option
-    CELERY_BROKER_USE_SSL = celery_ssl_option
+# 2. CACHES Configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": FINAL_REDIS_URL,
+    }
+}
+
+# 3. CELERY Configuration
+CELERY_BROKER_URL = FINAL_REDIS_URL
+CELERY_RESULT_BACKEND = FINAL_REDIS_URL
+
+# Disable explicit SSL dicts to avoid 'RedisSSLContext' attribute errors
+if FINAL_REDIS_URL.startswith("rediss://"):
+    CELERY_REDIS_BACKEND_USE_SSL = None
+    CELERY_BROKER_USE_SSL = None
+
+# Standard Celery defaults (moved from celery_config.py for consistency)
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
