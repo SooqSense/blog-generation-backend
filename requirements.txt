@@ -25,7 +25,7 @@ psycopg2-binary==2.9.10
 # Task Queue (Celery + Redis)
 ##############################
 celery==5.4.0
-redis>=6.0.0
+redis>=5.0.0
 django-celery-beat==2.7.0
 kombu==5.4.2
 flower==2.0.1
