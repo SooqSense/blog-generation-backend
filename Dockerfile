@@ -22,6 +22,8 @@ COPY requirements.txt .
 # Install requirements first, then force-reinstall redis==4.3.6 to allow CERT_NONE strings
 # We do this AFTER requirements.txt because the file contains redis>=6.0.0 which would otherwise upgrade it back.
 RUN pip install -r requirements.txt
+COPY start-worker.sh .
+RUN chmod +x start-worker.sh
 
 # Development stage
 FROM base AS development

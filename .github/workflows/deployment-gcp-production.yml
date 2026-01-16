@@ -113,8 +113,8 @@ jobs:
             --timeout=3600 \
             --max-instances=3 \
             --min-instances=0 \
-            --command="sh" \
-            --args="-c,python3 -m http.server 8000 & celery -A management_app.config.celery worker --loglevel=info --concurrency=2" \
+            --command="/app/start-worker.sh" \
+            --args="" \
             --set-env-vars="DEBUG=${{ secrets.DEBUG }}" \
             --set-env-vars="BACKEND_API_BASE_URL=${{ secrets.BACKEND_API_BASE_URL }}" \
             --set-env-vars="DB_HOST=${{ secrets.DB_HOST }}" \
