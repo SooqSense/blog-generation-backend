@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 from .service.pdf_extractor.pdf_extractor import document_extractor
 from .service.s3_service.s3_service import s3_service
 
-# Import Pinecone service with error handling
+# Import Pinecone service with error handling (lazy initialization)
 try:
-    from .service.pinecone_indexing.pinecone_indexing import pinecone_service
+    from .service.pinecone_indexing.pinecone_indexing import get_pinecone_service
     PINECONE_AVAILABLE = True
-    logger.info("✅ Pinecone service initialized successfully")
+    logger.info("✅ Pinecone service module loaded (lazy init)")
 except Exception as e:
-    logger.error(f"❌ Failed to initialize Pinecone service: {str(e)}")
-    pinecone_service = None
+    logger.error(f"❌ Failed to import Pinecone service: {str(e)}")
+    get_pinecone_service = None
     PINECONE_AVAILABLE = False
 
 
@@ -395,11 +395,12 @@ def upload_document_api(request):
         loom_link_objects = extraction_result.get('loom_links', [])
 
         # Index document to Pinecone if service is available
-        if PINECONE_AVAILABLE and pinecone_service and pinecone_service.is_available():
+        pinecone_svc = get_pinecone_service() if PINECONE_AVAILABLE and get_pinecone_service else None
+        if pinecone_svc and pinecone_svc.is_available():
             try:
                 logger.info(f"Indexing document {file.name} to Pinecone in directory: {directory.name}...")
                 
-                pinecone_result = pinecone_service.index_document(
+                pinecone_result = pinecone_svc.index_document(
                     document_id=document_id,
                     file_name=file.name,
                     file_type=extraction_result['file_type'],
@@ -597,10 +598,11 @@ def delete_document_api(request, document_id):
         errors = []
         
         # 1. Delete from Pinecone
-        if document.pinecone_indexed and PINECONE_AVAILABLE and pinecone_service:
+        pinecone_svc = get_pinecone_service() if PINECONE_AVAILABLE and get_pinecone_service else None
+        if document.pinecone_indexed and pinecone_svc:
             try:
                 logger.info(f"Deleting document {document.pinecone_index_id} (file: {file_name}) from Pinecone...")
-                pinecone_result = pinecone_service.delete_document(
+                pinecone_result = pinecone_svc.delete_document(
                     document_id=document.pinecone_index_id,
                     namespace='PDFS',  # Always use single PDFS namespace
                     file_name=file_name

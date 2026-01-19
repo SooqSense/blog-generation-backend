@@ -37,15 +37,14 @@ from ..prompts.prompts import UPWORK_PROPOSAL_SYSTEM_PROMPT, USER_PROMPT_TEMPLAT
 # Initialize module logger BEFORE any logging is used
 logger = logging.getLogger(__name__)
 
-# Import Pinecone service from knowledge base
+# Import Pinecone service from knowledge base with lazy initialization
 try:
-    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import PineconeService
-    pinecone_service = PineconeService()
+    from management_app.knowledge_base.service.pinecone_indexing.pinecone_indexing import get_pinecone_service
     PINECONE_AVAILABLE = True
-    logger.info("✅ Pinecone service imported successfully for Upwork proposals")
+    logger.info("✅ Pinecone service module imported for Upwork proposals (lazy init)")
 except Exception as e:
     logger.error(f"❌ Failed to import Pinecone service: {str(e)}")
-    pinecone_service = None
+    get_pinecone_service = None
     PINECONE_AVAILABLE = False
 
 
@@ -54,8 +53,9 @@ class UpworkProposalAgent:
     
     def __init__(self):
         self.openai_client = self._initialize_openai()
-        self.pinecone_service = pinecone_service
-        self.pinecone_available = PINECONE_AVAILABLE
+        # Use lazy getter for Pinecone service
+        self.pinecone_service = get_pinecone_service() if PINECONE_AVAILABLE and get_pinecone_service else None
+        self.pinecone_available = PINECONE_AVAILABLE and self.pinecone_service is not None
         self.langchain_available = LANGCHAIN_AVAILABLE
         
         # Initialize LangChain components if available
@@ -667,6 +667,18 @@ class UpworkProposalAgent:
                 'proposal': None
             }
 
+# Lazy initialization for the global agent instance
+_upwork_proposal_agent = None
 
-# Create global instance
-upwork_proposal_agent = UpworkProposalAgent()
+
+def get_upwork_proposal_agent():
+    """Get or create the Upwork proposal agent instance (lazy initialization)."""
+    global _upwork_proposal_agent
+    if _upwork_proposal_agent is None:
+        _upwork_proposal_agent = UpworkProposalAgent()
+    return _upwork_proposal_agent
+
+
+# For backward compatibility - use get_upwork_proposal_agent() instead
+upwork_proposal_agent = None
+

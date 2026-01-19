@@ -18,7 +18,7 @@ from .serializers import (
     UpworkProposalDeleteSerializer,
     ErrorResponseSerializer
 )
-from .services.agent.agent import upwork_proposal_agent
+from .services.agent.agent import get_upwork_proposal_agent
 
 # Import organization access control
 from management_app.authentication.services.access_control import require_organization_access, RequireOrganizationMixin, get_user_selected_organization
@@ -137,8 +137,9 @@ def _generate_proposal_content(proposal):
     try:
         logger.info(f"🚀 Starting proposal generation for ID: {proposal.id}")
         
-        # Generate proposal using the agent
-        result = upwork_proposal_agent.generate_proposal(
+        # Generate proposal using the agent (lazy initialization)
+        agent = get_upwork_proposal_agent()
+        result = agent.generate_proposal(
             client_name=proposal.client_name,
             company_name=proposal.company_name,
             title=proposal.title,

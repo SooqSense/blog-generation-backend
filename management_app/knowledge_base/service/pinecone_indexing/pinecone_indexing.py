@@ -467,5 +467,22 @@ class PineconeService:
             return {"error": str(e)}
 
 
-# Singleton instance
-pinecone_service = PineconeService()
+# Lazy initialization - only create when first accessed
+_pinecone_service = None
+
+
+def get_pinecone_service():
+    """Get or create the Pinecone service instance (lazy initialization).
+    
+    This prevents network calls to Pinecone/OpenAI during Django app loading,
+    which was causing the Celery worker to hang in Cloud Run.
+    """
+    global _pinecone_service
+    if _pinecone_service is None:
+        _pinecone_service = PineconeService()
+    return _pinecone_service
+
+
+# For backward compatibility - use get_pinecone_service() instead
+pinecone_service = None
+
