@@ -6,6 +6,18 @@ echo "Time: $(date)"
 echo "Python version: $(python3 --version)"
 echo "Working directory: $(pwd)"
 
+# Verify critical environment variables
+echo ""
+echo "=== Checking Environment Variables ==="
+for VAR in REDIS_URL CELERY_BROKER_URL OPENAI_API_KEY PINECONE_API_KEY LANGSMITH_API_KEY SERPER_API_KEY FAL_KEY DB_HOST; do
+    if [ -z "${!VAR}" ]; then
+        echo "⚠️  WARNING: $VAR is NOT SET"
+    else
+        echo "✅ $VAR is set (${#!VAR} chars)"
+    fi
+done
+echo ""
+
 # Start HTTP health check server in background
 echo "Starting HTTP health check server on port 8000..."
 python3 -m http.server 8000 &
