@@ -232,7 +232,20 @@ def generate_blog_api(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # List and Management Views
+from rest_framework.pagination import PageNumberPagination
+
+class BlogPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 @extend_schema(
+    parameters=[
+        OpenApiResponse(
+            response=BlogListSerializer(many=True),
+            description="Blog posts retrieved successfully."
+        ),
+    ],
     responses={
         200: OpenApiResponse(
             response=BlogListSerializer(many=True),
@@ -247,7 +260,7 @@ def generate_blog_api(request):
 @api_view(["GET"])
 @require_organization_access()
 def list_blog_posts_api(request):
-    """List all blog posts for the user's organization."""
+    """List all blog posts for the user's organization with pagination."""
     try:
         user = request.user
         organization_name = get_user_selected_organization(request)
@@ -257,13 +270,21 @@ def list_blog_posts_api(request):
             organization_name=organization_name
         ).order_by('-created_at')
         
-        serializer = BlogListSerializer(blog_posts, many=True)
+        # Initialize pagination
+        paginator = BlogPagination()
+        paginated_posts = paginator.paginate_queryset(blog_posts, request)
+        
+        serializer = BlogListSerializer(paginated_posts, many=True)
         
         return Response({
             'success': True,
-            'message': f'Retrieved {len(blog_posts)} blog posts',
+            'message': f'Retrieved {len(paginated_posts)} blog posts',
+            'count': blog_posts.count(),
+            'total_pages': paginator.page.paginator.num_pages,
+            'current_page': paginator.page.number,
+            'has_next': paginator.page.has_next(),
+            'has_previous': paginator.page.has_previous(),
             'data': serializer.data,
-            'count': len(blog_posts)
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
