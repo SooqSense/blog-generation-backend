@@ -4,6 +4,7 @@ import sys
 import re
 from django.conf import settings
 from django.utils import timezone
+from django.db.models import Sum, Avg
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework import status, permissions
 from rest_framework.response import Response
@@ -265,16 +266,34 @@ def list_blog_posts_api(request):
         user = request.user
         organization_name = get_user_selected_organization(request)
         
-        # Filter by organization
+        # Filter by organization with optimized query
         blog_posts = BlogGeneral.objects.filter(
             organization_name=organization_name
-        ).order_by('-created_at')
+        ).select_related('analytics_aggregate').order_by('-created_at')
         
         # Initialize pagination
         paginator = BlogPagination()
         paginated_posts = paginator.paginate_queryset(blog_posts, request)
         
         serializer = BlogListSerializer(paginated_posts, many=True)
+        
+        # Calculate total stats for all blogs in the organization
+        stats = blog_posts.aggregate(
+            total_views=Sum('analytics_aggregate__total_views'),
+            unique_views=Sum('analytics_aggregate__unique_views'),
+            engaged_reads=Sum('analytics_aggregate__engaged_reads'),
+            avg_scroll_depth=Avg('analytics_aggregate__avg_scroll_depth'),
+            avg_time_on_page_sec=Avg('analytics_aggregate__avg_time_on_page_sec')
+        )
+        
+        # Ensure standard values if no data (replace None with 0)
+        total_stats = {
+            'total_views': stats['total_views'] or 0,
+            'unique_views': stats['unique_views'] or 0,
+            'engaged_reads': stats['engaged_reads'] or 0,
+            'avg_scroll_depth': round(stats['avg_scroll_depth'] or 0, 2),
+            'avg_time_on_page_sec': round(stats['avg_time_on_page_sec'] or 0, 2)
+        }
         
         return Response({
             'success': True,
@@ -284,6 +303,7 @@ def list_blog_posts_api(request):
             'current_page': paginator.page.number,
             'has_next': paginator.page.has_next(),
             'has_previous': paginator.page.has_previous(),
+            'total_stats': total_stats,
             'data': serializer.data,
         }, status=status.HTTP_200_OK)
         

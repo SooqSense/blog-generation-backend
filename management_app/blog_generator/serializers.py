@@ -80,18 +80,36 @@ class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
 
 
+from management_app.analytics.models import BlogAggregate
+
+class BlogAggregateSerializer(serializers.ModelSerializer):
+    """Serializer for blog analytics statistics."""
+    class Meta:
+        model = BlogAggregate
+        fields = [
+            "total_views", "unique_views", 
+            "engaged_reads", "avg_scroll_depth", 
+            "avg_time_on_page_sec"
+        ]
+
+
 class BlogListSerializer(serializers.ModelSerializer):
+    analytics = BlogAggregateSerializer(source='analytics_aggregate', read_only=True)
+    
     class Meta:
         model = BlogGeneral
         fields = [
             "id", "topic", "username", "email",
             "organization_id", "organization_name",
-            "image_urls", "created_at", "seo_optimized"
+            "image_urls", "created_at", "seo_optimized",
+            "analytics"
         ]
         read_only_fields = ["id", "created_at"]
 
 
 class BlogDetailSerializer(serializers.ModelSerializer):
+    analytics = BlogAggregateSerializer(source='analytics_aggregate', read_only=True)
+    
     class Meta:
         model = BlogGeneral
         fields = [
@@ -103,7 +121,9 @@ class BlogDetailSerializer(serializers.ModelSerializer):
             "reading_time_minutes", "word_count", "content_hash",
             "html_content", "og_title", "og_description", "og_image_url", "twitter_card_type",
             "structured_data", "seo_optimized", "is_published", "published_at",
-            "robots_index", "is_ai_generated", "tags", "categories", "updated_at"
+            "robots_index", "is_ai_generated", "tags", "categories", "updated_at",
+            # Analytics
+            "analytics"
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
