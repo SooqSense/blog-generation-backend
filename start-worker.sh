@@ -9,7 +9,7 @@ echo "Working directory: $(pwd)"
 # Verify critical environment variables
 echo ""
 echo "=== Checking Environment Variables ==="
-for VAR in REDIS_URL CELERY_BROKER_URL OPENAI_API_KEY PINECONE_API_KEY LANGSMITH_API_KEY SERPER_API_KEY FAL_KEY DB_HOST; do
+for VAR in REDIS_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND OPENAI_API_KEY PINECONE_API_KEY; do
     VALUE="${!VAR}"
     if [ -z "$VALUE" ]; then
         echo "⚠️  WARNING: $VAR is NOT SET"

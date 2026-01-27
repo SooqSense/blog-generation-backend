@@ -112,7 +112,8 @@ jobs:
             --cpu=2 \
             --timeout=3600 \
             --max-instances=3 \
-            --min-instances=0 \
+            --min-instances=1 \
+            --no-cpu-throttling \
             --command="/app/start-worker.sh" \
             --args="" \
             --set-env-vars="DEBUG=${{ secrets.DEBUG }}" \
