@@ -3,6 +3,11 @@ import os
 import ssl
 
 # Opt out of CrewAI telemetry to avoid 'NoneType' attribute errors in logs
+# and prevent interactive prompts like "Would you like to view your execution traces?"
+import os
+os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
 from dotenv import load_dotenv
 
 # Django Setup Guard - Prevent premature setup during configuration

@@ -4,6 +4,7 @@ import sys
 import re
 from django.conf import settings
 from django.utils import timezone
+from django.db.models import Sum, Avg
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework import status, permissions
 from rest_framework.response import Response
@@ -232,7 +233,20 @@ def generate_blog_api(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # List and Management Views
+from rest_framework.pagination import PageNumberPagination
+
+class BlogPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 @extend_schema(
+    parameters=[
+        OpenApiResponse(
+            response=BlogListSerializer(many=True),
+            description="Blog posts retrieved successfully."
+        ),
+    ],
     responses={
         200: OpenApiResponse(
             response=BlogListSerializer(many=True),
@@ -247,23 +261,50 @@ def generate_blog_api(request):
 @api_view(["GET"])
 @require_organization_access()
 def list_blog_posts_api(request):
-    """List all blog posts for the user's organization."""
+    """List all blog posts for the user's organization with pagination."""
     try:
         user = request.user
         organization_name = get_user_selected_organization(request)
         
-        # Filter by organization
+        # Filter by organization with optimized query
         blog_posts = BlogGeneral.objects.filter(
             organization_name=organization_name
-        ).order_by('-created_at')
+        ).select_related('analytics_aggregate').order_by('-created_at')
         
-        serializer = BlogListSerializer(blog_posts, many=True)
+        # Initialize pagination
+        paginator = BlogPagination()
+        paginated_posts = paginator.paginate_queryset(blog_posts, request)
+        
+        serializer = BlogListSerializer(paginated_posts, many=True)
+        
+        # Calculate total stats for all blogs in the organization
+        stats = blog_posts.aggregate(
+            total_views=Sum('analytics_aggregate__total_views'),
+            unique_views=Sum('analytics_aggregate__unique_views'),
+            engaged_reads=Sum('analytics_aggregate__engaged_reads'),
+            avg_scroll_depth=Avg('analytics_aggregate__avg_scroll_depth'),
+            avg_time_on_page_sec=Avg('analytics_aggregate__avg_time_on_page_sec')
+        )
+        
+        # Ensure standard values if no data (replace None with 0)
+        total_stats = {
+            'total_views': stats['total_views'] or 0,
+            'unique_views': stats['unique_views'] or 0,
+            'engaged_reads': stats['engaged_reads'] or 0,
+            'avg_scroll_depth': round(stats['avg_scroll_depth'] or 0, 2),
+            'avg_time_on_page_sec': round(stats['avg_time_on_page_sec'] or 0, 2)
+        }
         
         return Response({
             'success': True,
-            'message': f'Retrieved {len(blog_posts)} blog posts',
+            'message': f'Retrieved {len(paginated_posts)} blog posts',
+            'count': blog_posts.count(),
+            'total_pages': paginator.page.paginator.num_pages,
+            'current_page': paginator.page.number,
+            'has_next': paginator.page.has_next(),
+            'has_previous': paginator.page.has_previous(),
+            'total_stats': total_stats,
             'data': serializer.data,
-            'count': len(blog_posts)
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
